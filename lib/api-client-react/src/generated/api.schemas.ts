@@ -315,6 +315,8 @@ export interface DbConnection {
   dbName: string;
   schemaName: string;
   /** @nullable */
+  fetchQuery?: string | null;
+  /** @nullable */
   outputFilePath?: string | null;
   /** @nullable */
   createdBy?: number | null;
@@ -341,9 +343,10 @@ export interface DbConnectionInput {
   port?: number;
   dbName: string;
   schemaName?: string;
-  username?: string;
-  password?: string;
+  username: string;
+  password: string;
   outputFilePath?: string;
+  fetchQuery?: string;
 }
 
 export interface DbConnectionTestResult {

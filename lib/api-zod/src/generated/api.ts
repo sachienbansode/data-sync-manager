@@ -574,6 +574,7 @@ export const ListDbConnectionsResponseItem = zod.object({
   port: zod.number(),
   dbName: zod.string(),
   schemaName: zod.string(),
+  fetchQuery: zod.string().nullish(),
   outputFilePath: zod.string().nullish(),
   createdBy: zod.number().nullish(),
   lastTestedAt: zod.coerce.date().nullish(),
@@ -598,9 +599,10 @@ export const CreateDbConnectionBody = zod.object({
   port: zod.number().default(createDbConnectionBodyPortDefault),
   dbName: zod.string(),
   schemaName: zod.string().default(createDbConnectionBodySchemaNameDefault),
-  username: zod.string().optional(),
-  password: zod.string().optional(),
+  username: zod.string(),
+  password: zod.string(),
   outputFilePath: zod.string().optional(),
+  fetchQuery: zod.string().optional(),
 });
 
 /**
@@ -620,9 +622,10 @@ export const UpdateDbConnectionBody = zod.object({
   port: zod.number().default(updateDbConnectionBodyPortDefault),
   dbName: zod.string(),
   schemaName: zod.string().default(updateDbConnectionBodySchemaNameDefault),
-  username: zod.string().optional(),
-  password: zod.string().optional(),
+  username: zod.string(),
+  password: zod.string(),
   outputFilePath: zod.string().optional(),
+  fetchQuery: zod.string().optional(),
 });
 
 export const UpdateDbConnectionResponse = zod.object({
@@ -633,6 +636,7 @@ export const UpdateDbConnectionResponse = zod.object({
   port: zod.number(),
   dbName: zod.string(),
   schemaName: zod.string(),
+  fetchQuery: zod.string().nullish(),
   outputFilePath: zod.string().nullish(),
   createdBy: zod.number().nullish(),
   lastTestedAt: zod.coerce.date().nullish(),

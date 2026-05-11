@@ -426,7 +426,7 @@ export default function Workflow() {
                       </p>
                       {job.errorMessage && <p className="text-xs text-destructive">{job.errorMessage}</p>}
                     </div>
-                    {job.status === "success" && (
+                    {job.status === "success" && canFetch && (
                       <div className="flex gap-2">
                         <Button variant="ghost" size="sm" onClick={() => downloadCsv(job.id)} disabled={downloading === job.id}>
                           {downloading === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}

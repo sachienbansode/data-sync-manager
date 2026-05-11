@@ -1400,6 +1400,8 @@ components:
           type: string
         schemaName:
           type: string
+        fetchQuery:
+          type: ["string", "null"]
         outputFilePath:
           type: ["string", "null"]
         createdBy:
@@ -1418,7 +1420,7 @@ components:
 
     DbConnectionInput:
       type: object
-      required: [name, type, host, dbName]
+      required: [name, type, host, dbName, username, password]
       properties:
         name:
           type: string
@@ -1440,6 +1442,8 @@ components:
         password:
           type: string
         outputFilePath:
+          type: string
+        fetchQuery:
           type: string
 
     DbConnectionTestResult:

@@ -53,6 +53,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function WorkflowJobs() {
   const { user } = useAuth();
+  const canFetch = ["Admin", "Manager", "Analyst"].includes(user?.roleName ?? "");
   const canPush = ["Admin", "Manager"].includes(user?.roleName ?? "");
 
   const [jobs, setJobs] = useState<DataJob[]>([]);
@@ -223,12 +224,14 @@ export default function WorkflowJobs() {
                           </div>
                         )}
                       </div>
-                      {job.status === "success" && (
+                      {job.status === "success" && (canFetch || canPush) && (
                         <div className="flex gap-2 shrink-0">
-                          <Button variant="outline" size="sm" onClick={() => downloadCsv(job.id)} disabled={downloading === job.id}>
-                            {downloading === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                            <span className="ml-1 hidden sm:inline">Download</span>
-                          </Button>
+                          {canFetch && (
+                            <Button variant="outline" size="sm" onClick={() => downloadCsv(job.id)} disabled={downloading === job.id}>
+                              {downloading === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                              <span className="ml-1 hidden sm:inline">Download</span>
+                            </Button>
+                          )}
                           {canPush && (
                             <Button size="sm" onClick={() => handlePushClick(job)} disabled={pushing === job.id}>
                               {pushing === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
@@ -319,12 +322,14 @@ export default function WorkflowJobs() {
                   </ScrollArea>
                 </div>
               )}
-              {detailJob.job.status === "success" && (
+              {detailJob.job.status === "success" && (canFetch || canPush) && (
                 <div className="flex gap-2 justify-end">
-                  <Button variant="outline" onClick={() => downloadCsv(detailJob.job.id)} disabled={downloading === detailJob.job.id}>
-                    {downloading === detailJob.job.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                    Download CSV
-                  </Button>
+                  {canFetch && (
+                    <Button variant="outline" onClick={() => downloadCsv(detailJob.job.id)} disabled={downloading === detailJob.job.id}>
+                      {downloading === detailJob.job.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                      Download CSV
+                    </Button>
+                  )}
                   {canPush && (
                     <Button onClick={() => handlePushClick(detailJob.job)} disabled={pushing === detailJob.job.id}>
                       {pushing === detailJob.job.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRight className="h-4 w-4 mr-2" />}

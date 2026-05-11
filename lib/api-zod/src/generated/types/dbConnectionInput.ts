@@ -14,7 +14,8 @@ export interface DbConnectionInput {
   port?: number;
   dbName: string;
   schemaName?: string;
-  username?: string;
-  password?: string;
+  username: string;
+  password: string;
   outputFilePath?: string;
+  fetchQuery?: string;
 }

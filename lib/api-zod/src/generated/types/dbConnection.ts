@@ -16,6 +16,8 @@ export interface DbConnection {
   dbName: string;
   schemaName: string;
   /** @nullable */
+  fetchQuery?: string | null;
+  /** @nullable */
   outputFilePath?: string | null;
   /** @nullable */
   createdBy?: number | null;

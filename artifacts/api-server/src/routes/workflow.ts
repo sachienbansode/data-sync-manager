@@ -78,6 +78,53 @@ function toTradingCsv(rows: { tradingField: string; value: string }[][]): string
   return [headers, ...dataLines].join("\n");
 }
 
+/**
+ * Parse a pipe-delimited CSV line, respecting double-quoted fields.
+ * A quoted field may contain literal pipes and doubled quotes ("").
+ */
+function parsePipeCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let i = 0;
+  while (i <= line.length) {
+    if (i === line.length) {
+      fields.push("");
+      break;
+    }
+    if (line[i] === '"') {
+      // Quoted field
+      let field = "";
+      i++; // skip opening quote
+      while (i < line.length) {
+        if (line[i] === '"') {
+          if (line[i + 1] === '"') {
+            field += '"';
+            i += 2;
+          } else {
+            i++; // skip closing quote
+            break;
+          }
+        } else {
+          field += line[i++];
+        }
+      }
+      fields.push(field);
+      // skip delimiter or end
+      if (line[i] === "|") i++;
+    } else {
+      // Unquoted field — read until next pipe
+      const end = line.indexOf("|", i);
+      if (end === -1) {
+        fields.push(line.slice(i));
+        break;
+      } else {
+        fields.push(line.slice(i, end));
+        i = end + 1;
+      }
+    }
+  }
+  return fields;
+}
+
 // ── GET /api/workflow/field-mappings ────────────────────────────────────────
 router.get("/workflow/field-mappings", authenticate, async (_req, res) => {
   const mappings = await db.select().from(fieldMappingsTable).orderBy(fieldMappingsTable.sortOrder, fieldMappingsTable.id);
@@ -154,6 +201,8 @@ router.get("/workflow/jobs/:id", authenticate, async (req, res) => {
 });
 
 // ── POST /api/workflow/fetch — Fetch from BackOffice DB ────────────────────
+// Allowed roles: Admin, Manager, Analyst
+// The query is always a fixed SELECT — no user-supplied SQL accepted.
 router.post("/workflow/fetch", authenticate, async (req, res) => {
   const roleName = req.user!.roleName;
   if (!canFetch(roleName)) {
@@ -161,7 +210,7 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
     return;
   }
 
-  const { connectionId, query } = req.body as { connectionId: number; query?: string };
+  const { connectionId } = req.body as { connectionId: number };
   if (!connectionId) { res.status(400).json({ error: "connectionId is required" }); return; }
 
   const [conn] = await db.select().from(dbConnectionsTable).where(
@@ -194,7 +243,8 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
   });
 
   try {
-    const selectQuery = query || `SELECT * FROM "${conn.schemaName}"."backoffice_data" LIMIT 1000`;
+    // Fixed read-only query — user-supplied SQL is never executed
+    const selectQuery = `SELECT * FROM "${conn.schemaName}"."backoffice_data" LIMIT 1000`;
     const result = await fetchPool.query(selectQuery);
     const rows = result.rows as Record<string, unknown>[];
 
@@ -236,6 +286,7 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
 });
 
 // ── POST /api/workflow/upload-csv — Upload pipe-delimited CSV ──────────────
+// Allowed roles: Admin, Manager, Analyst
 router.post("/workflow/upload-csv", authenticate, upload.single("file"), async (req, res) => {
   const roleName = req.user!.roleName;
   if (!canFetch(roleName)) {
@@ -253,17 +304,32 @@ router.post("/workflow/upload-csv", authenticate, upload.single("file"), async (
     return;
   }
 
-  const headers = lines[0].split("|").map((h) => h.trim());
+  // Parse headers using proper quoted-field parser
+  const headers = parsePipeCsvLine(lines[0]).map((h) => h.trim());
   if (headers.length < 2) {
     res.status(400).json({ error: "CSV must use pipe (|) as delimiter and have at least 2 columns" });
     return;
   }
 
+  // Validate that at least one configured BackOffice field is present
+  const configuredMappings = await db.select({ backofficeField: fieldMappingsTable.backofficeField })
+    .from(fieldMappingsTable);
+  if (configuredMappings.length > 0) {
+    const configuredFields = new Set(configuredMappings.map((m) => m.backofficeField));
+    const matchedFields = headers.filter((h) => configuredFields.has(h));
+    if (matchedFields.length === 0) {
+      res.status(400).json({
+        error: `CSV headers do not match any configured field mappings. Expected fields: ${[...configuredFields].join(", ")}`,
+      });
+      return;
+    }
+  }
+
   const dataLines = lines.slice(1);
   const parsedRows: Record<string, string>[] = dataLines.map((line) => {
-    const values = line.split("|");
+    const values = parsePipeCsvLine(line);
     const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = (values[i] ?? "").trim(); });
+    headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
     return row;
   });
 
@@ -304,7 +370,14 @@ router.post("/workflow/upload-csv", authenticate, upload.single("file"), async (
 });
 
 // ── POST /api/workflow/jobs/:id/download — Download transformed CSV ─────────
+// Allowed roles: Admin, Manager, Analyst (Viewer cannot export data)
 router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
+  const roleName = req.user!.roleName;
+  if (!canFetch(roleName)) {
+    res.status(403).json({ error: "Insufficient role to download data" });
+    return;
+  }
+
   const id = parseInt(req.params.id);
   const [job] = await db.select().from(dataJobsTable).where(eq(dataJobsTable.id, id));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
@@ -317,9 +390,9 @@ router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
     const rows = await db.select({ rawData: dataStagingTable.rawData }).from(dataStagingTable)
       .where(eq(dataStagingTable.jobId, id)).orderBy(dataStagingTable.rowIndex);
     if (rows.length === 0) { res.status(404).json({ error: "No data for this job" }); return; }
-    const headers = Object.keys(rows[0].rawData as Record<string, unknown>);
-    const lines = rows.map((r) => headers.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
-    csvContent = [headers.join("|"), ...lines].join("\n");
+    const hdrs = Object.keys(rows[0].rawData as Record<string, unknown>);
+    const dataLines = rows.map((r) => hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
+    csvContent = [hdrs.join("|"), ...dataLines].join("\n");
   } else {
     const transformed = await transformRows(id, mappings);
     csvContent = toTradingCsv(transformed);
@@ -341,6 +414,7 @@ router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
 });
 
 // ── POST /api/workflow/jobs/:id/push — Push to local file path ─────────────
+// Allowed roles: Admin, Manager only
 router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
   const roleName = req.user!.roleName;
   if (!canPush(roleName)) {
@@ -371,9 +445,9 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
     const rows = await db.select({ rawData: dataStagingTable.rawData }).from(dataStagingTable)
       .where(eq(dataStagingTable.jobId, id)).orderBy(dataStagingTable.rowIndex);
     if (rows.length === 0) { res.status(404).json({ error: "No data for this job" }); return; }
-    const headers = Object.keys(rows[0].rawData as Record<string, unknown>);
-    const lines = rows.map((r) => headers.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
-    csvContent = [headers.join("|"), ...lines].join("\n");
+    const hdrs = Object.keys(rows[0].rawData as Record<string, unknown>);
+    const dataLines = rows.map((r) => hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
+    csvContent = [hdrs.join("|"), ...dataLines].join("\n");
   } else {
     const transformed = await transformRows(id, mappings);
     csvContent = toTradingCsv(transformed);

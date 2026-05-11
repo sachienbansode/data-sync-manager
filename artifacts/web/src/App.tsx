@@ -77,7 +77,7 @@ function Router() {
         <ProtectedRoute component={FieldMappings} path="/admin/field-mappings" />
       </Route>
       <Route path="/workflow/jobs">
-        <ProtectedRoute component={WorkflowJobs} path="/workflow" />
+        <ProtectedRoute component={WorkflowJobs} path="/workflow/jobs" />
       </Route>
       <Route path="/workflow">
         <ProtectedRoute component={Workflow} path="/workflow" />

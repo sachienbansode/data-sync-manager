@@ -773,12 +773,6 @@ export const GetDataJobResponse = zod.object({
  */
 export const FetchFromBackofficeBody = zod.object({
   connectionId: zod.number(),
-  query: zod
-    .string()
-    .optional()
-    .describe(
-      "Optional custom SELECT query; defaults to SELECT \* FROM schema.backoffice_data LIMIT 1000",
-    ),
 });
 
 export const FetchFromBackofficeResponse = zod.object({

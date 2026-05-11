@@ -1550,9 +1550,6 @@ components:
       properties:
         connectionId:
           type: integer
-        query:
-          type: string
-          description: Optional custom SELECT query; defaults to SELECT * FROM schema.backoffice_data LIMIT 1000
 
     WorkflowFetchResponse:
       type: object

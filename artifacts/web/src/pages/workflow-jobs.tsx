@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
-import { Layout } from "@/components/layout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -132,8 +131,8 @@ export default function WorkflowJobs() {
   const totalPages = Math.ceil(total / pageSize);
 
   return (
-    <Layout>
-      <div className="space-y-6">
+    <>
+    <div className="space-y-6">
         <div className="flex items-center gap-3">
           <Link href="/workflow">
             <Button variant="ghost" size="sm"><ChevronLeft className="h-4 w-4 mr-1" /> Back</Button>
@@ -295,6 +294,6 @@ export default function WorkflowJobs() {
           )}
         </DialogContent>
       </Dialog>
-    </Layout>
+    </>
   );
 }

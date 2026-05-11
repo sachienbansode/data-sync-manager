@@ -455,8 +455,6 @@ export interface DataJobDetail {
 
 export interface WorkflowFetchInput {
   connectionId: number;
-  /** Optional custom SELECT query; defaults to SELECT * FROM schema.backoffice_data LIMIT 1000 */
-  query?: string;
 }
 
 export type WorkflowFetchResponsePreviewItem = { [key: string]: unknown };

@@ -380,6 +380,9 @@ export const GetDashboardSummaryResponse = zod.object({
       action: zod.string(),
       details: zod.string().nullable(),
       ipAddress: zod.string().nullish(),
+      resourceType: zod.string().nullish(),
+      resourceId: zod.string().nullish(),
+      fieldName: zod.string().nullish(),
       createdAt: zod.coerce.date(),
     }),
   ),
@@ -407,10 +410,146 @@ export const GetAuditLogResponse = zod.object({
       action: zod.string(),
       details: zod.string().nullable(),
       ipAddress: zod.string().nullish(),
+      resourceType: zod.string().nullish(),
+      resourceId: zod.string().nullish(),
+      fieldName: zod.string().nullish(),
       createdAt: zod.coerce.date(),
     }),
   ),
   total: zod.number(),
   page: zod.number(),
   pageSize: zod.number(),
+});
+
+/**
+ * @summary List PII records (all fields masked)
+ */
+export const listPiiRecordsQueryPageDefault = 1;
+export const listPiiRecordsQueryPageSizeDefault = 20;
+
+export const ListPiiRecordsQueryParams = zod.object({
+  page: zod.coerce.number().default(listPiiRecordsQueryPageDefault),
+  pageSize: zod.coerce.number().default(listPiiRecordsQueryPageSizeDefault),
+});
+
+export const ListPiiRecordsResponse = zod.object({
+  records: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+      company: zod.string().nullish(),
+      phone: zod.string().nullish(),
+      nationalId: zod.string().nullish(),
+      bankAccount: zod.string().nullish(),
+      panNumber: zod.string().nullish(),
+      emailCounterparty: zod.string().nullish(),
+      address: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * @summary Create a new PII record (admin)
+ */
+export const CreatePiiRecordBody = zod.object({
+  name: zod.string(),
+  company: zod.string().optional(),
+  phone: zod.string().optional(),
+  nationalId: zod.string().optional(),
+  bankAccount: zod.string().optional(),
+  panNumber: zod.string().optional(),
+  emailCounterparty: zod.string().optional(),
+  address: zod.string().optional(),
+});
+
+/**
+ * @summary Delete a PII record (admin)
+ */
+export const DeletePiiRecordParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Reveal (decrypt) a single PII field for an authorized user
+ */
+export const RevealPiiFieldBody = zod.object({
+  recordId: zod.number(),
+  fieldName: zod.enum([
+    "phone",
+    "nationalId",
+    "bankAccount",
+    "panNumber",
+    "emailCounterparty",
+    "address",
+  ]),
+});
+
+export const RevealPiiFieldResponse = zod.object({
+  value: zod.string(),
+});
+
+/**
+ * @summary Get PII field unmask permissions matrix (admin)
+ */
+export const GetPiiFieldPermissionsResponse = zod.object({
+  fieldTypes: zod.array(zod.string()),
+  roles: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+    }),
+  ),
+  permissions: zod.array(
+    zod.object({
+      roleId: zod.number(),
+      fieldType: zod.string(),
+      canUnmask: zod.boolean(),
+    }),
+  ),
+});
+
+/**
+ * @summary Update PII field unmask permissions (admin)
+ */
+export const UpdatePiiFieldPermissionsBody = zod.object({
+  permissions: zod.array(
+    zod.object({
+      roleId: zod.number(),
+      fieldType: zod.string(),
+      canUnmask: zod.boolean(),
+    }),
+  ),
+});
+
+export const UpdatePiiFieldPermissionsResponse = zod.object({
+  fieldTypes: zod.array(zod.string()),
+  roles: zod.array(
+    zod.object({
+      id: zod.number(),
+      name: zod.string(),
+    }),
+  ),
+  permissions: zod.array(
+    zod.object({
+      roleId: zod.number(),
+      fieldType: zod.string(),
+      canUnmask: zod.boolean(),
+    }),
+  ),
+});
+
+/**
+ * @summary Re-encrypt all PII records with a new key (admin only)
+ */
+export const RotatePiiKeyBody = zod.object({
+  newKey: zod.string().describe("New 64-char hex AES-256 key"),
+});
+
+export const RotatePiiKeyResponse = zod.object({
+  rotated: zod.number().describe("Number of records re-encrypted"),
+  success: zod.boolean(),
 });

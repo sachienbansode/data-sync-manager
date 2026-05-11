@@ -94,11 +94,7 @@ export default function AuditLog() {
       });
       if (!resp.ok) throw new Error("Export failed");
       const result = await resp.json();
-      const entries: {
-        id: number; userEmail?: string | null; action: string; ipAddress?: string | null;
-        details?: string | null; createdAt: string; resourceType?: string | null;
-        resourceId?: string | null; fieldName?: string | null;
-      }[] = result.entries;
+      const entries: import("@workspace/api-client-react").AuditLogEntry[] = result.entries;
 
       const header = "ID,Timestamp,User Email,Action,Resource Type,Resource ID,Field,IP Address,Details\n";
       const rows = entries.map(e => [
@@ -253,9 +249,6 @@ export default function AuditLog() {
                 filteredEntries.map((entry) => {
                   const meta = ACTION_REGISTRY[entry.action];
                   const pii = isPiiRow(entry.action);
-                  const resourceType = (entry as Record<string, unknown>).resourceType as string | null | undefined;
-                  const resourceId = (entry as Record<string, unknown>).resourceId as string | null | undefined;
-                  const fieldName = (entry as Record<string, unknown>).fieldName as string | null | undefined;
                   return (
                     <TableRow key={entry.id} className={pii ? "bg-amber-50/40 dark:bg-amber-950/10" : undefined}>
                       <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">
@@ -275,13 +268,13 @@ export default function AuditLog() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground font-mono">
-                        {resourceType ?? "—"}
+                        {entry.resourceType ?? "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground font-mono">
-                        {resourceId ?? "—"}
+                        {entry.resourceId ?? "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground font-mono">
-                        {fieldName ?? "—"}
+                        {entry.fieldName ?? "—"}
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground font-mono">
                         {entry.ipAddress ? (

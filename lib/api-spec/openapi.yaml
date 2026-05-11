@@ -911,6 +911,12 @@ components:
           type: ["string", "null"]
         ipAddress:
           type: ["string", "null"]
+        resourceType:
+          type: ["string", "null"]
+        resourceId:
+          type: ["string", "null"]
+        fieldName:
+          type: ["string", "null"]
         createdAt:
           type: string
           format: date-time

@@ -8,7 +8,7 @@ import {
   piiRecordsTable,
   PII_FIELD_TYPES,
 } from "@workspace/db";
-import { authenticate, requireRole } from "../middlewares/authenticate";
+import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey, updateCachedKey } from "../lib/crypto";
 
 const router: IRouter = Router();
@@ -69,7 +69,7 @@ setInterval(() => {
 }, 60_000);
 
 // ─── GET /pii/records ─────────────────────────────────────────────────────────
-router.get("/pii/records", authenticate, async (req, res) => {
+router.get("/pii/records", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const pageSize = Math.min(100, parseInt(req.query.pageSize as string) || 20);
   const offset = (page - 1) * pageSize;
@@ -86,7 +86,7 @@ router.get("/pii/records", authenticate, async (req, res) => {
 });
 
 // ─── GET /pii/my-permissions — which fields the current user's role can unmask ─
-router.get("/pii/my-permissions", authenticate, async (req, res) => {
+router.get("/pii/my-permissions", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const roleId = req.user!.roleId;
   const perms = await db.select({ fieldType: piiFieldPermissionsTable.fieldType, canUnmask: piiFieldPermissionsTable.canUnmask })
     .from(piiFieldPermissionsTable)
@@ -97,7 +97,7 @@ router.get("/pii/my-permissions", authenticate, async (req, res) => {
 });
 
 // ─── POST /pii/records ────────────────────────────────────────────────────────
-router.post("/pii/records", authenticate, requireRole("Admin"), async (req, res) => {
+router.post("/pii/records", authenticate, requirePageAccess("/pii-records"), requireRole("Admin"), async (req, res) => {
   await loadEncryptionKey();
 
   const { name, company, phone, nationalId, bankAccount, panNumber, emailCounterparty, address } = req.body as {
@@ -137,7 +137,7 @@ router.post("/pii/records", authenticate, requireRole("Admin"), async (req, res)
 });
 
 // ─── DELETE /pii/records/:id ──────────────────────────────────────────────────
-router.delete("/pii/records/:id", authenticate, requireRole("Admin"), async (req, res) => {
+router.delete("/pii/records/:id", authenticate, requirePageAccess("/pii-records"), requireRole("Admin"), async (req, res) => {
   const id = parseInt(req.params.id as string);
   const [existing] = await db.select().from(piiRecordsTable).where(eq(piiRecordsTable.id, id));
   if (!existing) {
@@ -158,7 +158,7 @@ router.delete("/pii/records/:id", authenticate, requireRole("Admin"), async (req
 });
 
 // ─── POST /pii/reveal ─────────────────────────────────────────────────────────
-router.post("/pii/reveal", authenticate, async (req, res) => {
+router.post("/pii/reveal", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const { recordId, fieldName, recordType = "pii_record" } = req.body as {
     recordId: number;
     fieldName: string;

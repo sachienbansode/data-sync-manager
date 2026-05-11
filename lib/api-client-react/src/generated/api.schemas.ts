@@ -176,6 +176,12 @@ export interface AuditLogEntry {
   details: string | null;
   /** @nullable */
   ipAddress?: string | null;
+  /** @nullable */
+  resourceType?: string | null;
+  /** @nullable */
+  resourceId?: string | null;
+  /** @nullable */
+  fieldName?: string | null;
   createdAt: string;
 }
 
@@ -193,6 +199,103 @@ export interface AuditLogResponse {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface PiiRecordMasked {
+  id: number;
+  name: string;
+  /** @nullable */
+  company?: string | null;
+  /** @nullable */
+  phone?: string | null;
+  /** @nullable */
+  nationalId?: string | null;
+  /** @nullable */
+  bankAccount?: string | null;
+  /** @nullable */
+  panNumber?: string | null;
+  /** @nullable */
+  emailCounterparty?: string | null;
+  /** @nullable */
+  address?: string | null;
+  createdAt: string;
+}
+
+export interface PiiRecordListResponse {
+  records: PiiRecordMasked[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface PiiRecordInput {
+  name: string;
+  company?: string;
+  phone?: string;
+  nationalId?: string;
+  bankAccount?: string;
+  panNumber?: string;
+  emailCounterparty?: string;
+  address?: string;
+}
+
+export type PiiRevealInputFieldName =
+  (typeof PiiRevealInputFieldName)[keyof typeof PiiRevealInputFieldName];
+
+export const PiiRevealInputFieldName = {
+  phone: "phone",
+  nationalId: "nationalId",
+  bankAccount: "bankAccount",
+  panNumber: "panNumber",
+  emailCounterparty: "emailCounterparty",
+  address: "address",
+} as const;
+
+export interface PiiRevealInput {
+  recordId: number;
+  fieldName: PiiRevealInputFieldName;
+}
+
+export interface PiiRevealResponse {
+  value: string;
+}
+
+export type PiiFieldPermissionsMatrixRolesItem = {
+  id: number;
+  name: string;
+};
+
+export type PiiFieldPermissionsMatrixPermissionsItem = {
+  roleId: number;
+  fieldType: string;
+  canUnmask: boolean;
+};
+
+export interface PiiFieldPermissionsMatrix {
+  fieldTypes: string[];
+  roles: PiiFieldPermissionsMatrixRolesItem[];
+  permissions: PiiFieldPermissionsMatrixPermissionsItem[];
+}
+
+export type PiiFieldPermissionsUpdatePermissionsItem = {
+  roleId: number;
+  fieldType: string;
+  canUnmask: boolean;
+};
+
+export interface PiiFieldPermissionsUpdate {
+  permissions: PiiFieldPermissionsUpdatePermissionsItem[];
+}
+
+export interface PiiRotateKeyInput {
+  /** New 64-char hex AES-256 key */
+  newKey: string;
+}
+
+export interface PiiRotateKeyResponse {
+  /** Number of records re-encrypted */
+  rotated: number;
+  success: boolean;
 }
 
 export type M365CallbackParams = {
@@ -225,4 +328,9 @@ export type GetAuditLogParams = {
    * @nullable
    */
   action?: string | null;
+};
+
+export type ListPiiRecordsParams = {
+  page?: number;
+  pageSize?: number;
 };

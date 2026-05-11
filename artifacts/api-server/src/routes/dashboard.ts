@@ -85,6 +85,9 @@ router.get("/dashboard/audit-log", authenticate, requirePageAccess("/audit-log")
       action: auditLogsTable.action,
       details: auditLogsTable.details,
       ipAddress: auditLogsTable.ipAddress,
+      resourceType: auditLogsTable.resourceType,
+      resourceId: auditLogsTable.resourceId,
+      fieldName: auditLogsTable.fieldName,
       createdAt: auditLogsTable.createdAt,
     })
     .from(auditLogsTable)

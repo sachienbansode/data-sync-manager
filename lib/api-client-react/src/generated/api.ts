@@ -23,6 +23,7 @@ import type {
   DashboardSummary,
   GetAuditLogParams,
   HealthStatus,
+  ListPiiRecordsParams,
   ListUsersParams,
   LoginInput,
   M365CallbackParams,
@@ -30,6 +31,15 @@ import type {
   MfaVerifyInput,
   PagePermission,
   PagePermissionUpdate,
+  PiiFieldPermissionsMatrix,
+  PiiFieldPermissionsUpdate,
+  PiiRecordInput,
+  PiiRecordListResponse,
+  PiiRecordMasked,
+  PiiRevealInput,
+  PiiRevealResponse,
+  PiiRotateKeyInput,
+  PiiRotateKeyResponse,
   RefreshInput,
   Role,
   TokenPair,
@@ -2033,3 +2043,608 @@ export function useGetAuditLog<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary List PII records (all fields masked)
+ */
+export const getListPiiRecordsUrl = (params?: ListPiiRecordsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/pii/records?${stringifiedParams}`
+    : `/api/pii/records`;
+};
+
+export const listPiiRecords = async (
+  params?: ListPiiRecordsParams,
+  options?: RequestInit,
+): Promise<PiiRecordListResponse> => {
+  return customFetch<PiiRecordListResponse>(getListPiiRecordsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListPiiRecordsQueryKey = (params?: ListPiiRecordsParams) => {
+  return [`/api/pii/records`, ...(params ? [params] : [])] as const;
+};
+
+export const getListPiiRecordsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPiiRecords>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListPiiRecordsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPiiRecords>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListPiiRecordsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listPiiRecords>>> = ({
+    signal,
+  }) => listPiiRecords(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPiiRecords>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPiiRecordsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPiiRecords>>
+>;
+export type ListPiiRecordsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List PII records (all fields masked)
+ */
+
+export function useListPiiRecords<
+  TData = Awaited<ReturnType<typeof listPiiRecords>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListPiiRecordsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPiiRecords>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPiiRecordsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a new PII record (admin)
+ */
+export const getCreatePiiRecordUrl = () => {
+  return `/api/pii/records`;
+};
+
+export const createPiiRecord = async (
+  piiRecordInput: PiiRecordInput,
+  options?: RequestInit,
+): Promise<PiiRecordMasked> => {
+  return customFetch<PiiRecordMasked>(getCreatePiiRecordUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(piiRecordInput),
+  });
+};
+
+export const getCreatePiiRecordMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPiiRecord>>,
+    TError,
+    { data: BodyType<PiiRecordInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createPiiRecord>>,
+  TError,
+  { data: BodyType<PiiRecordInput> },
+  TContext
+> => {
+  const mutationKey = ["createPiiRecord"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createPiiRecord>>,
+    { data: BodyType<PiiRecordInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createPiiRecord(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreatePiiRecordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createPiiRecord>>
+>;
+export type CreatePiiRecordMutationBody = BodyType<PiiRecordInput>;
+export type CreatePiiRecordMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a new PII record (admin)
+ */
+export const useCreatePiiRecord = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createPiiRecord>>,
+    TError,
+    { data: BodyType<PiiRecordInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createPiiRecord>>,
+  TError,
+  { data: BodyType<PiiRecordInput> },
+  TContext
+> => {
+  return useMutation(getCreatePiiRecordMutationOptions(options));
+};
+
+/**
+ * @summary Delete a PII record (admin)
+ */
+export const getDeletePiiRecordUrl = (id: number) => {
+  return `/api/pii/records/${id}`;
+};
+
+export const deletePiiRecord = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeletePiiRecordUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeletePiiRecordMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePiiRecord>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deletePiiRecord>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deletePiiRecord"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deletePiiRecord>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deletePiiRecord(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeletePiiRecordMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deletePiiRecord>>
+>;
+
+export type DeletePiiRecordMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a PII record (admin)
+ */
+export const useDeletePiiRecord = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deletePiiRecord>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deletePiiRecord>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeletePiiRecordMutationOptions(options));
+};
+
+/**
+ * @summary Reveal (decrypt) a single PII field for an authorized user
+ */
+export const getRevealPiiFieldUrl = () => {
+  return `/api/pii/reveal`;
+};
+
+export const revealPiiField = async (
+  piiRevealInput: PiiRevealInput,
+  options?: RequestInit,
+): Promise<PiiRevealResponse> => {
+  return customFetch<PiiRevealResponse>(getRevealPiiFieldUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(piiRevealInput),
+  });
+};
+
+export const getRevealPiiFieldMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revealPiiField>>,
+    TError,
+    { data: BodyType<PiiRevealInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof revealPiiField>>,
+  TError,
+  { data: BodyType<PiiRevealInput> },
+  TContext
+> => {
+  const mutationKey = ["revealPiiField"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof revealPiiField>>,
+    { data: BodyType<PiiRevealInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return revealPiiField(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RevealPiiFieldMutationResult = NonNullable<
+  Awaited<ReturnType<typeof revealPiiField>>
+>;
+export type RevealPiiFieldMutationBody = BodyType<PiiRevealInput>;
+export type RevealPiiFieldMutationError = ErrorType<void>;
+
+/**
+ * @summary Reveal (decrypt) a single PII field for an authorized user
+ */
+export const useRevealPiiField = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof revealPiiField>>,
+    TError,
+    { data: BodyType<PiiRevealInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof revealPiiField>>,
+  TError,
+  { data: BodyType<PiiRevealInput> },
+  TContext
+> => {
+  return useMutation(getRevealPiiFieldMutationOptions(options));
+};
+
+/**
+ * @summary Get PII field unmask permissions matrix (admin)
+ */
+export const getGetPiiFieldPermissionsUrl = () => {
+  return `/api/pii/field-permissions`;
+};
+
+export const getPiiFieldPermissions = async (
+  options?: RequestInit,
+): Promise<PiiFieldPermissionsMatrix> => {
+  return customFetch<PiiFieldPermissionsMatrix>(
+    getGetPiiFieldPermissionsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPiiFieldPermissionsQueryKey = () => {
+  return [`/api/pii/field-permissions`] as const;
+};
+
+export const getGetPiiFieldPermissionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPiiFieldPermissions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPiiFieldPermissions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPiiFieldPermissionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPiiFieldPermissions>>
+  > = ({ signal }) => getPiiFieldPermissions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPiiFieldPermissions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPiiFieldPermissionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPiiFieldPermissions>>
+>;
+export type GetPiiFieldPermissionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get PII field unmask permissions matrix (admin)
+ */
+
+export function useGetPiiFieldPermissions<
+  TData = Awaited<ReturnType<typeof getPiiFieldPermissions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getPiiFieldPermissions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPiiFieldPermissionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update PII field unmask permissions (admin)
+ */
+export const getUpdatePiiFieldPermissionsUrl = () => {
+  return `/api/pii/field-permissions`;
+};
+
+export const updatePiiFieldPermissions = async (
+  piiFieldPermissionsUpdate: PiiFieldPermissionsUpdate,
+  options?: RequestInit,
+): Promise<PiiFieldPermissionsMatrix> => {
+  return customFetch<PiiFieldPermissionsMatrix>(
+    getUpdatePiiFieldPermissionsUrl(),
+    {
+      ...options,
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(piiFieldPermissionsUpdate),
+    },
+  );
+};
+
+export const getUpdatePiiFieldPermissionsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePiiFieldPermissions>>,
+    TError,
+    { data: BodyType<PiiFieldPermissionsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updatePiiFieldPermissions>>,
+  TError,
+  { data: BodyType<PiiFieldPermissionsUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updatePiiFieldPermissions"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updatePiiFieldPermissions>>,
+    { data: BodyType<PiiFieldPermissionsUpdate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updatePiiFieldPermissions(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdatePiiFieldPermissionsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updatePiiFieldPermissions>>
+>;
+export type UpdatePiiFieldPermissionsMutationBody =
+  BodyType<PiiFieldPermissionsUpdate>;
+export type UpdatePiiFieldPermissionsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update PII field unmask permissions (admin)
+ */
+export const useUpdatePiiFieldPermissions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updatePiiFieldPermissions>>,
+    TError,
+    { data: BodyType<PiiFieldPermissionsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updatePiiFieldPermissions>>,
+  TError,
+  { data: BodyType<PiiFieldPermissionsUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdatePiiFieldPermissionsMutationOptions(options));
+};
+
+/**
+ * @summary Re-encrypt all PII records with a new key (admin only)
+ */
+export const getRotatePiiKeyUrl = () => {
+  return `/api/pii/rotate-key`;
+};
+
+export const rotatePiiKey = async (
+  piiRotateKeyInput: PiiRotateKeyInput,
+  options?: RequestInit,
+): Promise<PiiRotateKeyResponse> => {
+  return customFetch<PiiRotateKeyResponse>(getRotatePiiKeyUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(piiRotateKeyInput),
+  });
+};
+
+export const getRotatePiiKeyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rotatePiiKey>>,
+    TError,
+    { data: BodyType<PiiRotateKeyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rotatePiiKey>>,
+  TError,
+  { data: BodyType<PiiRotateKeyInput> },
+  TContext
+> => {
+  const mutationKey = ["rotatePiiKey"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rotatePiiKey>>,
+    { data: BodyType<PiiRotateKeyInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return rotatePiiKey(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RotatePiiKeyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rotatePiiKey>>
+>;
+export type RotatePiiKeyMutationBody = BodyType<PiiRotateKeyInput>;
+export type RotatePiiKeyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Re-encrypt all PII records with a new key (admin only)
+ */
+export const useRotatePiiKey = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rotatePiiKey>>,
+    TError,
+    { data: BodyType<PiiRotateKeyInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rotatePiiKey>>,
+  TError,
+  { data: BodyType<PiiRotateKeyInput> },
+  TContext
+> => {
+  return useMutation(getRotatePiiKeyMutationOptions(options));
+};

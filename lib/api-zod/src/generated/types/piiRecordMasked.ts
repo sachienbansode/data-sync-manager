@@ -6,22 +6,22 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export interface AuditLogEntry {
+export interface PiiRecordMasked {
   id: number;
+  name: string;
   /** @nullable */
-  userId: number | null;
+  company?: string | null;
   /** @nullable */
-  userEmail: string | null;
-  action: string;
+  phone?: string | null;
   /** @nullable */
-  details: string | null;
+  nationalId?: string | null;
   /** @nullable */
-  ipAddress?: string | null;
+  bankAccount?: string | null;
   /** @nullable */
-  resourceType?: string | null;
+  panNumber?: string | null;
   /** @nullable */
-  resourceId?: string | null;
+  emailCounterparty?: string | null;
   /** @nullable */
-  fieldName?: string | null;
+  address?: string | null;
   createdAt: Date;
 }

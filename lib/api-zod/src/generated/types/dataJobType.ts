@@ -11,4 +11,5 @@ export type DataJobType = (typeof DataJobType)[keyof typeof DataJobType];
 export const DataJobType = {
   fetch: "fetch",
   upload_csv: "upload_csv",
+  push: "push",
 } as const;

@@ -1507,7 +1507,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [fetch, upload_csv]
+          enum: [fetch, upload_csv, push]
         status:
           type: string
           enum: [pending, running, success, failed]

@@ -99,58 +99,25 @@ async function transformRows(
   });
 }
 
-function toTradingCsv(rows: { tradingField: string; value: string }[][]): string {
-  if (rows.length === 0) return "";
-  const headers = rows[0].map((c) => c.tradingField).join("|");
-  const dataLines = rows.map((r) => r.map((c) => c.value).join("|"));
-  return [headers, ...dataLines].join("\n");
+// ── Pipe-delimited CSV serialization with proper RFC 4180 quoting ───────────
+// A field is quoted when it contains a pipe, double-quote, CR, or LF.
+// Double-quote chars inside quoted fields are escaped by doubling them.
+function quotePipeCsvField(value: string): string {
+  if (/[|"\r\n]/.test(value)) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
 }
 
-/**
- * Parse a pipe-delimited CSV line, respecting double-quoted fields.
- * A quoted field may contain literal pipes and doubled quotes ("").
- */
-function parsePipeCsvLine(line: string): string[] {
-  const fields: string[] = [];
-  let i = 0;
-  while (i <= line.length) {
-    if (i === line.length) {
-      fields.push("");
-      break;
-    }
-    if (line[i] === '"') {
-      // Quoted field
-      let field = "";
-      i++; // skip opening quote
-      while (i < line.length) {
-        if (line[i] === '"') {
-          if (line[i + 1] === '"') {
-            field += '"';
-            i += 2;
-          } else {
-            i++; // skip closing quote
-            break;
-          }
-        } else {
-          field += line[i++];
-        }
-      }
-      fields.push(field);
-      // skip delimiter or end
-      if (line[i] === "|") i++;
-    } else {
-      // Unquoted field — read until next pipe
-      const end = line.indexOf("|", i);
-      if (end === -1) {
-        fields.push(line.slice(i));
-        break;
-      } else {
-        fields.push(line.slice(i, end));
-        i = end + 1;
-      }
-    }
-  }
-  return fields;
+function toPipeCsvRow(fields: string[]): string {
+  return fields.map(quotePipeCsvField).join("|");
+}
+
+function toTradingCsv(rows: { tradingField: string; value: string }[][]): string {
+  if (rows.length === 0) return "";
+  const headers = toPipeCsvRow(rows[0].map((c) => c.tradingField));
+  const dataLines = rows.map((r) => toPipeCsvRow(r.map((c) => c.value)));
+  return [headers, ...dataLines].join("\n");
 }
 
 // ── GET /api/workflow/connections — BackOffice connections for fetch/push ───
@@ -465,8 +432,8 @@ router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
       .where(eq(dataStagingTable.jobId, id)).orderBy(dataStagingTable.rowIndex);
     if (rows.length === 0) { res.status(404).json({ error: "No data for this job" }); return; }
     const hdrs = Object.keys(rows[0].rawData as Record<string, unknown>);
-    const dataLines = rows.map((r) => hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
-    csvContent = [hdrs.join("|"), ...dataLines].join("\n");
+    const dataLines = rows.map((r) => toPipeCsvRow(hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? ""))));
+    csvContent = [toPipeCsvRow(hdrs), ...dataLines].join("\n");
   } else {
     const transformed = await transformRows(id, mappings);
     csvContent = toTradingCsv(transformed);
@@ -549,8 +516,8 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
       return;
     }
     const hdrs = Object.keys(rows[0].rawData as Record<string, unknown>);
-    const dataLines = rows.map((r) => hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
-    csvContent = [hdrs.join("|"), ...dataLines].join("\n");
+    const dataLines = rows.map((r) => toPipeCsvRow(hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? ""))));
+    csvContent = [toPipeCsvRow(hdrs), ...dataLines].join("\n");
   } else {
     const transformed = await transformRows(id, mappings);
     csvContent = toTradingCsv(transformed);

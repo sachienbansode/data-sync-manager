@@ -720,7 +720,7 @@ export const ListDataJobsResponse = zod.object({
   jobs: zod.array(
     zod.object({
       id: zod.number(),
-      type: zod.enum(["fetch", "upload_csv"]),
+      type: zod.enum(["fetch", "upload_csv", "push"]),
       status: zod.enum(["pending", "running", "success", "failed"]),
       triggeredBy: zod.number().nullish(),
       triggeredByEmail: zod.string().nullish(),
@@ -763,7 +763,7 @@ export const GetDataJobParams = zod.object({
 export const GetDataJobResponse = zod.object({
   job: zod.object({
     id: zod.number(),
-    type: zod.enum(["fetch", "upload_csv"]),
+    type: zod.enum(["fetch", "upload_csv", "push"]),
     status: zod.enum(["pending", "running", "success", "failed"]),
     triggeredBy: zod.number().nullish(),
     triggeredByEmail: zod.string().nullish(),

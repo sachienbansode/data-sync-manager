@@ -102,6 +102,7 @@ async function issueTokens(userId: number) {
   const pagePermissions = await getPagePermissions(user.roleId);
 
   return {
+    userId: user.id,
     accessToken,
     refreshToken: rawRefresh, // return raw opaque token
     user: {

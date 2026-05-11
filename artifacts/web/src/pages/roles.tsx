@@ -20,8 +20,8 @@ export default function Roles() {
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
 
   const { data: permissions, isLoading: isLoadingPermissions } = useGetRolePagePermissions(
-    selectedRoleId!, 
-    { query: { enabled: !!selectedRoleId } }
+    selectedRoleId!,
+    { query: { queryKey: [], enabled: !!selectedRoleId } }
   );
 
   const updatePermissionsMutation = useUpdateRolePagePermissions();

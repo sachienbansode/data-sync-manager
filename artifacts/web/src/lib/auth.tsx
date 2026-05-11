@@ -15,29 +15,26 @@ type UserProfile = {
   pagePermissions?: string[];
 };
 
-// NOTE: Tokens are stored in sessionStorage (not httpOnly cookies) because this app
-// is a same-origin SPA deployed via Replit's reverse proxy. The XSS risk is mitigated
-// by: strict CSP headers on the server, no eval/innerHTML in the codebase, and
-// a short 15-minute access token TTL. A future hardening step would move to
-// httpOnly SameSite=Strict cookies served by the API (requires CORS rework).
-const REFRESH_TOKEN_KEY = "ashika_rt";
-const ACCESS_TOKEN_KEY = "ashika_at";
-
-// In-memory access token — short-lived, never persisted to disk
-let _accessToken: string | null = sessionStorage.getItem(ACCESS_TOKEN_KEY);
+// NOTE: Access tokens are intentionally NOT persisted to sessionStorage.
+// They are short-lived (15 min) and kept only in memory. On every page reload
+// we always exchange the stored refresh token for a fresh access token, so an
+// expired in-memory token can never block session restoration.
+// NOTE on XSS risk: tokens are in JS memory (not httpOnly cookies). This is an
+// acknowledged tradeoff for a same-origin SPA. Mitigations: 15-min access token
+// TTL, strict CSP, no eval/innerHTML in codebase. Future hardening: move to
+// httpOnly SameSite=Strict cookies (requires CORS rework).
+let _accessToken: string | null = null;
 
 export const setAccessToken = (token: string | null): void => {
   _accessToken = token;
-  if (token) {
-    sessionStorage.setItem(ACCESS_TOKEN_KEY, token);
-  } else {
-    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
-  }
 };
 
 export const getAccessToken = (): string | null => _accessToken;
 
-// Opaque refresh token persisted across tab sessions (same browser tab group)
+// Refresh token is persisted in sessionStorage (survives F5 in same tab, cleared
+// when the browser session ends).
+const REFRESH_TOKEN_KEY = "ashika_rt";
+
 export const setRefreshToken = (token: string | null): void => {
   if (token) {
     sessionStorage.setItem(REFRESH_TOKEN_KEY, token);
@@ -49,7 +46,8 @@ export const setRefreshToken = (token: string | null): void => {
 export const getRefreshToken = (): string | null =>
   sessionStorage.getItem(REFRESH_TOKEN_KEY);
 
-// Bootstrap: try to use stored refresh token to get a new access token on load
+// Bootstrap: always called on mount. Exchanges the stored refresh token for a
+// fresh access token so an expired in-memory token never blocks session restore.
 async function bootstrapSession(): Promise<boolean> {
   const rt = getRefreshToken();
   if (!rt) return false;
@@ -89,15 +87,15 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [ready, setReady] = useState(false);
-  const [hasToken, setHasToken] = useState(!!_accessToken);
+  // hasToken is set to true only AFTER a successful bootstrap or login.
+  // This prevents useGetMe from firing with a stale or absent token.
+  const [hasToken, setHasToken] = useState(false);
   const [, setLocation] = useLocation();
 
-  // On mount: attempt to bootstrap session from stored refresh token
+  // On mount: always bootstrap from stored refresh token (even if an old
+  // access token might have been in memory — it is not persisted, so memory
+  // is clean after a page reload).
   useEffect(() => {
-    if (_accessToken) {
-      setHasToken(true);
-      return;
-    }
     bootstrapSession().then((ok) => {
       setHasToken(ok);
       if (!ok) setReady(true);
@@ -119,9 +117,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) {
       setUser(data as UserProfile);
     } else if (isError) {
+      // /me failed (e.g. access token issued with wrong secret). Clear everything.
       setUser(null);
       setAccessToken(null);
       setRefreshToken(null);
+      setHasToken(false);
     }
     setReady(true);
   }, [data, isLoading, isError, hasToken]);
@@ -148,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRefreshToken(null);
     setUser(null);
     setHasToken(false);
+    setReady(true);
     setLocation("/login");
   };
 

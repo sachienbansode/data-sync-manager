@@ -27,7 +27,7 @@ const PAGES = [
 
 const PAGE_ACCESS: Record<string, string[]> = {
   Admin: ["/dashboard", "/users", "/roles", "/profile", "/audit-log", "/docs", "/workflow", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
-  Manager: ["/dashboard", "/users", "/profile", "/docs", "/workflow"],
+  Manager: ["/dashboard", "/profile", "/docs", "/workflow"],
   Analyst: ["/dashboard", "/profile", "/docs", "/workflow"],
   Viewer: ["/dashboard", "/profile", "/docs"],
   ExternalUser: ["/dashboard", "/profile", "/docs"],

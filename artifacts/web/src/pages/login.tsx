@@ -46,8 +46,8 @@ export default function Login() {
       if (response.requiresMfa && response.tempToken) {
         setTempToken(response.tempToken);
         setStep("mfa");
-      } else if (response.accessToken && response.user) {
-        login(response.accessToken, response.user);
+      } else if (response.accessToken && response.refreshToken && response.user) {
+        login(response.accessToken, response.refreshToken, response.user);
         setLocation("/dashboard");
       }
     } catch {
@@ -62,8 +62,8 @@ export default function Login() {
     try {
       const response = await verifyMfaMutation.mutateAsync({ data: { tempToken, code } });
 
-      if (response.accessToken && response.user) {
-        login(response.accessToken, response.user);
+      if (response.accessToken && response.refreshToken && response.user) {
+        login(response.accessToken, response.refreshToken, response.user);
         setLocation("/dashboard");
       }
     } catch {

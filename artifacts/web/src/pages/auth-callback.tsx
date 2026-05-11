@@ -3,6 +3,12 @@ import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { Loader2 } from "lucide-react";
 
+type ExchangeResponse = {
+  accessToken?: string;
+  refreshToken?: string;
+  user?: Parameters<ReturnType<typeof useAuth>["login"]>[2];
+};
+
 export default function AuthCallback() {
   const [, setLocation] = useLocation();
   const { login } = useAuth();
@@ -17,15 +23,15 @@ export default function AuthCallback() {
       return;
     }
 
-    fetch("/api/auth/m365/exchange", {
+    fetch(`${import.meta.env.BASE_URL}api/auth/m365/exchange`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code }),
     })
       .then((res) => res.json())
-      .then((data: { accessToken?: string; user?: Parameters<typeof login>[1] }) => {
-        if (data.accessToken && data.user) {
-          login(data.accessToken, data.user);
+      .then((data: ExchangeResponse) => {
+        if (data.accessToken && data.refreshToken && data.user) {
+          login(data.accessToken, data.refreshToken, data.user);
           setLocation("/dashboard");
         } else {
           setLocation("/login?error=exchange_failed");
@@ -42,7 +48,7 @@ export default function AuthCallback() {
       className="min-h-screen flex flex-col items-center justify-center gap-4 bg-background"
     >
       <Loader2 className="h-10 w-10 animate-spin text-primary" />
-      <p className="text-sm text-muted-foreground">Completing sign-in...</p>
+      <p className="text-sm text-muted-foreground">Completing sign-in…</p>
     </div>
   );
 }

@@ -268,7 +268,7 @@ router.post("/auth/mfa/confirm", authenticate, async (req, res): Promise<void> =
     return;
   }
 
-  const valid = verifyMfaToken(parsed.data.code, mfaSecret.secret);
+  const valid = verifyMfaToken(confirmCode, mfaSecret.secret);
   if (!valid) {
     res.status(401).json({ error: "Invalid verification code" });
     return;

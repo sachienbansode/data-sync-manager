@@ -36,13 +36,16 @@ export default function AuditLog() {
   const { data, isLoading } = useGetAuditLog(queryParams);
 
   const commonActions = [
-    "user_login",
-    "user_logout",
-    "user_created",
-    "user_updated",
-    "mfa_enabled",
-    "mfa_disabled",
-    "role_permissions_updated"
+    { value: "LOGIN_SUCCESS", label: "Login Success" },
+    { value: "LOGIN_FAILED", label: "Login Failed" },
+    { value: "LOGOUT", label: "Logout" },
+    { value: "USER_CREATED", label: "User Created" },
+    { value: "USER_UPDATED", label: "User Updated" },
+    { value: "USER_DELETED", label: "User Deleted" },
+    { value: "MFA_ENABLED", label: "MFA Enabled" },
+    { value: "MFA_DISABLED", label: "MFA Disabled" },
+    { value: "PASSWORD_CHANGED", label: "Password Changed" },
+    { value: "ROLE_PERMISSIONS_UPDATED", label: "Role Permissions Updated" },
   ];
 
   return (
@@ -64,8 +67,8 @@ export default function AuditLog() {
                 <SelectContent>
                   <SelectItem value="all">All Actions</SelectItem>
                   {commonActions.map(action => (
-                    <SelectItem key={action} value={action}>
-                      <span className="font-mono text-xs">{action}</span>
+                    <SelectItem key={action.value} value={action.value}>
+                      <span className="font-mono text-xs">{action.label}</span>
                     </SelectItem>
                   ))}
                 </SelectContent>

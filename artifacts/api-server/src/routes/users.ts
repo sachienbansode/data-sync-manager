@@ -39,7 +39,7 @@ function buildUserSelect() {
 }
 
 // GET /users
-router.get("/users", authenticate, requireRole("Admin", "Manager"), async (req, res): Promise<void> => {
+router.get("/users", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
   const params = ListUsersQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

@@ -89,8 +89,8 @@ export default function PiiRecords() {
       const data = await res.json();
       setRecords(data.records);
       setTotal(data.total);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load records");
     } finally {
       setLoading(false);
     }
@@ -118,8 +118,8 @@ export default function PiiRecords() {
       setAddOpen(false);
       setForm(EMPTY_FORM);
       load();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to create record");
     } finally {
       setSubmitting(false);
     }
@@ -136,8 +136,8 @@ export default function PiiRecords() {
       toast.success("Record deleted");
       setDeleteId(null);
       load();
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete record");
     }
   }
 

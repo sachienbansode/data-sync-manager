@@ -42,8 +42,8 @@ export default function PiiPermissions() {
       const map = new Map<string, boolean>();
       data.permissions.forEach(p => map.set(`${p.roleId}:${p.fieldType}`, p.canUnmask));
       setLocalPerms(map);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load permissions");
     } finally {
       setLoading(false);
     }
@@ -78,8 +78,8 @@ export default function PiiPermissions() {
       });
       if (!res.ok) throw new Error("Failed to save permissions");
       toast.success("PII permissions saved successfully");
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to save permissions");
     } finally {
       setSaving(false);
     }

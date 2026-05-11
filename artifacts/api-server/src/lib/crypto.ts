@@ -5,43 +5,39 @@ const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
 let _cachedKey: string | null = null;
-let _ephemeralWarned = false;
 
-const HEX_64 = /^[0-9a-fA-F]{64}$/;
+export const HEX_64 = /^[0-9a-fA-F]{64}$/;
 
+/**
+ * Load and validate PII_ENCRYPTION_KEY from environment.
+ * Throws at startup if the key is missing or malformed — PII routes are
+ * unavailable until a valid 64-hex-char key is configured as a Replit Secret.
+ * Key material is never logged.
+ *
+ * Generate a key: openssl rand -hex 32
+ */
 export function loadEncryptionKey(): string {
   if (_cachedKey) return _cachedKey;
 
   const envKey = process.env.PII_ENCRYPTION_KEY;
 
-  if (envKey) {
-    if (!HEX_64.test(envKey)) {
-      throw new Error(
-        "PII_ENCRYPTION_KEY must be a 64-character hex string (32 bytes for AES-256)."
-      );
-    }
-    _cachedKey = envKey;
-    return _cachedKey;
-  }
-
-  if (process.env.NODE_ENV === "production") {
+  if (!envKey) {
     throw new Error(
-      "PII_ENCRYPTION_KEY is required in production. Set it as a Replit Secret."
+      "PII_ENCRYPTION_KEY is not set. " +
+      "Generate one with: openssl rand -hex 32 " +
+      "and add it as a Replit Secret before using PII routes."
     );
   }
 
-  if (!_ephemeralWarned) {
-    const ephemeral = randomBytes(32).toString("hex");
-    _cachedKey = ephemeral;
-    console.warn(
-      `\n⚠  PII_ENCRYPTION_KEY not set — using ephemeral key for this session only.\n` +
-      `   Data CANNOT be decrypted after restart. Set as Replit Secret:\n` +
-      `   PII_ENCRYPTION_KEY = ${ephemeral}\n`
+  if (!HEX_64.test(envKey)) {
+    throw new Error(
+      "PII_ENCRYPTION_KEY must be exactly 64 hexadecimal characters (32 bytes for AES-256). " +
+      "Generate a valid key with: openssl rand -hex 32"
     );
-    _ephemeralWarned = true;
   }
 
-  return _cachedKey!;
+  _cachedKey = envKey;
+  return _cachedKey;
 }
 
 export function updateCachedKey(newKey: string): void {

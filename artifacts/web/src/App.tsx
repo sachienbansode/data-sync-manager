@@ -13,6 +13,7 @@ import Profile from "@/pages/profile";
 import AuditLog from "@/pages/audit-log";
 import MfaSetup from "@/pages/mfa-setup";
 import Forbidden from "@/pages/403";
+import AuthCallback from "@/pages/auth-callback";
 import { ProtectedRoute } from "@/components/protected-route";
 
 const queryClient = new QueryClient();
@@ -49,6 +50,8 @@ function Router() {
       <Route path="/audit-log">
         <ProtectedRoute component={AuditLog} path="/audit-log" />
       </Route>
+
+      <Route path="/auth/callback" component={AuthCallback} />
 
       <Route component={NotFound} />
     </Switch>

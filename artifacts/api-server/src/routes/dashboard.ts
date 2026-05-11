@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc } from "drizzle-orm";
+import { eq, sql, desc, and } from "drizzle-orm";
 import { db, usersTable, rolesTable, auditLogsTable } from "@workspace/db";
 import { GetAuditLogQueryParams } from "@workspace/api-zod";
 import { authenticate, requireRole } from "../middlewares/authenticate";
@@ -66,7 +66,11 @@ router.get("/dashboard/audit-log", authenticate, requireRole("Admin"), async (re
   if (userId != null) conditions.push(eq(auditLogsTable.userId, userId));
   if (action != null) conditions.push(eq(auditLogsTable.action, action));
 
-  const whereClause = conditions.length > 0 ? (conditions.length === 1 ? conditions[0] : conditions[0]) : undefined;
+  const whereClause = conditions.length > 1
+    ? and(...(conditions as [typeof conditions[0], typeof conditions[0], ...typeof conditions]))
+    : conditions.length === 1
+    ? conditions[0]
+    : undefined;
 
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })

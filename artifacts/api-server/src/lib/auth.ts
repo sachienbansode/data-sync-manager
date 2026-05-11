@@ -2,11 +2,16 @@ import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import { authenticator } from "@otplib/preset-default";
 import QRCode from "qrcode";
+import crypto from "crypto";
 
 const SALT_ROUNDS = 12;
-const JWT_SECRET = process.env.SESSION_SECRET ?? "changeme-in-production";
+const JWT_SECRET = process.env.SESSION_SECRET;
+
+if (!JWT_SECRET) {
+  throw new Error("SESSION_SECRET environment variable must be set");
+}
+
 const ACCESS_TOKEN_TTL = "15m";
-const REFRESH_TOKEN_TTL = "7d";
 const TEMP_TOKEN_TTL = "5m";
 
 export interface JwtPayload {
@@ -14,7 +19,7 @@ export interface JwtPayload {
   email: string;
   roleId: number;
   roleName: string;
-  type: "access" | "refresh" | "temp";
+  type: "access" | "temp";
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -26,19 +31,30 @@ export async function comparePassword(plain: string, hash: string): Promise<bool
 }
 
 export function signAccessToken(payload: Omit<JwtPayload, "type">): string {
-  return jwt.sign({ ...payload, type: "access" }, JWT_SECRET, { expiresIn: ACCESS_TOKEN_TTL });
-}
-
-export function signRefreshToken(payload: Omit<JwtPayload, "type">): string {
-  return jwt.sign({ ...payload, type: "refresh" }, JWT_SECRET, { expiresIn: REFRESH_TOKEN_TTL });
+  return jwt.sign({ ...payload, type: "access" }, JWT_SECRET!, { expiresIn: ACCESS_TOKEN_TTL });
 }
 
 export function signTempToken(payload: Omit<JwtPayload, "type">): string {
-  return jwt.sign({ ...payload, type: "temp" }, JWT_SECRET, { expiresIn: TEMP_TOKEN_TTL });
+  return jwt.sign({ ...payload, type: "temp" }, JWT_SECRET!, { expiresIn: TEMP_TOKEN_TTL });
 }
 
 export function verifyToken(token: string): JwtPayload {
-  return jwt.verify(token, JWT_SECRET) as JwtPayload;
+  return jwt.verify(token, JWT_SECRET!) as JwtPayload;
+}
+
+// Opaque refresh token helpers
+export function generateRawRefreshToken(): string {
+  return crypto.randomBytes(40).toString("hex");
+}
+
+export function hashRefreshToken(raw: string): string {
+  return crypto.createHash("sha256").update(raw).digest("hex");
+}
+
+export function getRefreshTokenExpiry(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 7);
+  return d;
 }
 
 export function generateMfaSecret(): string {
@@ -60,10 +76,4 @@ export function verifyMfaToken(token: string, secret: string): boolean {
   } catch {
     return false;
   }
-}
-
-export function getRefreshTokenExpiry(): Date {
-  const d = new Date();
-  d.setDate(d.getDate() + 7);
-  return d;
 }

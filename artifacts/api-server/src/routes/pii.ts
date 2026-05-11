@@ -4,24 +4,36 @@ import {
   db,
   auditLogsTable,
   rolesTable,
+  appSettingsTable,
   piiFieldPermissionsTable,
   piiRecordsTable,
   PII_FIELD_TYPES,
   type PiiFieldType,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
-import { encrypt, decrypt } from "../lib/crypto";
+import { encrypt, decrypt, loadEncryptionKey, updateCachedKey } from "../lib/crypto";
 
 const router: IRouter = Router();
 
 const MASKED = "••••••••";
 
+// Maps camelCase API fieldNames → DB column keys on piiRecordsTable
 const FIELD_MAP: Record<string, keyof typeof piiRecordsTable.$inferSelect> = {
   phone: "phone",
   nationalId: "nationalId",
   bankAccount: "bankAccount",
   panNumber: "panNumber",
   emailCounterparty: "emailCounterparty",
+  address: "address",
+};
+
+// Maps camelCase API fieldNames → DB field_type strings in pii_field_permissions
+const FIELD_TYPE_MAP: Record<string, string> = {
+  phone: "phone",
+  nationalId: "national_id",
+  bankAccount: "bank_account",
+  panNumber: "pan_number",
+  emailCounterparty: "email_counterparty",
   address: "address",
 };
 
@@ -75,8 +87,21 @@ router.get("/pii/records", authenticate, async (req, res) => {
   });
 });
 
+// ─── GET /pii/my-permissions — which fields the current user's role can unmask ─
+router.get("/pii/my-permissions", authenticate, async (req, res) => {
+  const roleId = req.user!.roleId;
+  const perms = await db.select({ fieldType: piiFieldPermissionsTable.fieldType, canUnmask: piiFieldPermissionsTable.canUnmask })
+    .from(piiFieldPermissionsTable)
+    .where(eq(piiFieldPermissionsTable.roleId, roleId));
+
+  const allowed = perms.filter(p => p.canUnmask).map(p => p.fieldType);
+  res.json({ allowedFieldTypes: allowed });
+});
+
 // ─── POST /pii/records ────────────────────────────────────────────────────────
 router.post("/pii/records", authenticate, requireRole("Admin"), async (req, res) => {
+  await loadEncryptionKey();
+
   const { name, company, phone, nationalId, bankAccount, panNumber, emailCounterparty, address } = req.body as {
     name: string; company?: string; phone?: string; nationalId?: string;
     bankAccount?: string; panNumber?: string; emailCounterparty?: string; address?: string;
@@ -105,6 +130,8 @@ router.post("/pii/records", authenticate, requireRole("Admin"), async (req, res)
     userEmail: req.user!.email,
     action: "PII_RECORD_CREATED",
     details: `Created PII record for: ${name.trim()}`,
+    resourceType: "pii_record",
+    resourceId: String(record.id),
     ipAddress: req.ip ?? null,
   });
 
@@ -125,6 +152,8 @@ router.delete("/pii/records/:id", authenticate, requireRole("Admin"), async (req
     userEmail: req.user!.email,
     action: "PII_RECORD_DELETED",
     details: `Deleted PII record: ${existing.name} (id=${id})`,
+    resourceType: "pii_record",
+    resourceId: String(id),
     ipAddress: req.ip ?? null,
   });
   res.status(204).send();
@@ -132,7 +161,11 @@ router.delete("/pii/records/:id", authenticate, requireRole("Admin"), async (req
 
 // ─── POST /pii/reveal ─────────────────────────────────────────────────────────
 router.post("/pii/reveal", authenticate, async (req, res) => {
-  const { recordId, fieldName } = req.body as { recordId: number; fieldName: string };
+  const { recordId, fieldName, recordType = "pii_record" } = req.body as {
+    recordId: number;
+    fieldName: string;
+    recordType?: string;
+  };
   const userId = req.user!.sub;
   const roleId = req.user!.roleId;
 
@@ -146,12 +179,11 @@ router.post("/pii/reveal", authenticate, async (req, res) => {
     return;
   }
 
-  // Map camelCase fieldName → DB field_type
-  const dbFieldType = fieldName === "nationalId" ? "national_id"
-    : fieldName === "bankAccount" ? "bank_account"
-    : fieldName === "panNumber" ? "pan_number"
-    : fieldName === "emailCounterparty" ? "email_counterparty"
-    : fieldName as PiiFieldType;
+  const dbFieldType = FIELD_TYPE_MAP[fieldName];
+  if (!dbFieldType) {
+    res.status(400).json({ error: `Unknown fieldName: ${fieldName}` });
+    return;
+  }
 
   const [perm] = await db.select().from(piiFieldPermissionsTable).where(
     and(
@@ -177,11 +209,12 @@ router.post("/pii/reveal", authenticate, async (req, res) => {
     return;
   }
 
+  await loadEncryptionKey();
   let plaintext: string;
   try {
     plaintext = decrypt(encryptedValue);
   } catch {
-    res.status(500).json({ error: "Decryption failed. Data may be corrupted." });
+    res.status(500).json({ error: "Decryption failed. Data may be corrupted or key mismatch." });
     return;
   }
 
@@ -189,7 +222,10 @@ router.post("/pii/reveal", authenticate, async (req, res) => {
     userId,
     userEmail: req.user!.email,
     action: "PII_REVEAL",
-    details: `Revealed field '${fieldName}' on record id=${recordId} (${record.name})`,
+    details: `Revealed field '${fieldName}' on ${recordType} id=${recordId} (${record.name})`,
+    resourceType: recordType,
+    resourceId: String(recordId),
+    fieldName,
     ipAddress: req.ip ?? null,
   });
 
@@ -234,6 +270,7 @@ router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (
     userEmail: req.user!.email,
     action: "PII_PERMISSIONS_UPDATED",
     details: `Updated ${permissions.length} PII field permission(s)`,
+    resourceType: "pii_field_permissions",
     ipAddress: req.ip ?? null,
   });
 
@@ -247,6 +284,8 @@ router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (
 });
 
 // ─── POST /pii/rotate-key ─────────────────────────────────────────────────────
+// Re-encrypts all PII records with the new key, then updates the DB-stored key
+// and the in-memory cached key so decryption works immediately (no downtime).
 router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, res) => {
   const { newKey } = req.body as { newKey?: string };
 
@@ -255,6 +294,7 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
     return;
   }
 
+  await loadEncryptionKey();
   const records = await db.select().from(piiRecordsTable);
   let rotated = 0;
 
@@ -269,10 +309,10 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
       if (val) {
         try {
           const plain = decrypt(val);
-          updates[field as keyof typeof updates] = encrypt(plain, newKey) as never;
+          (updates as Record<string, string>)[field] = encrypt(plain, newKey);
           changed = true;
         } catch {
-          // Skip corrupted values
+          // Skip values that can't be decrypted with current key
         }
       }
     }
@@ -283,11 +323,18 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
     }
   }
 
+  // Update DB-stored key so future server restarts also use the new key
+  await db.update(appSettingsTable).set({ piiEncryptionKey: newKey });
+
+  // Update in-memory cache immediately — no restart required, no downtime
+  updateCachedKey(newKey);
+
   await db.insert(auditLogsTable).values({
     userId: req.user!.sub,
     userEmail: req.user!.email,
     action: "PII_KEY_ROTATED",
     details: `Re-encrypted ${rotated} PII record(s) with new key`,
+    resourceType: "pii_encryption_key",
     ipAddress: req.ip ?? null,
   });
 

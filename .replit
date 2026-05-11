@@ -34,4 +34,3 @@ externalPort = 3001
 [userenv]
 
 [userenv.shared]
-PII_ENCRYPTION_KEY = "1b61d7dbc6bfb9408e1b4302de23e26d1b9fd9c3a4c0cf78cd7be086b7f87201"

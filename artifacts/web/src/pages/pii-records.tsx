@@ -37,6 +37,16 @@ const EMPTY_FORM = {
   name: "", company: "", phone: "", nationalId: "", bankAccount: "", panNumber: "", emailCounterparty: "", address: "",
 };
 
+// Maps PiiField fieldName → DB field_type for permission lookup
+const FIELD_TYPE_MAP: Record<string, string> = {
+  phone: "phone",
+  nationalId: "national_id",
+  bankAccount: "bank_account",
+  panNumber: "pan_number",
+  emailCounterparty: "email_counterparty",
+  address: "address",
+};
+
 export default function PiiRecords() {
   const { user } = useAuth();
   const [records, setRecords] = useState<PiiRecordMasked[]>([]);
@@ -48,9 +58,25 @@ export default function PiiRecords() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [submitting, setSubmitting] = useState(false);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [allowedFields, setAllowedFields] = useState<Set<string>>(new Set());
 
   const apiBase = `${import.meta.env.BASE_URL}api`;
   const isAdmin = user?.roleName === "Admin";
+
+  // Fetch which field types the current user's role can unmask
+  useEffect(() => {
+    const token = getAccessToken();
+    fetch(`${apiBase}/pii/my-permissions`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(r => r.ok ? r.json() : { allowedFieldTypes: [] })
+      .then(d => setAllowedFields(new Set(d.allowedFieldTypes ?? [])))
+      .catch(() => setAllowedFields(new Set()));
+  }, []);
+
+  function canReveal(fieldName: string): boolean {
+    return allowedFields.has(FIELD_TYPE_MAP[fieldName] ?? fieldName);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -192,9 +218,9 @@ export default function PiiRecords() {
         <div className="rounded-md border bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800 p-3 text-sm text-amber-800 dark:text-amber-300 flex items-start gap-2">
           <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
           <span>
-            PII fields are stored encrypted using AES-256-GCM. The <span className="font-mono tracking-widest">••••••••</span> mask is applied server-side.
-            Click the <strong>eye icon</strong> next to a masked field to reveal it — your role must have unmask permission for that field type.
-            Every reveal is recorded in the Audit Log.
+            PII fields are stored encrypted using AES-256-GCM. The <span className="font-mono tracking-widest">••••••••</span> mask is always applied.
+            The <strong>eye icon</strong> appears only for fields your role is permitted to reveal — each reveal is recorded in the Audit Log.
+            {allowedFields.size === 0 && " Your role currently has no unmask permissions — contact your administrator."}
           </span>
         </div>
 
@@ -238,22 +264,22 @@ export default function PiiRecords() {
                         <TableCell className="font-medium">{r.name}</TableCell>
                         <TableCell className="text-muted-foreground">{r.company ?? "—"}</TableCell>
                         <TableCell>
-                          <PiiField recordId={r.id} fieldName="phone" hasValue={!!r.phone} fieldLabel="Phone Number" />
+                          <PiiField recordId={r.id} fieldName="phone" hasValue={!!r.phone} canReveal={canReveal("phone")} fieldLabel="Phone Number" />
                         </TableCell>
                         <TableCell>
-                          <PiiField recordId={r.id} fieldName="nationalId" hasValue={!!r.nationalId} fieldLabel="National ID" />
+                          <PiiField recordId={r.id} fieldName="nationalId" hasValue={!!r.nationalId} canReveal={canReveal("nationalId")} fieldLabel="National ID" />
                         </TableCell>
                         <TableCell>
-                          <PiiField recordId={r.id} fieldName="bankAccount" hasValue={!!r.bankAccount} fieldLabel="Bank Account" />
+                          <PiiField recordId={r.id} fieldName="bankAccount" hasValue={!!r.bankAccount} canReveal={canReveal("bankAccount")} fieldLabel="Bank Account" />
                         </TableCell>
                         <TableCell>
-                          <PiiField recordId={r.id} fieldName="panNumber" hasValue={!!r.panNumber} fieldLabel="PAN Number" />
+                          <PiiField recordId={r.id} fieldName="panNumber" hasValue={!!r.panNumber} canReveal={canReveal("panNumber")} fieldLabel="PAN Number" />
                         </TableCell>
                         <TableCell>
-                          <PiiField recordId={r.id} fieldName="emailCounterparty" hasValue={!!r.emailCounterparty} fieldLabel="Counterparty Email" />
+                          <PiiField recordId={r.id} fieldName="emailCounterparty" hasValue={!!r.emailCounterparty} canReveal={canReveal("emailCounterparty")} fieldLabel="Counterparty Email" />
                         </TableCell>
                         <TableCell>
-                          <PiiField recordId={r.id} fieldName="address" hasValue={!!r.address} fieldLabel="Address" />
+                          <PiiField recordId={r.id} fieldName="address" hasValue={!!r.address} canReveal={canReveal("address")} fieldLabel="Address" />
                         </TableCell>
                         {isAdmin && (
                           <TableCell>

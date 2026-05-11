@@ -1,26 +1,37 @@
 import { useState } from "react";
-import { Eye, EyeOff, Loader2, Lock } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getAccessToken } from "@/lib/auth";
 import { toast } from "sonner";
 
-interface PiiFieldProps {
+export interface PiiFieldProps {
   recordId: number;
   fieldName: "phone" | "nationalId" | "bankAccount" | "panNumber" | "emailCounterparty" | "address";
   hasValue: boolean;
+  /** Whether the current user's role is allowed to unmask this field type. */
+  canReveal: boolean;
   fieldLabel?: string;
   className?: string;
 }
 
 const MASKED = "••••••••";
 
-export function PiiField({ recordId, fieldName, hasValue, fieldLabel, className }: PiiFieldProps) {
+export function PiiField({ recordId, fieldName, hasValue, canReveal, fieldLabel, className }: PiiFieldProps) {
   const [revealed, setRevealed] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hidden, setHidden] = useState(false);
 
   if (!hasValue) {
     return <span className="text-muted-foreground text-sm">—</span>;
+  }
+
+  // If the user's role cannot reveal this field, show a static masked value with no button.
+  if (!canReveal) {
+    return (
+      <span className={`inline-flex items-center gap-1 font-mono text-sm text-muted-foreground ${className ?? ""}`}>
+        <span className="tracking-widest">{MASKED}</span>
+      </span>
+    );
   }
 
   const handleReveal = async () => {
@@ -42,7 +53,7 @@ export function PiiField({ recordId, fieldName, hasValue, fieldLabel, className 
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ recordId, fieldName }),
+        body: JSON.stringify({ recordId, fieldName, recordType: "pii_record" }),
       });
 
       if (res.status === 403) {
@@ -90,15 +101,6 @@ export function PiiField({ recordId, fieldName, hasValue, fieldLabel, className 
           <Eye className="h-3 w-3" />
         )}
       </Button>
-    </span>
-  );
-}
-
-export function PiiFieldLocked({ className }: { className?: string }) {
-  return (
-    <span className={`inline-flex items-center gap-1 font-mono text-sm text-muted-foreground ${className ?? ""}`}>
-      <Lock className="h-3 w-3" />
-      <span className="tracking-widest">{MASKED}</span>
     </span>
   );
 }

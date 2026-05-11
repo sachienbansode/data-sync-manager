@@ -10,6 +10,9 @@ export const auditLogsTable = pgTable("audit_logs", {
   action: text("action").notNull(),
   details: text("details"),
   ipAddress: text("ip_address"),
+  resourceType: text("resource_type"),
+  resourceId: text("resource_id"),
+  fieldName: text("field_name"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

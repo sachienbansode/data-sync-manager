@@ -666,6 +666,138 @@ export const TestDbConnectionResponse = zod.object({
 });
 
 /**
+ * @summary List API applications accessible to the current user
+ */
+export const ListDocAppsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  tags: zod.array(zod.string()),
+  createdAt: zod.coerce.date(),
+  latestVersion: zod.number().nullish(),
+  latestSpecDate: zod.coerce.date().nullish(),
+  accessRoleIds: zod.array(zod.number()).optional(),
+});
+export const ListDocAppsResponse = zod.array(ListDocAppsResponseItem);
+
+/**
+ * @summary Register a new API application (admin)
+ */
+export const CreateDocAppBody = zod.object({
+  name: zod.string(),
+  description: zod.string().optional(),
+  tags: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Update an API application (admin)
+ */
+export const UpdateDocAppParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDocAppBody = zod.object({
+  name: zod.string().optional(),
+  description: zod.string().optional(),
+  tags: zod.array(zod.string()).optional(),
+});
+
+export const UpdateDocAppResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  tags: zod.array(zod.string()),
+  createdAt: zod.coerce.date(),
+  latestVersion: zod.number().nullish(),
+  latestSpecDate: zod.coerce.date().nullish(),
+  accessRoleIds: zod.array(zod.number()).optional(),
+});
+
+/**
+ * @summary Delete an API application (admin)
+ */
+export const DeleteDocAppParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List all spec versions for an application
+ */
+export const ListDocAppSpecsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const ListDocAppSpecsResponseItem = zod.object({
+  id: zod.number(),
+  appId: zod.number(),
+  version: zod.number(),
+  s3Key: zod.string().nullish(),
+  specUrl: zod.string().nullish(),
+  isActive: zod.boolean(),
+  uploadedAt: zod.coerce.date(),
+});
+export const ListDocAppSpecsResponse = zod.array(ListDocAppSpecsResponseItem);
+
+/**
+ * @summary Upload a new spec version or register a spec URL (admin)
+ */
+export const UploadDocAppSpecParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UploadDocAppSpecBody = zod.object({
+  specUrl: zod.string().optional(),
+});
+
+/**
+ * @summary Get spec content or URL for a specific version
+ */
+export const GetDocAppSpecParams = zod.object({
+  id: zod.coerce.number(),
+  version: zod.coerce.number(),
+});
+
+export const GetDocAppSpecResponse = zod.object({
+  type: zod.enum(["presigned_url", "url", "inline"]),
+  url: zod.string().nullish(),
+  content: zod.string().nullish(),
+  version: zod.number(),
+  specUrl: zod.string().nullish(),
+});
+
+/**
+ * @summary Get role access list for an application (admin)
+ */
+export const GetDocAppRbacParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetDocAppRbacResponseItem = zod.object({
+  roleId: zod.number(),
+  roleName: zod.string(),
+  hasAccess: zod.boolean(),
+});
+export const GetDocAppRbacResponse = zod.array(GetDocAppRbacResponseItem);
+
+/**
+ * @summary Set role access for an application (admin)
+ */
+export const UpdateDocAppRbacParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateDocAppRbacBody = zod.object({
+  roleIds: zod.array(zod.number()),
+});
+
+export const UpdateDocAppRbacResponseItem = zod.object({
+  roleId: zod.number(),
+  roleName: zod.string(),
+  hasAccess: zod.boolean(),
+});
+export const UpdateDocAppRbacResponse = zod.array(UpdateDocAppRbacResponseItem);
+
+/**
  * @summary Get all field mappings
  */
 export const GetFieldMappingsResponseItem = zod.object({

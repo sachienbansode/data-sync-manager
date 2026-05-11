@@ -22,6 +22,8 @@ tags:
     description: PII encryption and masked display
   - name: workflow
     description: Data workflow, DB connection manager, and field mappings
+  - name: docs
+    description: API documentation management
 
 paths:
   /healthz:
@@ -727,6 +729,230 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DbConnectionTestResult"
+
+  # ─── API DOCS ────────────────────────────────────────────────────────────────
+
+  /docs/apps:
+    get:
+      operationId: listDocApps
+      tags: [docs]
+      summary: List API applications accessible to the current user
+      responses:
+        "200":
+          description: List of API applications
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiApp"
+        "401":
+          description: Not authenticated
+    post:
+      operationId: createDocApp
+      tags: [docs]
+      summary: Register a new API application (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiAppInput"
+      responses:
+        "201":
+          description: Created application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiApp"
+        "400":
+          description: Invalid input
+        "403":
+          description: Admin only
+
+  /docs/apps/{id}:
+    patch:
+      operationId: updateDocApp
+      tags: [docs]
+      summary: Update an API application (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiAppUpdate"
+      responses:
+        "200":
+          description: Updated application
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiApp"
+        "404":
+          description: App not found
+    delete:
+      operationId: deleteDocApp
+      tags: [docs]
+      summary: Delete an API application (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: App not found
+
+  /docs/apps/{id}/specs:
+    get:
+      operationId: listDocAppSpecs
+      tags: [docs]
+      summary: List all spec versions for an application
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of spec versions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiSpec"
+        "403":
+          description: Access denied
+        "404":
+          description: App not found
+    post:
+      operationId: uploadDocAppSpec
+      tags: [docs]
+      summary: Upload a new spec version or register a spec URL (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                specUrl:
+                  type: string
+          application/json:
+            schema:
+              type: object
+              properties:
+                specUrl:
+                  type: string
+      responses:
+        "201":
+          description: Created spec version
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSpec"
+        "400":
+          description: Invalid input
+        "403":
+          description: Admin only
+
+  /docs/apps/{id}/specs/{version}:
+    get:
+      operationId: getDocAppSpec
+      tags: [docs]
+      summary: Get spec content or URL for a specific version
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Spec content or URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiSpecContent"
+        "403":
+          description: Access denied
+        "404":
+          description: Spec not found
+
+  /docs/apps/{id}/rbac:
+    get:
+      operationId: getDocAppRbac
+      tags: [docs]
+      summary: Get role access list for an application (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Role access list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiAppRoleAccess"
+        "403":
+          description: Admin only
+    put:
+      operationId: updateDocAppRbac
+      tags: [docs]
+      summary: Set role access for an application (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiAppRbacUpdate"
+      responses:
+        "200":
+          description: Updated access list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ApiAppRoleAccess"
+        "403":
+          description: Admin only
 
   # ─── WORKFLOW ────────────────────────────────────────────────────────────────
 
@@ -1640,3 +1866,113 @@ components:
           type: boolean
         path:
           type: string
+
+    # ─── API Docs ─────────────────────────────────────────────────────────────
+
+    ApiApp:
+      type: object
+      required: [id, name, description, tags, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        latestVersion:
+          type: ["integer", "null"]
+        latestSpecDate:
+          type: ["string", "null"]
+          format: date-time
+        accessRoleIds:
+          type: array
+          items:
+            type: integer
+
+    ApiAppInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    ApiAppUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+
+    ApiSpec:
+      type: object
+      required: [id, appId, version, isActive, uploadedAt]
+      properties:
+        id:
+          type: integer
+        appId:
+          type: integer
+        version:
+          type: integer
+        s3Key:
+          type: ["string", "null"]
+        specUrl:
+          type: ["string", "null"]
+        isActive:
+          type: boolean
+        uploadedAt:
+          type: string
+          format: date-time
+
+    ApiSpecContent:
+      type: object
+      required: [type, version]
+      properties:
+        type:
+          type: string
+          enum: [presigned_url, url, inline]
+        url:
+          type: ["string", "null"]
+        content:
+          type: ["string", "null"]
+        version:
+          type: integer
+        specUrl:
+          type: ["string", "null"]
+
+    ApiAppRoleAccess:
+      type: object
+      required: [roleId, roleName, hasAccess]
+      properties:
+        roleId:
+          type: integer
+        roleName:
+          type: string
+        hasAccess:
+          type: boolean
+
+    ApiAppRbacUpdate:
+      type: object
+      required: [roleIds]
+      properties:
+        roleIds:
+          type: array
+          items:
+            type: integer

@@ -7,21 +7,23 @@ import { Layout } from "@/components/layout";
 interface ProtectedRouteProps {
   component: React.ComponentType;
   path: string;
+  requireRole?: string;
 }
 
-export function ProtectedRoute({ component: Component, path }: ProtectedRouteProps) {
+export function ProtectedRoute({ component: Component, path, requireRole }: ProtectedRouteProps) {
   const { user, isLoading, checkPermission } = useAuth();
   const [location, setLocation] = useLocation();
 
+  const hasPermission = !isLoading && !!user && checkPermission(path);
+  const hasRole = !requireRole || user?.roleName === requireRole;
+
   useEffect(() => {
     if (!isLoading && !user) {
-      // Not logged in, redirect to login
       setLocation("/login");
-    } else if (!isLoading && user && !checkPermission(path)) {
-      // Logged in but no permission
+    } else if (!isLoading && user && (!checkPermission(path) || !hasRole)) {
       setLocation("/403");
     }
-  }, [user, isLoading, location, setLocation, path, checkPermission]);
+  }, [user, isLoading, location, setLocation, path, checkPermission, hasRole]);
 
   if (isLoading) {
     return (
@@ -31,7 +33,7 @@ export function ProtectedRoute({ component: Component, path }: ProtectedRoutePro
     );
   }
 
-  if (!user || !checkPermission(path)) {
+  if (!user || !hasPermission || !hasRole) {
     return null;
   }
 

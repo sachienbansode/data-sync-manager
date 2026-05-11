@@ -73,5 +73,9 @@
     "vite": "catalog:",
     "wouter": "^3.3.5",
     "zod": "catalog:"
+  },
+  "dependencies": {
+    "@types/swagger-ui-react": "^5.18.0",
+    "swagger-ui-react": "^5.32.5"
   }
 }

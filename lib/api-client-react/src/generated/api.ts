@@ -17,6 +17,13 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ApiApp,
+  ApiAppInput,
+  ApiAppRbacUpdate,
+  ApiAppRoleAccess,
+  ApiAppUpdate,
+  ApiSpec,
+  ApiSpecContent,
   AuditLogResponse,
   AuthResponse,
   ChangePasswordInput,
@@ -53,6 +60,8 @@ import type {
   RefreshInput,
   Role,
   TokenPair,
+  UploadDocAppSpecBodyOne,
+  UploadDocAppSpecBodyTwo,
   UploadWorkflowCsvBody,
   User,
   UserInput,
@@ -3154,6 +3163,791 @@ export const useTestDbConnection = <
   TContext
 > => {
   return useMutation(getTestDbConnectionMutationOptions(options));
+};
+
+/**
+ * @summary List API applications accessible to the current user
+ */
+export const getListDocAppsUrl = () => {
+  return `/api/docs/apps`;
+};
+
+export const listDocApps = async (options?: RequestInit): Promise<ApiApp[]> => {
+  return customFetch<ApiApp[]>(getListDocAppsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDocAppsQueryKey = () => {
+  return [`/api/docs/apps`] as const;
+};
+
+export const getListDocAppsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDocApps>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDocApps>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDocAppsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDocApps>>> = ({
+    signal,
+  }) => listDocApps({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDocApps>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDocAppsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDocApps>>
+>;
+export type ListDocAppsQueryError = ErrorType<void>;
+
+/**
+ * @summary List API applications accessible to the current user
+ */
+
+export function useListDocApps<
+  TData = Awaited<ReturnType<typeof listDocApps>>,
+  TError = ErrorType<void>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDocApps>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDocAppsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Register a new API application (admin)
+ */
+export const getCreateDocAppUrl = () => {
+  return `/api/docs/apps`;
+};
+
+export const createDocApp = async (
+  apiAppInput: ApiAppInput,
+  options?: RequestInit,
+): Promise<ApiApp> => {
+  return customFetch<ApiApp>(getCreateDocAppUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(apiAppInput),
+  });
+};
+
+export const getCreateDocAppMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDocApp>>,
+    TError,
+    { data: BodyType<ApiAppInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDocApp>>,
+  TError,
+  { data: BodyType<ApiAppInput> },
+  TContext
+> => {
+  const mutationKey = ["createDocApp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDocApp>>,
+    { data: BodyType<ApiAppInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDocApp(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDocAppMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDocApp>>
+>;
+export type CreateDocAppMutationBody = BodyType<ApiAppInput>;
+export type CreateDocAppMutationError = ErrorType<void>;
+
+/**
+ * @summary Register a new API application (admin)
+ */
+export const useCreateDocApp = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDocApp>>,
+    TError,
+    { data: BodyType<ApiAppInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDocApp>>,
+  TError,
+  { data: BodyType<ApiAppInput> },
+  TContext
+> => {
+  return useMutation(getCreateDocAppMutationOptions(options));
+};
+
+/**
+ * @summary Update an API application (admin)
+ */
+export const getUpdateDocAppUrl = (id: number) => {
+  return `/api/docs/apps/${id}`;
+};
+
+export const updateDocApp = async (
+  id: number,
+  apiAppUpdate: ApiAppUpdate,
+  options?: RequestInit,
+): Promise<ApiApp> => {
+  return customFetch<ApiApp>(getUpdateDocAppUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(apiAppUpdate),
+  });
+};
+
+export const getUpdateDocAppMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDocApp>>,
+    TError,
+    { id: number; data: BodyType<ApiAppUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDocApp>>,
+  TError,
+  { id: number; data: BodyType<ApiAppUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateDocApp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDocApp>>,
+    { id: number; data: BodyType<ApiAppUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDocApp(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDocAppMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDocApp>>
+>;
+export type UpdateDocAppMutationBody = BodyType<ApiAppUpdate>;
+export type UpdateDocAppMutationError = ErrorType<void>;
+
+/**
+ * @summary Update an API application (admin)
+ */
+export const useUpdateDocApp = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDocApp>>,
+    TError,
+    { id: number; data: BodyType<ApiAppUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDocApp>>,
+  TError,
+  { id: number; data: BodyType<ApiAppUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateDocAppMutationOptions(options));
+};
+
+/**
+ * @summary Delete an API application (admin)
+ */
+export const getDeleteDocAppUrl = (id: number) => {
+  return `/api/docs/apps/${id}`;
+};
+
+export const deleteDocApp = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDocAppUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDocAppMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDocApp>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDocApp>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDocApp"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDocApp>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDocApp(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDocAppMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDocApp>>
+>;
+
+export type DeleteDocAppMutationError = ErrorType<void>;
+
+/**
+ * @summary Delete an API application (admin)
+ */
+export const useDeleteDocApp = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDocApp>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDocApp>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteDocAppMutationOptions(options));
+};
+
+/**
+ * @summary List all spec versions for an application
+ */
+export const getListDocAppSpecsUrl = (id: number) => {
+  return `/api/docs/apps/${id}/specs`;
+};
+
+export const listDocAppSpecs = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ApiSpec[]> => {
+  return customFetch<ApiSpec[]>(getListDocAppSpecsUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDocAppSpecsQueryKey = (id: number) => {
+  return [`/api/docs/apps/${id}/specs`] as const;
+};
+
+export const getListDocAppSpecsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDocAppSpecs>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDocAppSpecs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDocAppSpecsQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDocAppSpecs>>> = ({
+    signal,
+  }) => listDocAppSpecs(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDocAppSpecs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDocAppSpecsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDocAppSpecs>>
+>;
+export type ListDocAppSpecsQueryError = ErrorType<void>;
+
+/**
+ * @summary List all spec versions for an application
+ */
+
+export function useListDocAppSpecs<
+  TData = Awaited<ReturnType<typeof listDocAppSpecs>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDocAppSpecs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDocAppSpecsQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Upload a new spec version or register a spec URL (admin)
+ */
+export const getUploadDocAppSpecUrl = (id: number) => {
+  return `/api/docs/apps/${id}/specs`;
+};
+
+export const uploadDocAppSpec = async (
+  id: number,
+  uploadDocAppSpecBody: UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo,
+  options?: RequestInit,
+): Promise<ApiSpec> => {
+  return customFetch<ApiSpec>(getUploadDocAppSpecUrl(id), {
+    ...options,
+    method: "POST",
+    body: JSON.stringify(uploadDocAppSpecBody),
+  });
+};
+
+export const getUploadDocAppSpecMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadDocAppSpec>>,
+    TError,
+    {
+      id: number;
+      data: BodyType<UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadDocAppSpec>>,
+  TError,
+  {
+    id: number;
+    data: BodyType<UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo>;
+  },
+  TContext
+> => {
+  const mutationKey = ["uploadDocAppSpec"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadDocAppSpec>>,
+    {
+      id: number;
+      data: BodyType<UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo>;
+    }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return uploadDocAppSpec(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadDocAppSpecMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadDocAppSpec>>
+>;
+export type UploadDocAppSpecMutationBody = BodyType<
+  UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo
+>;
+export type UploadDocAppSpecMutationError = ErrorType<void>;
+
+/**
+ * @summary Upload a new spec version or register a spec URL (admin)
+ */
+export const useUploadDocAppSpec = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadDocAppSpec>>,
+    TError,
+    {
+      id: number;
+      data: BodyType<UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadDocAppSpec>>,
+  TError,
+  {
+    id: number;
+    data: BodyType<UploadDocAppSpecBodyOne | UploadDocAppSpecBodyTwo>;
+  },
+  TContext
+> => {
+  return useMutation(getUploadDocAppSpecMutationOptions(options));
+};
+
+/**
+ * @summary Get spec content or URL for a specific version
+ */
+export const getGetDocAppSpecUrl = (id: number, version: number) => {
+  return `/api/docs/apps/${id}/specs/${version}`;
+};
+
+export const getDocAppSpec = async (
+  id: number,
+  version: number,
+  options?: RequestInit,
+): Promise<ApiSpecContent> => {
+  return customFetch<ApiSpecContent>(getGetDocAppSpecUrl(id, version), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDocAppSpecQueryKey = (id: number, version: number) => {
+  return [`/api/docs/apps/${id}/specs/${version}`] as const;
+};
+
+export const getGetDocAppSpecQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDocAppSpec>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  version: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDocAppSpec>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetDocAppSpecQueryKey(id, version);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDocAppSpec>>> = ({
+    signal,
+  }) => getDocAppSpec(id, version, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!(id && version),
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDocAppSpec>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDocAppSpecQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDocAppSpec>>
+>;
+export type GetDocAppSpecQueryError = ErrorType<void>;
+
+/**
+ * @summary Get spec content or URL for a specific version
+ */
+
+export function useGetDocAppSpec<
+  TData = Awaited<ReturnType<typeof getDocAppSpec>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  version: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDocAppSpec>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDocAppSpecQueryOptions(id, version, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get role access list for an application (admin)
+ */
+export const getGetDocAppRbacUrl = (id: number) => {
+  return `/api/docs/apps/${id}/rbac`;
+};
+
+export const getDocAppRbac = async (
+  id: number,
+  options?: RequestInit,
+): Promise<ApiAppRoleAccess[]> => {
+  return customFetch<ApiAppRoleAccess[]>(getGetDocAppRbacUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDocAppRbacQueryKey = (id: number) => {
+  return [`/api/docs/apps/${id}/rbac`] as const;
+};
+
+export const getGetDocAppRbacQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDocAppRbac>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDocAppRbac>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDocAppRbacQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDocAppRbac>>> = ({
+    signal,
+  }) => getDocAppRbac(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDocAppRbac>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDocAppRbacQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDocAppRbac>>
+>;
+export type GetDocAppRbacQueryError = ErrorType<void>;
+
+/**
+ * @summary Get role access list for an application (admin)
+ */
+
+export function useGetDocAppRbac<
+  TData = Awaited<ReturnType<typeof getDocAppRbac>>,
+  TError = ErrorType<void>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDocAppRbac>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDocAppRbacQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Set role access for an application (admin)
+ */
+export const getUpdateDocAppRbacUrl = (id: number) => {
+  return `/api/docs/apps/${id}/rbac`;
+};
+
+export const updateDocAppRbac = async (
+  id: number,
+  apiAppRbacUpdate: ApiAppRbacUpdate,
+  options?: RequestInit,
+): Promise<ApiAppRoleAccess[]> => {
+  return customFetch<ApiAppRoleAccess[]>(getUpdateDocAppRbacUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(apiAppRbacUpdate),
+  });
+};
+
+export const getUpdateDocAppRbacMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDocAppRbac>>,
+    TError,
+    { id: number; data: BodyType<ApiAppRbacUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDocAppRbac>>,
+  TError,
+  { id: number; data: BodyType<ApiAppRbacUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateDocAppRbac"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDocAppRbac>>,
+    { id: number; data: BodyType<ApiAppRbacUpdate> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDocAppRbac(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDocAppRbacMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDocAppRbac>>
+>;
+export type UpdateDocAppRbacMutationBody = BodyType<ApiAppRbacUpdate>;
+export type UpdateDocAppRbacMutationError = ErrorType<void>;
+
+/**
+ * @summary Set role access for an application (admin)
+ */
+export const useUpdateDocAppRbac = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDocAppRbac>>,
+    TError,
+    { id: number; data: BodyType<ApiAppRbacUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDocAppRbac>>,
+  TError,
+  { id: number; data: BodyType<ApiAppRbacUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateDocAppRbacMutationOptions(options));
 };
 
 /**

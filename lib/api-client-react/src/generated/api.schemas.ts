@@ -497,6 +497,73 @@ export interface WorkflowPushResponse {
   path: string;
 }
 
+export interface ApiApp {
+  id: number;
+  name: string;
+  description: string;
+  tags: string[];
+  createdAt: string;
+  /** @nullable */
+  latestVersion?: number | null;
+  /** @nullable */
+  latestSpecDate?: string | null;
+  accessRoleIds?: number[];
+}
+
+export interface ApiAppInput {
+  name: string;
+  description?: string;
+  tags?: string[];
+}
+
+export interface ApiAppUpdate {
+  name?: string;
+  description?: string;
+  tags?: string[];
+}
+
+export interface ApiSpec {
+  id: number;
+  appId: number;
+  version: number;
+  /** @nullable */
+  s3Key?: string | null;
+  /** @nullable */
+  specUrl?: string | null;
+  isActive: boolean;
+  uploadedAt: string;
+}
+
+export type ApiSpecContentType =
+  (typeof ApiSpecContentType)[keyof typeof ApiSpecContentType];
+
+export const ApiSpecContentType = {
+  presigned_url: "presigned_url",
+  url: "url",
+  inline: "inline",
+} as const;
+
+export interface ApiSpecContent {
+  type: ApiSpecContentType;
+  /** @nullable */
+  url?: string | null;
+  /** @nullable */
+  content?: string | null;
+  version: number;
+  /** @nullable */
+  specUrl?: string | null;
+}
+
+export interface ApiAppRoleAccess {
+  roleId: number;
+  roleName: string;
+  hasAccess: boolean;
+}
+
+export interface ApiAppRbacUpdate {
+  roleIds: number[];
+}
+
 export type M365CallbackParams = {
   code?: string;
   state?: string;
@@ -537,6 +604,15 @@ export type ListPiiRecordsParams = {
 export type GetMyPiiPermissions200 = {
   /** PII field types the caller is permitted to reveal */
   allowedFieldTypes: string[];
+};
+
+export type UploadDocAppSpecBodyOne = {
+  file?: Blob;
+  specUrl?: string;
+};
+
+export type UploadDocAppSpecBodyTwo = {
+  specUrl?: string;
 };
 
 export type ListDataJobsParams = {

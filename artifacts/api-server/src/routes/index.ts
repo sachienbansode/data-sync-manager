@@ -10,6 +10,7 @@ import appSettingsRouter from "./app-settings";
 import piiRouter from "./pii";
 import dbConnectionsRouter from "./db-connections";
 import workflowRouter from "./workflow";
+import docsRouter from "./docs";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(appSettingsRouter);
 router.use(piiRouter);
 router.use(dbConnectionsRouter);
 router.use(workflowRouter);
+router.use(docsRouter);
 
 export default router;

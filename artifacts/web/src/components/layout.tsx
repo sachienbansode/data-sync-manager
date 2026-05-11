@@ -18,6 +18,8 @@ import {
   Database,
   GitBranch,
   Shuffle,
+  BookOpen,
+  Settings2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -34,6 +36,7 @@ const mainNavItems = [
   { href: "/audit-log", label: "Audit Log", icon: FileText },
   { href: "/pii-records", label: "PII Records", icon: Lock },
   { href: "/workflow", label: "Data Workflow", icon: GitBranch },
+  { href: "/docs", label: "API Documentation", icon: BookOpen },
 ];
 
 const adminNavItems = [
@@ -42,7 +45,31 @@ const adminNavItems = [
   { href: "/admin/pii-permissions", label: "PII Permissions", icon: Database },
   { href: "/admin/db-connections", label: "DB Connections", icon: Database },
   { href: "/admin/field-mappings", label: "Field Mappings", icon: Shuffle },
+  { href: "/docs/admin", label: "API Docs Admin", icon: Settings2, adminOnly: true },
 ];
+
+function NavLink({ href, label, Icon, isActive, onNav }: {
+  href: string;
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  isActive: boolean;
+  onNav?: () => void;
+}) {
+  return (
+    <Link href={href} className="block" onClick={onNav}>
+      <div
+        className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+          isActive
+            ? "bg-sidebar-accent text-sidebar-accent-foreground"
+            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+        }`}
+      >
+        <Icon className={`h-4 w-4 mr-3 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
+        {label}
+      </div>
+    </Link>
+  );
+}
 
 function SidebarContent({ onNav }: { onNav?: () => void }) {
   const { user, logout, checkPermission } = useAuth();
@@ -52,7 +79,11 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   );
 
   const filteredMain = mainNavItems.filter(item => checkPermission(item.href));
-  const filteredAdmin = adminNavItems.filter(item => checkPermission(item.href));
+  const isAdmin = user?.roleName === "Admin";
+  const filteredAdmin = adminNavItems.filter(item => {
+    if (item.adminOnly) return isAdmin;
+    return checkPermission(item.href);
+  });
 
   return (
     <div className="flex flex-col h-full bg-sidebar">
@@ -67,12 +98,14 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
             const Icon = item.icon;
             const isActive = location === item.href || location.startsWith(`${item.href}/`);
             return (
-              <Link key={item.href} href={item.href} className="block" onClick={onNav}>
-                <div className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
-                  <Icon className={`h-4 w-4 mr-3 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                  {item.label}
-                </div>
-              </Link>
+              <NavLink
+                key={item.href}
+                href={item.href}
+                label={item.label}
+                Icon={Icon}
+                isActive={isActive}
+                onNav={onNav}
+              />
             );
           })}
 
@@ -89,12 +122,14 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
                 const Icon = item.icon;
                 const isActive = location === item.href || location.startsWith(`${item.href}/`);
                 return (
-                  <Link key={item.href} href={item.href} className="block" onClick={onNav}>
-                    <div className={`flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors ${isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"}`}>
-                      <Icon className={`h-4 w-4 mr-3 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
-                      {item.label}
-                    </div>
-                  </Link>
+                  <NavLink
+                    key={item.href}
+                    href={item.href}
+                    label={item.label}
+                    Icon={Icon}
+                    isActive={isActive}
+                    onNav={onNav}
+                  />
                 );
               })}
             </div>

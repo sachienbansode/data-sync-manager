@@ -22,6 +22,9 @@ import DbConnections from "@/pages/admin/db-connections";
 import FieldMappings from "@/pages/admin/field-mappings";
 import Workflow from "@/pages/workflow";
 import WorkflowJobs from "@/pages/workflow-jobs";
+import Docs from "@/pages/docs";
+import DocsViewer from "@/pages/docs-viewer";
+import DocsAdmin from "@/pages/docs-admin";
 import { ProtectedRoute } from "@/components/protected-route";
 
 const queryClient = new QueryClient();
@@ -81,6 +84,15 @@ function Router() {
       </Route>
       <Route path="/workflow">
         <ProtectedRoute component={Workflow} path="/workflow" />
+      </Route>
+      <Route path="/docs">
+        <ProtectedRoute component={Docs} path="/docs" />
+      </Route>
+      <Route path="/docs/admin">
+        <ProtectedRoute component={DocsAdmin} path="/docs" requireRole="Admin" />
+      </Route>
+      <Route path="/docs/:appId">
+        <ProtectedRoute component={DocsViewer} path="/docs" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

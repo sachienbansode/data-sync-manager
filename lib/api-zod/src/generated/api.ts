@@ -14,3 +14,403 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * @summary Login with email and password
+ */
+export const LoginBody = zod.object({
+  email: zod.string().email(),
+  password: zod.string(),
+});
+
+export const LoginResponse = zod.object({
+  requiresMfa: zod.boolean(),
+  tempToken: zod.string().nullish(),
+  accessToken: zod.string().nullish(),
+  refreshToken: zod.string().nullish(),
+  user: zod
+    .object({
+      id: zod.number(),
+      email: zod.string(),
+      firstName: zod.string(),
+      lastName: zod.string(),
+      roleId: zod.number(),
+      roleName: zod.string(),
+      isActive: zod.boolean(),
+      mfaEnabled: zod.boolean(),
+      authProvider: zod.enum(["local", "m365"]),
+      pagePermissions: zod.array(zod.string()).optional(),
+    })
+    .optional(),
+  userId: zod.number(),
+});
+
+/**
+ * @summary Refresh access token
+ */
+export const RefreshTokenBody = zod.object({
+  refreshToken: zod.string(),
+});
+
+export const RefreshTokenResponse = zod.object({
+  accessToken: zod.string(),
+  refreshToken: zod.string(),
+  user: zod.object({
+    id: zod.number(),
+    email: zod.string(),
+    firstName: zod.string(),
+    lastName: zod.string(),
+    roleId: zod.number(),
+    roleName: zod.string(),
+    isActive: zod.boolean(),
+    mfaEnabled: zod.boolean(),
+    authProvider: zod.enum(["local", "m365"]),
+    pagePermissions: zod.array(zod.string()).optional(),
+  }),
+});
+
+/**
+ * @summary Set up TOTP MFA for current user
+ */
+export const SetupMfaResponse = zod.object({
+  secret: zod.string(),
+  qrCodeUrl: zod.string(),
+  otpauthUrl: zod.string(),
+});
+
+/**
+ * @summary Verify MFA code and complete login
+ */
+export const VerifyMfaBody = zod.object({
+  tempToken: zod.string(),
+  code: zod.string(),
+});
+
+export const VerifyMfaResponse = zod.object({
+  accessToken: zod.string(),
+  refreshToken: zod.string(),
+  user: zod.object({
+    id: zod.number(),
+    email: zod.string(),
+    firstName: zod.string(),
+    lastName: zod.string(),
+    roleId: zod.number(),
+    roleName: zod.string(),
+    isActive: zod.boolean(),
+    mfaEnabled: zod.boolean(),
+    authProvider: zod.enum(["local", "m365"]),
+    pagePermissions: zod.array(zod.string()).optional(),
+  }),
+});
+
+/**
+ * @summary M365 SSO callback
+ */
+export const M365CallbackQueryParams = zod.object({
+  code: zod.coerce.string().optional(),
+  state: zod.coerce.string().optional(),
+});
+
+/**
+ * @summary Get current authenticated user
+ */
+export const GetMeResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  roleId: zod.number(),
+  roleName: zod.string(),
+  isActive: zod.boolean(),
+  mfaEnabled: zod.boolean(),
+  authProvider: zod.enum(["local", "m365"]),
+  pagePermissions: zod.array(zod.string()).optional(),
+});
+
+/**
+ * @summary Change password for current user
+ */
+export const changePasswordBodyNewPasswordMin = 8;
+
+export const ChangePasswordBody = zod.object({
+  currentPassword: zod.string(),
+  newPassword: zod.string().min(changePasswordBodyNewPasswordMin),
+});
+
+/**
+ * @summary List all users (admin)
+ */
+export const listUsersQueryPageDefault = 1;
+export const listUsersQueryPageSizeDefault = 20;
+
+export const ListUsersQueryParams = zod.object({
+  search: zod.coerce.string().optional(),
+  roleId: zod.coerce.number().nullish(),
+  isActive: zod.coerce.boolean().nullish(),
+  page: zod.coerce.number().default(listUsersQueryPageDefault),
+  pageSize: zod.coerce.number().default(listUsersQueryPageSizeDefault),
+});
+
+export const ListUsersResponse = zod.object({
+  users: zod.array(
+    zod.object({
+      id: zod.number(),
+      email: zod.string(),
+      firstName: zod.string(),
+      lastName: zod.string(),
+      roleId: zod.number(),
+      roleName: zod.string(),
+      isActive: zod.boolean(),
+      mfaEnabled: zod.boolean(),
+      authProvider: zod.enum(["local", "m365"]),
+      createdAt: zod.coerce.date(),
+      lastLoginAt: zod.coerce.date().nullish(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * @summary Create a new user (admin)
+ */
+export const createUserBodyPasswordMin = 8;
+
+export const createUserBodyAuthProviderDefault = `local`;
+
+export const CreateUserBody = zod.object({
+  email: zod.string().email(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  roleId: zod.number(),
+  password: zod.string().min(createUserBodyPasswordMin),
+  authProvider: zod
+    .enum(["local", "m365"])
+    .default(createUserBodyAuthProviderDefault),
+});
+
+/**
+ * @summary Get user by ID
+ */
+export const GetUserParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetUserResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  roleId: zod.number(),
+  roleName: zod.string(),
+  isActive: zod.boolean(),
+  mfaEnabled: zod.boolean(),
+  authProvider: zod.enum(["local", "m365"]),
+  createdAt: zod.coerce.date(),
+  lastLoginAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Update user (admin)
+ */
+export const UpdateUserParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserBody = zod.object({
+  firstName: zod.string().optional(),
+  lastName: zod.string().optional(),
+  roleId: zod.number().optional(),
+});
+
+export const UpdateUserResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  roleId: zod.number(),
+  roleName: zod.string(),
+  isActive: zod.boolean(),
+  mfaEnabled: zod.boolean(),
+  authProvider: zod.enum(["local", "m365"]),
+  createdAt: zod.coerce.date(),
+  lastLoginAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Delete user (admin)
+ */
+export const DeleteUserParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Enable or disable a user account (admin)
+ */
+export const UpdateUserStatusParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserStatusBody = zod.object({
+  isActive: zod.boolean(),
+});
+
+export const UpdateUserStatusResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  roleId: zod.number(),
+  roleName: zod.string(),
+  isActive: zod.boolean(),
+  mfaEnabled: zod.boolean(),
+  authProvider: zod.enum(["local", "m365"]),
+  createdAt: zod.coerce.date(),
+  lastLoginAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Change a user role (admin)
+ */
+export const UpdateUserRoleParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateUserRoleBody = zod.object({
+  roleId: zod.number(),
+});
+
+export const UpdateUserRoleResponse = zod.object({
+  id: zod.number(),
+  email: zod.string(),
+  firstName: zod.string(),
+  lastName: zod.string(),
+  roleId: zod.number(),
+  roleName: zod.string(),
+  isActive: zod.boolean(),
+  mfaEnabled: zod.boolean(),
+  authProvider: zod.enum(["local", "m365"]),
+  createdAt: zod.coerce.date(),
+  lastLoginAt: zod.coerce.date().nullish(),
+});
+
+/**
+ * @summary Reset MFA for a user (admin)
+ */
+export const ResetUserMfaParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary List all roles
+ */
+export const ListRolesResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  description: zod.string(),
+  userCount: zod.number().optional(),
+});
+export const ListRolesResponse = zod.array(ListRolesResponseItem);
+
+/**
+ * @summary Get page permissions for a role
+ */
+export const GetRolePagePermissionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetRolePagePermissionsResponseItem = zod.object({
+  id: zod.number(),
+  roleId: zod.number(),
+  pagePath: zod.string(),
+  pageName: zod.string(),
+  canAccess: zod.boolean(),
+});
+export const GetRolePagePermissionsResponse = zod.array(
+  GetRolePagePermissionsResponseItem,
+);
+
+/**
+ * @summary Update page permissions for a role (admin)
+ */
+export const UpdateRolePagePermissionsParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const UpdateRolePagePermissionsBody = zod.object({
+  permissions: zod.array(
+    zod.object({
+      pagePath: zod.string(),
+      canAccess: zod.boolean(),
+    }),
+  ),
+});
+
+export const UpdateRolePagePermissionsResponseItem = zod.object({
+  id: zod.number(),
+  roleId: zod.number(),
+  pagePath: zod.string(),
+  pageName: zod.string(),
+  canAccess: zod.boolean(),
+});
+export const UpdateRolePagePermissionsResponse = zod.array(
+  UpdateRolePagePermissionsResponseItem,
+);
+
+/**
+ * @summary Get dashboard summary stats
+ */
+export const GetDashboardSummaryResponse = zod.object({
+  totalUsers: zod.number(),
+  activeUsers: zod.number(),
+  inactiveUsers: zod.number(),
+  mfaEnabledUsers: zod.number(),
+  usersByRole: zod.array(
+    zod.object({
+      roleName: zod.string(),
+      count: zod.number(),
+    }),
+  ),
+  recentLogins: zod.array(
+    zod.object({
+      id: zod.number(),
+      userId: zod.number().nullable(),
+      userEmail: zod.string().nullable(),
+      action: zod.string(),
+      details: zod.string().nullable(),
+      ipAddress: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+});
+
+/**
+ * @summary Get recent audit log entries
+ */
+export const getAuditLogQueryPageDefault = 1;
+export const getAuditLogQueryPageSizeDefault = 50;
+
+export const GetAuditLogQueryParams = zod.object({
+  page: zod.coerce.number().default(getAuditLogQueryPageDefault),
+  pageSize: zod.coerce.number().default(getAuditLogQueryPageSizeDefault),
+  userId: zod.coerce.number().nullish(),
+  action: zod.coerce.string().nullish(),
+});
+
+export const GetAuditLogResponse = zod.object({
+  entries: zod.array(
+    zod.object({
+      id: zod.number(),
+      userId: zod.number().nullable(),
+      userEmail: zod.string().nullable(),
+      action: zod.string(),
+      details: zod.string().nullable(),
+      ipAddress: zod.string().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});

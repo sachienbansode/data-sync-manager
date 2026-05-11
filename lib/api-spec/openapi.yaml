@@ -10,6 +10,15 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Authentication operations
+  - name: users
+    description: User management operations
+  - name: roles
+    description: Role and permission management
+  - name: dashboard
+    description: Dashboard summary operations
+
 paths:
   /healthz:
     get:
@@ -24,6 +33,455 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ─── AUTH ───────────────────────────────────────────────────────────────────
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Login with email and password
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginInput"
+      responses:
+        "200":
+          description: Login successful (may require MFA)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+        "401":
+          description: Invalid credentials
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Logout current session
+      responses:
+        "200":
+          description: Logged out
+
+  /auth/refresh:
+    post:
+      operationId: refreshToken
+      tags: [auth]
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshInput"
+      responses:
+        "200":
+          description: New access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          description: Invalid or expired refresh token
+
+  /auth/mfa/setup:
+    post:
+      operationId: setupMfa
+      tags: [auth]
+      summary: Set up TOTP MFA for current user
+      responses:
+        "200":
+          description: MFA setup info with QR code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MfaSetup"
+
+  /auth/mfa/verify:
+    post:
+      operationId: verifyMfa
+      tags: [auth]
+      summary: Verify MFA code and complete login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MfaVerifyInput"
+      responses:
+        "200":
+          description: MFA verified, tokens issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenPair"
+        "401":
+          description: Invalid MFA code
+
+  /auth/mfa/disable:
+    post:
+      operationId: disableMfa
+      tags: [auth]
+      summary: Disable MFA for current user
+      responses:
+        "200":
+          description: MFA disabled
+
+  /auth/m365:
+    get:
+      operationId: m365Initiate
+      tags: [auth]
+      summary: Initiate M365 SSO login
+      responses:
+        "302":
+          description: Redirect to Microsoft login
+
+  /auth/m365/callback:
+    get:
+      operationId: m365Callback
+      tags: [auth]
+      summary: M365 SSO callback
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "302":
+          description: Redirect to frontend with tokens
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Current user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "401":
+          description: Not authenticated
+
+  /auth/change-password:
+    post:
+      operationId: changePassword
+      tags: [auth]
+      summary: Change password for current user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChangePasswordInput"
+      responses:
+        "200":
+          description: Password changed
+        "400":
+          description: Invalid current password
+
+  # ─── USERS ──────────────────────────────────────────────────────────────────
+
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      summary: List all users (admin)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: roleId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: isActive
+          in: query
+          schema:
+            type: ["boolean", "null"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserListResponse"
+    post:
+      operationId: createUser
+      tags: [users]
+      summary: Create a new user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserInput"
+      responses:
+        "201":
+          description: Created user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "409":
+          description: Email already exists
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      summary: Get user by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: User
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+    patch:
+      operationId: updateUser
+      tags: [users]
+      summary: Update user (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "404":
+          description: User not found
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      summary: Delete user (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          description: User not found
+
+  /users/{id}/status:
+    patch:
+      operationId: updateUserStatus
+      tags: [users]
+      summary: Enable or disable a user account (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserStatusUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}/role:
+    patch:
+      operationId: updateUserRole
+      tags: [users]
+      summary: Change a user role (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserRoleUpdate"
+      responses:
+        "200":
+          description: Updated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+
+  /users/{id}/reset-mfa:
+    post:
+      operationId: resetUserMfa
+      tags: [users]
+      summary: Reset MFA for a user (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: MFA reset
+
+  # ─── ROLES ──────────────────────────────────────────────────────────────────
+
+  /roles:
+    get:
+      operationId: listRoles
+      tags: [roles]
+      summary: List all roles
+      responses:
+        "200":
+          description: Roles list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Role"
+
+  /roles/{id}/page-permissions:
+    get:
+      operationId: getRolePagePermissions
+      tags: [roles]
+      summary: Get page permissions for a role
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Page permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PagePermission"
+    put:
+      operationId: updateRolePagePermissions
+      tags: [roles]
+      summary: Update page permissions for a role (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PagePermissionUpdate"
+      responses:
+        "200":
+          description: Updated permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PagePermission"
+
+  # ─── DASHBOARD ──────────────────────────────────────────────────────────────
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/audit-log:
+    get:
+      operationId: getAuditLog
+      tags: [dashboard]
+      summary: Get recent audit log entries
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: userId
+          in: query
+          schema:
+            type: ["integer", "null"]
+        - name: action
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: Audit log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +492,308 @@ components:
       required:
         - status
 
+    # ─── Auth ────────────────────────────────────────────────────────────────
+
+    LoginInput:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+
+    RefreshInput:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    MfaVerifyInput:
+      type: object
+      required: [tempToken, code]
+      properties:
+        tempToken:
+          type: string
+        code:
+          type: string
+
+    ChangePasswordInput:
+      type: object
+      required: [currentPassword, newPassword]
+      properties:
+        currentPassword:
+          type: string
+        newPassword:
+          type: string
+          minLength: 8
+
+    AuthResponse:
+      type: object
+      required: [requiresMfa, userId]
+      properties:
+        requiresMfa:
+          type: boolean
+        tempToken:
+          type: ["string", "null"]
+        accessToken:
+          type: ["string", "null"]
+        refreshToken:
+          type: ["string", "null"]
+        user:
+          $ref: "#/components/schemas/UserProfile"
+        userId:
+          type: integer
+
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: "#/components/schemas/UserProfile"
+
+    MfaSetup:
+      type: object
+      required: [secret, qrCodeUrl, otpauthUrl]
+      properties:
+        secret:
+          type: string
+        qrCodeUrl:
+          type: string
+        otpauthUrl:
+          type: string
+
+    UserProfile:
+      type: object
+      required: [id, email, firstName, lastName, roleId, roleName, isActive, mfaEnabled, authProvider]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        roleId:
+          type: integer
+        roleName:
+          type: string
+        isActive:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        authProvider:
+          type: string
+          enum: [local, m365]
+        pagePermissions:
+          type: array
+          items:
+            type: string
+
+    # ─── Users ───────────────────────────────────────────────────────────────
+
+    User:
+      type: object
+      required: [id, email, firstName, lastName, roleId, roleName, isActive, mfaEnabled, authProvider, createdAt]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        firstName:
+          type: string
+        lastName:
+          type: string
+        roleId:
+          type: integer
+        roleName:
+          type: string
+        isActive:
+          type: boolean
+        mfaEnabled:
+          type: boolean
+        authProvider:
+          type: string
+          enum: [local, m365]
+        createdAt:
+          type: string
+          format: date-time
+        lastLoginAt:
+          type: ["string", "null"]
+          format: date-time
+
+    UserInput:
+      type: object
+      required: [email, firstName, lastName, roleId, password]
+      properties:
+        email:
+          type: string
+          format: email
+        firstName:
+          type: string
+        lastName:
+          type: string
+        roleId:
+          type: integer
+        password:
+          type: string
+          minLength: 8
+        authProvider:
+          type: string
+          enum: [local, m365]
+          default: local
+
+    UserUpdate:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        roleId:
+          type: integer
+
+    UserStatusUpdate:
+      type: object
+      required: [isActive]
+      properties:
+        isActive:
+          type: boolean
+
+    UserRoleUpdate:
+      type: object
+      required: [roleId]
+      properties:
+        roleId:
+          type: integer
+
+    UserListResponse:
+      type: object
+      required: [users, total, page, pageSize]
+      properties:
+        users:
+          type: array
+          items:
+            $ref: "#/components/schemas/User"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    # ─── Roles ───────────────────────────────────────────────────────────────
+
+    Role:
+      type: object
+      required: [id, name, description]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        userCount:
+          type: integer
+
+    PagePermission:
+      type: object
+      required: [id, roleId, pagePath, pageName, canAccess]
+      properties:
+        id:
+          type: integer
+        roleId:
+          type: integer
+        pagePath:
+          type: string
+        pageName:
+          type: string
+        canAccess:
+          type: boolean
+
+    PagePermissionUpdate:
+      type: object
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [pagePath, canAccess]
+            properties:
+              pagePath:
+                type: string
+              canAccess:
+                type: boolean
+
+    # ─── Dashboard ────────────────────────────────────────────────────────────
+
+    DashboardSummary:
+      type: object
+      required: [totalUsers, activeUsers, inactiveUsers, mfaEnabledUsers, usersByRole, recentLogins]
+      properties:
+        totalUsers:
+          type: integer
+        activeUsers:
+          type: integer
+        inactiveUsers:
+          type: integer
+        mfaEnabledUsers:
+          type: integer
+        usersByRole:
+          type: array
+          items:
+            type: object
+            required: [roleName, count]
+            properties:
+              roleName:
+                type: string
+              count:
+                type: integer
+        recentLogins:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+
+    AuditLogEntry:
+      type: object
+      required: [id, userId, userEmail, action, details, createdAt]
+      properties:
+        id:
+          type: integer
+        userId:
+          type: ["integer", "null"]
+        userEmail:
+          type: ["string", "null"]
+        action:
+          type: string
+        details:
+          type: ["string", "null"]
+        ipAddress:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditLogResponse:
+      type: object
+      required: [entries, total, page, pageSize]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditLogEntry"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer

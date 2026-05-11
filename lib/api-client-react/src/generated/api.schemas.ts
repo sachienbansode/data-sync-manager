@@ -8,3 +8,221 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface RefreshInput {
+  refreshToken: string;
+}
+
+export interface MfaVerifyInput {
+  tempToken: string;
+  code: string;
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string;
+  /** @minLength 8 */
+  newPassword: string;
+}
+
+export type UserProfileAuthProvider =
+  (typeof UserProfileAuthProvider)[keyof typeof UserProfileAuthProvider];
+
+export const UserProfileAuthProvider = {
+  local: "local",
+  m365: "m365",
+} as const;
+
+export interface UserProfile {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  roleId: number;
+  roleName: string;
+  isActive: boolean;
+  mfaEnabled: boolean;
+  authProvider: UserProfileAuthProvider;
+  pagePermissions?: string[];
+}
+
+export interface AuthResponse {
+  requiresMfa: boolean;
+  /** @nullable */
+  tempToken?: string | null;
+  /** @nullable */
+  accessToken?: string | null;
+  /** @nullable */
+  refreshToken?: string | null;
+  user?: UserProfile;
+  userId: number;
+}
+
+export interface TokenPair {
+  accessToken: string;
+  refreshToken: string;
+  user: UserProfile;
+}
+
+export interface MfaSetup {
+  secret: string;
+  qrCodeUrl: string;
+  otpauthUrl: string;
+}
+
+export type UserAuthProvider =
+  (typeof UserAuthProvider)[keyof typeof UserAuthProvider];
+
+export const UserAuthProvider = {
+  local: "local",
+  m365: "m365",
+} as const;
+
+export interface User {
+  id: number;
+  email: string;
+  firstName: string;
+  lastName: string;
+  roleId: number;
+  roleName: string;
+  isActive: boolean;
+  mfaEnabled: boolean;
+  authProvider: UserAuthProvider;
+  createdAt: string;
+  /** @nullable */
+  lastLoginAt?: string | null;
+}
+
+export type UserInputAuthProvider =
+  (typeof UserInputAuthProvider)[keyof typeof UserInputAuthProvider];
+
+export const UserInputAuthProvider = {
+  local: "local",
+  m365: "m365",
+} as const;
+
+export interface UserInput {
+  email: string;
+  firstName: string;
+  lastName: string;
+  roleId: number;
+  /** @minLength 8 */
+  password: string;
+  authProvider?: UserInputAuthProvider;
+}
+
+export interface UserUpdate {
+  firstName?: string;
+  lastName?: string;
+  roleId?: number;
+}
+
+export interface UserStatusUpdate {
+  isActive: boolean;
+}
+
+export interface UserRoleUpdate {
+  roleId: number;
+}
+
+export interface UserListResponse {
+  users: User[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface Role {
+  id: number;
+  name: string;
+  description: string;
+  userCount?: number;
+}
+
+export interface PagePermission {
+  id: number;
+  roleId: number;
+  pagePath: string;
+  pageName: string;
+  canAccess: boolean;
+}
+
+export type PagePermissionUpdatePermissionsItem = {
+  pagePath: string;
+  canAccess: boolean;
+};
+
+export interface PagePermissionUpdate {
+  permissions: PagePermissionUpdatePermissionsItem[];
+}
+
+export type DashboardSummaryUsersByRoleItem = {
+  roleName: string;
+  count: number;
+};
+
+export interface AuditLogEntry {
+  id: number;
+  /** @nullable */
+  userId: number | null;
+  /** @nullable */
+  userEmail: string | null;
+  action: string;
+  /** @nullable */
+  details: string | null;
+  /** @nullable */
+  ipAddress?: string | null;
+  createdAt: string;
+}
+
+export interface DashboardSummary {
+  totalUsers: number;
+  activeUsers: number;
+  inactiveUsers: number;
+  mfaEnabledUsers: number;
+  usersByRole: DashboardSummaryUsersByRoleItem[];
+  recentLogins: AuditLogEntry[];
+}
+
+export interface AuditLogResponse {
+  entries: AuditLogEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type M365CallbackParams = {
+  code?: string;
+  state?: string;
+};
+
+export type ListUsersParams = {
+  search?: string;
+  /**
+   * @nullable
+   */
+  roleId?: number | null;
+  /**
+   * @nullable
+   */
+  isActive?: boolean | null;
+  page?: number;
+  pageSize?: number;
+};
+
+export type GetAuditLogParams = {
+  page?: number;
+  pageSize?: number;
+  /**
+   * @nullable
+   */
+  userId?: number | null;
+  /**
+   * @nullable
+   */
+  action?: string | null;
+};

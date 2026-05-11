@@ -195,7 +195,7 @@ router.post("/auth/logout", authenticate, async (req, res): Promise<void> => {
   if (req.user) {
     await db.delete(refreshTokensTable).where(eq(refreshTokensTable.userId, req.user.sub));
     await db.update(sessionsTable)
-      .set({ isRevoked: "true" })
+      .set({ isRevoked: true })
       .where(eq(sessionsTable.userId, req.user.sub));
     await logAudit(req.user.sub, req.user.email, "LOGOUT", null, req.ip ?? null);
   }
@@ -454,11 +454,16 @@ router.get("/auth/m365/callback", async (req, res): Promise<void> => {
 
   const verifierMap = (req.app.locals as Record<string, Map<string, string>>).m365Verifiers;
   const verifier = verifierMap?.get(state);
-  if (!verifier) {
+  const stateExpiry = m365StateStore.get(`${state}:verifier`);
+  // Enforce state TTL + purge both verifier and expiry entry on use
+  if (!verifier || !stateExpiry || stateExpiry < Date.now()) {
+    verifierMap?.delete(state);
+    m365StateStore.delete(`${state}:verifier`);
     res.redirect(`${frontendBase}/login?error=m365_state_invalid`);
     return;
   }
   verifierMap.delete(state);
+  m365StateStore.delete(`${state}:verifier`);
 
   const clientId = process.env.AZURE_CLIENT_ID ?? "";
   const tenantId = process.env.AZURE_TENANT_ID ?? "common";

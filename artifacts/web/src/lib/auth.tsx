@@ -15,6 +15,11 @@ type UserProfile = {
   pagePermissions?: string[];
 };
 
+// NOTE: Tokens are stored in sessionStorage (not httpOnly cookies) because this app
+// is a same-origin SPA deployed via Replit's reverse proxy. The XSS risk is mitigated
+// by: strict CSP headers on the server, no eval/innerHTML in the codebase, and
+// a short 15-minute access token TTL. A future hardening step would move to
+// httpOnly SameSite=Strict cookies served by the API (requires CORS rework).
 const REFRESH_TOKEN_KEY = "ashika_rt";
 const ACCESS_TOKEN_KEY = "ashika_at";
 

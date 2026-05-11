@@ -17,6 +17,14 @@ export const dbConnectionsTable = pgTable("db_connections", {
   outputFilePath: text("output_file_path"),
   /** Admin-configurable SELECT query executed during workflow fetch. Must be read-only. */
   fetchQuery: text("fetch_query"),
+  /** Whether the automatic schedule is active for this connection. */
+  scheduleEnabled: boolean("schedule_enabled").notNull().default(false),
+  /** Cron expression defining the fetch schedule (e.g. "0 2 * * *" = daily at 2am). */
+  scheduleCron: text("schedule_cron"),
+  /** Timestamp of the last scheduled run. */
+  scheduleLastRunAt: timestamp("schedule_last_run_at", { withTimezone: true }),
+  /** Timestamp when the next scheduled run is expected. */
+  scheduleNextRunAt: timestamp("schedule_next_run_at", { withTimezone: true }),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   lastTestSuccess: boolean("last_test_success"),
@@ -35,6 +43,8 @@ export const dataJobsTable = pgTable("data_jobs", {
   status: text("status").$type<typeof DATA_JOB_STATUSES[number]>().notNull().default("pending"),
   triggeredBy: integer("triggered_by").references(() => usersTable.id, { onDelete: "set null" }),
   triggeredByEmail: text("triggered_by_email"),
+  /** True when this job was triggered by the automatic scheduler rather than a user action. */
+  triggeredBySchedule: boolean("triggered_by_schedule").notNull().default(false),
   connectionId: integer("connection_id").references(() => dbConnectionsTable.id, { onDelete: "set null" }),
   connectionName: text("connection_name"),
   recordCount: integer("record_count"),

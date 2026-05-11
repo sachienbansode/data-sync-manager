@@ -63,6 +63,14 @@ async function main() {
 
     -- Additive migrations: safe to re-run (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS)
     ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS fetch_query TEXT;
+
+    -- Schedule support (Task #14)
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_enabled BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_cron TEXT;
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_last_run_at TIMESTAMPTZ;
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_next_run_at TIMESTAMPTZ;
+
+    ALTER TABLE data_jobs ADD COLUMN IF NOT EXISTS triggered_by_schedule BOOLEAN NOT NULL DEFAULT false;
   `);
 
   console.log("Workflow tables created successfully");

@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 
@@ -20,6 +21,9 @@ interface DbConnection {
   schemaName: string;
   outputFilePath: string | null;
   fetchQuery: string | null;
+  scheduleEnabled: boolean;
+  scheduleCron: string | null;
+  scheduleLastRunAt: string | null;
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
@@ -29,7 +33,28 @@ const EMPTY_FORM = {
   name: "", type: "backoffice" as "backoffice" | "trading",
   host: "", port: "5432", dbName: "", schemaName: "public",
   username: "", password: "", outputFilePath: "", fetchQuery: "",
+  scheduleCron: "", scheduleEnabled: false,
 };
+
+const CRON_PRESETS = [
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Every 6 hours", value: "0 */6 * * *" },
+  { label: "Daily at midnight", value: "0 0 * * *" },
+  { label: "Daily at 2 AM", value: "0 2 * * *" },
+  { label: "Daily at 6 AM", value: "0 6 * * *" },
+  { label: "Weekly (Mon 8 AM)", value: "0 8 * * 1" },
+  { label: "Custom", value: "" },
+];
+
+function formatCron(expr: string): string {
+  const preset = CRON_PRESETS.find((p) => p.value === expr && p.value !== "");
+  return preset ? preset.label : expr;
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return "Never";
+  return new Date(iso).toLocaleString();
+}
 
 const apiBase = `${import.meta.env.BASE_URL}api`;
 
@@ -42,6 +67,8 @@ export default function DbConnections() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [togglingSchedule, setTogglingSchedule] = useState<number | null>(null);
+  const [cronPreset, setCronPreset] = useState<string>("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +89,7 @@ export default function DbConnections() {
   function openAdd() {
     setEditId(null);
     setForm(EMPTY_FORM);
+    setCronPreset("");
     setDialogOpen(true);
   }
 
@@ -71,7 +99,10 @@ export default function DbConnections() {
       name: c.name, type: c.type, host: c.host, port: String(c.port),
       dbName: c.dbName, schemaName: c.schemaName, username: "", password: "",
       outputFilePath: c.outputFilePath ?? "", fetchQuery: c.fetchQuery ?? "",
+      scheduleCron: c.scheduleCron ?? "", scheduleEnabled: c.scheduleEnabled,
     });
+    const preset = CRON_PRESETS.find((p) => p.value === c.scheduleCron && p.value !== "");
+    setCronPreset(preset ? preset.value : (c.scheduleCron ? "custom" : ""));
     setDialogOpen(true);
   }
 
@@ -84,6 +115,10 @@ export default function DbConnections() {
       toast.error("Username and password are required for new connections");
       return;
     }
+    if (form.scheduleEnabled && !form.scheduleCron.trim()) {
+      toast.error("A cron expression is required to enable scheduling");
+      return;
+    }
     setSaving(true);
     try {
       const token = getAccessToken();
@@ -92,6 +127,8 @@ export default function DbConnections() {
         dbName: form.dbName, schemaName: form.schemaName || "public",
         outputFilePath: form.outputFilePath || undefined,
         fetchQuery: form.fetchQuery.trim() || undefined,
+        scheduleCron: form.scheduleCron.trim() || undefined,
+        scheduleEnabled: form.scheduleEnabled,
       };
       if (form.username) body.username = form.username;
       if (form.password) body.password = form.password;
@@ -131,6 +168,25 @@ export default function DbConnections() {
     }
   }
 
+  async function toggleSchedule(c: DbConnection) {
+    setTogglingSchedule(c.id);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${apiBase}/admin/db-connections/${c.id}/schedule`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ enabled: !c.scheduleEnabled }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Failed to toggle schedule"); }
+      toast.success(c.scheduleEnabled ? "Schedule disabled" : "Schedule enabled");
+      load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to toggle schedule");
+    } finally {
+      setTogglingSchedule(null);
+    }
+  }
+
   async function deleteConnection() {
     if (!deleteId) return;
     try {
@@ -144,6 +200,15 @@ export default function DbConnections() {
       load();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  function handleCronPresetChange(value: string) {
+    setCronPreset(value);
+    if (value && value !== "custom") {
+      setForm(f => ({ ...f, scheduleCron: value }));
+    } else if (value === "custom") {
+      setForm(f => ({ ...f, scheduleCron: "" }));
     }
   }
 
@@ -178,7 +243,7 @@ export default function DbConnections() {
                 {connections.map((c) => (
                   <div key={c.id} className="py-4 flex items-start justify-between gap-4">
                     <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium">{c.name}</span>
                         <Badge variant={c.type === "backoffice" ? "default" : "secondary"} className="text-xs">
                           {c.type === "backoffice" ? "BackOffice" : "Trading"}
@@ -187,6 +252,12 @@ export default function DbConnections() {
                           c.lastTestSuccess
                             ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3 w-3" /> Tested</span>
                             : <span className="flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3 w-3" /> Failed</span>
+                        )}
+                        {c.type === "backoffice" && c.scheduleCron && (
+                          <span className={`flex items-center gap-1 text-xs ${c.scheduleEnabled ? "text-blue-600" : "text-muted-foreground"}`}>
+                            <CalendarClock className="h-3 w-3" />
+                            {c.scheduleEnabled ? "Scheduled" : "Schedule off"} · {formatCron(c.scheduleCron)}
+                          </span>
                         )}
                       </div>
                       <div className="text-sm text-muted-foreground">
@@ -197,8 +268,26 @@ export default function DbConnections() {
                         Username: <span className="font-mono">••••••••</span> &nbsp;·&nbsp; Password: <span className="font-mono">••••••••</span>
                         {c.outputFilePath && <span className="ml-3">Output: <span className="font-mono">{c.outputFilePath}</span></span>}
                       </div>
+                      {c.type === "backoffice" && c.scheduleCron && (
+                        <div className="text-xs text-muted-foreground flex items-center gap-3">
+                          <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Last run: {formatDate(c.scheduleLastRunAt)}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {c.type === "backoffice" && c.scheduleCron && (
+                        <div className="flex items-center gap-1.5" title={c.scheduleEnabled ? "Disable schedule" : "Enable schedule"}>
+                          {togglingSchedule === c.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                          ) : (
+                            <Switch
+                              checked={c.scheduleEnabled}
+                              onCheckedChange={() => toggleSchedule(c)}
+                              aria-label={c.scheduleEnabled ? "Disable schedule" : "Enable schedule"}
+                            />
+                          )}
+                        </div>
+                      )}
                       <Button variant="outline" size="sm" onClick={() => testConnection(c.id)} disabled={testing === c.id}>
                         {testing === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
                         <span className="ml-1 hidden sm:inline">Test</span>
@@ -219,7 +308,7 @@ export default function DbConnections() {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Connection" : "Add Connection"}</DialogTitle>
             <DialogDescription>Configure database connection details. Credentials are stored encrypted.</DialogDescription>
@@ -232,7 +321,7 @@ export default function DbConnections() {
               </div>
               <div className="space-y-1">
                 <Label>Type</Label>
-                <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as "backoffice" | "trading" }))}>
+                <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as "backoffice" | "trading", scheduleEnabled: false, scheduleCron: "" }))}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="backoffice">BackOffice</SelectItem>
@@ -269,21 +358,65 @@ export default function DbConnections() {
                 <Input value={form.outputFilePath} onChange={e => setForm(f => ({ ...f, outputFilePath: e.target.value }))} placeholder="/data/output/trading-data.csv" />
               </div>
               {form.type === "backoffice" && (
-                <div className="col-span-2 space-y-1">
-                  <Label>
-                    Fetch Query <span className="text-xs text-muted-foreground">(optional — SELECT only)</span>
-                  </Label>
-                  <textarea
-                    className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
-                    value={form.fetchQuery}
-                    onChange={e => setForm(f => ({ ...f, fetchQuery: e.target.value }))}
-                    placeholder={`SELECT * FROM "public"."backoffice_data" LIMIT 1000`}
-                    spellCheck={false}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Read-only SELECT statement executed when fetching data from this connection. Must not contain INSERT, UPDATE, DELETE, or DDL.
-                  </p>
-                </div>
+                <>
+                  <div className="col-span-2 space-y-1">
+                    <Label>
+                      Fetch Query <span className="text-xs text-muted-foreground">(optional — SELECT only)</span>
+                    </Label>
+                    <textarea
+                      className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+                      value={form.fetchQuery}
+                      onChange={e => setForm(f => ({ ...f, fetchQuery: e.target.value }))}
+                      placeholder={`SELECT * FROM "public"."backoffice_data" LIMIT 1000`}
+                      spellCheck={false}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Read-only SELECT statement executed when fetching data from this connection.
+                    </p>
+                  </div>
+
+                  <div className="col-span-2 border-t pt-4 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                      <span className="font-medium text-sm">Automatic Schedule</span>
+                    </div>
+                    <div className="space-y-1">
+                      <Label>Schedule Preset</Label>
+                      <Select value={cronPreset} onValueChange={handleCronPresetChange}>
+                        <SelectTrigger><SelectValue placeholder="Select a schedule…" /></SelectTrigger>
+                        <SelectContent>
+                          {CRON_PRESETS.map((p) => (
+                            <SelectItem key={p.label} value={p.value || "custom"}>{p.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {(cronPreset === "custom" || (cronPreset === "" && form.scheduleCron)) && (
+                      <div className="space-y-1">
+                        <Label>Cron Expression</Label>
+                        <Input
+                          value={form.scheduleCron}
+                          onChange={e => setForm(f => ({ ...f, scheduleCron: e.target.value }))}
+                          placeholder="0 2 * * *"
+                          className="font-mono"
+                        />
+                        <p className="text-xs text-muted-foreground">Standard 5-field cron: minute hour day month weekday</p>
+                      </div>
+                    )}
+                    {form.scheduleCron.trim() && (
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label className="text-sm">Enable Schedule</Label>
+                          <p className="text-xs text-muted-foreground">Automatically fetch data on the schedule above</p>
+                        </div>
+                        <Switch
+                          checked={form.scheduleEnabled}
+                          onCheckedChange={v => setForm(f => ({ ...f, scheduleEnabled: v }))}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </div>
           </div>

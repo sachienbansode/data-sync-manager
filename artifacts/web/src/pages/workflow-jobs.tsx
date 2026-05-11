@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2, Download, ArrowRight, ChevronLeft, History, AlertCircle } from "lucide-react";
+import { Loader2, Download, ArrowRight, ChevronLeft, History, AlertCircle, CalendarClock, User } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
@@ -16,6 +16,7 @@ interface DataJob {
   type: string;
   status: "pending" | "running" | "success" | "failed";
   triggeredByEmail: string | null;
+  triggeredBySchedule: boolean;
   connectionId: number | null;
   connectionName: string | null;
   recordCount: number | null;
@@ -206,10 +207,20 @@ export default function WorkflowJobs() {
                   {jobs.map(job => (
                     <div key={job.id} className="py-4 flex items-start justify-between gap-4">
                       <div className="min-w-0 space-y-1 cursor-pointer" onClick={() => openDetail(job.id)}>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-medium hover:underline">Job #{job.id}</span>
                           <StatusBadge status={job.status} />
                           <span className="text-xs text-muted-foreground capitalize">{job.type.replace("_", " ")}</span>
+                          {job.triggeredBySchedule && (
+                            <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+                              <CalendarClock className="h-3 w-3" /> Scheduled
+                            </span>
+                          )}
+                          {!job.triggeredBySchedule && job.triggeredByEmail && (
+                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <User className="h-3 w-3" /> Manual
+                            </span>
+                          )}
                         </div>
                         <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 gap-y-0.5">
                           {job.connectionName && <span>Connection: {job.connectionName}</span>}
@@ -279,9 +290,13 @@ export default function WorkflowJobs() {
                 {detailJob.job.connectionName && (
                   <div><span className="text-muted-foreground">Connection: </span>{detailJob.job.connectionName}</div>
                 )}
-                {detailJob.job.triggeredByEmail && (
-                  <div><span className="text-muted-foreground">Triggered by: </span>{detailJob.job.triggeredByEmail}</div>
-                )}
+                <div>
+                  <span className="text-muted-foreground">Trigger: </span>
+                  {detailJob.job.triggeredBySchedule
+                    ? <span className="text-blue-600 font-medium">Scheduled</span>
+                    : detailJob.job.triggeredByEmail ?? "Manual"
+                  }
+                </div>
                 {detailJob.job.startedAt && (
                   <div><span className="text-muted-foreground">Started: </span>{new Date(detailJob.job.startedAt).toLocaleString()}</div>
                 )}

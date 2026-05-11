@@ -254,6 +254,7 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
     status: "running",
     triggeredBy: req.user!.sub,
     triggeredByEmail: req.user!.email,
+    triggeredBySchedule: false,
     connectionId: conn.id,
     connectionName: conn.name,
     startedAt: new Date(),

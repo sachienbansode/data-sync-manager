@@ -37,6 +37,9 @@ const PII_FIELDS = ["phone", "nationalId", "bankAccount", "panNumber", "emailCou
 
 const HEX_64 = /^[0-9a-fA-F]{64}$/;
 
+// Write-freeze flag: set to true during key rotation to prevent concurrent plaintext-key mismatches
+let _rotationActive = false;
+
 function maskRecord(r: typeof piiRecordsTable.$inferSelect) {
   return {
     id: r.id,
@@ -70,7 +73,7 @@ setInterval(() => {
   for (const [k, v] of revealRateLimit) if (v.resetAt < now) revealRateLimit.delete(k);
 }, 60_000);
 
-// GET /pii/records — paginated list, all PII fields masked
+// GET /pii/records
 router.get("/pii/records", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const pageSize = Math.min(100, parseInt(req.query.pageSize as string) || 20);
@@ -82,7 +85,7 @@ router.get("/pii/records", authenticate, requirePageAccess("/pii-records"), asyn
   res.json({ records: records.map(maskRecord), total: countRow.count, page, pageSize });
 });
 
-// GET /pii/my-permissions — field types the caller's role may unmask
+// GET /pii/my-permissions
 router.get("/pii/my-permissions", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const roleId = req.user!.roleId;
   const perms = await db
@@ -93,8 +96,13 @@ router.get("/pii/my-permissions", authenticate, requirePageAccess("/pii-records"
   res.json({ allowedFieldTypes: perms.filter(p => p.canUnmask).map(p => p.fieldType) });
 });
 
-// POST /pii/records — create new PII record; all sensitive fields AES-256-GCM encrypted
+// POST /pii/records
 router.post("/pii/records", authenticate, requirePageAccess("/pii-records"), requireRole("Admin"), async (req, res) => {
+  if (_rotationActive) {
+    res.status(503).json({ error: "Key rotation in progress. Writes temporarily blocked. Retry in a few seconds." });
+    return;
+  }
+
   await loadEncryptionKey();
 
   const { name, company, phone, nationalId, bankAccount, panNumber, emailCounterparty, address } = req.body as {
@@ -133,7 +141,7 @@ router.post("/pii/records", authenticate, requirePageAccess("/pii-records"), req
   res.status(201).json(maskRecord(record));
 });
 
-// DELETE /pii/records/:id — hard delete with audit event
+// DELETE /pii/records/:id
 router.delete("/pii/records/:id", authenticate, requirePageAccess("/pii-records"), requireRole("Admin"), async (req, res) => {
   const id = parseInt(req.params.id as string);
   const [existing] = await db.select().from(piiRecordsTable).where(eq(piiRecordsTable.id, id));
@@ -154,7 +162,7 @@ router.delete("/pii/records/:id", authenticate, requirePageAccess("/pii-records"
   res.status(204).send();
 });
 
-// POST /pii/reveal — decrypt a single field after RBAC + rate-limit checks
+// POST /pii/reveal
 router.post("/pii/reveal", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const { recordId, fieldName, recordType = "pii_record" } = req.body as {
     recordId: number;
@@ -227,7 +235,7 @@ router.post("/pii/reveal", authenticate, requirePageAccess("/pii-records"), asyn
   res.json({ value: plaintext });
 });
 
-// GET /pii/field-permissions — role × field unmask matrix
+// GET /pii/field-permissions
 router.get("/pii/field-permissions", authenticate, requireRole("Admin"), async (_req, res) => {
   const roles = await db.select({ id: rolesTable.id, name: rolesTable.name }).from(rolesTable).orderBy(rolesTable.id);
   const perms = await db.select().from(piiFieldPermissionsTable);
@@ -239,7 +247,7 @@ router.get("/pii/field-permissions", authenticate, requireRole("Admin"), async (
   });
 });
 
-// PUT /pii/field-permissions — upsert role × field grants
+// PUT /pii/field-permissions
 router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (req, res) => {
   const { permissions } = req.body as {
     permissions: Array<{ roleId: number; fieldType: string; canUnmask: boolean }>;
@@ -278,9 +286,18 @@ router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (
   });
 });
 
-// POST /pii/rotate-key — re-encrypts all records with newKey; only updates in-memory key
-// after full successful rotation. Admin must update PII_ENCRYPTION_KEY secret before restart.
+// POST /pii/rotate-key
+// Atomically re-encrypts all PII records inside a DB transaction.
+// A write-freeze flag blocks concurrent creates/updates during rotation.
+// updateCachedKey() is called only after the transaction successfully commits.
+// If the transaction rolls back (any record fails), the old key remains active.
+// Admin must update PII_ENCRYPTION_KEY secret before the next server restart.
 router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, res) => {
+  if (_rotationActive) {
+    res.status(409).json({ error: "Another key rotation is already in progress." });
+    return;
+  }
+
   const { newKey } = req.body as { newKey?: string };
 
   if (!newKey || !HEX_64.test(newKey)) {
@@ -298,45 +315,61 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
     return;
   }
 
-  const records = await db.select().from(piiRecordsTable);
+  _rotationActive = true;
   let rotated = 0;
 
-  // Re-encrypt every record; any crypto failure aborts the entire rotation
-  for (const record of records) {
-    const updates: Partial<typeof piiRecordsTable.$inferInsert> = {};
-    let changed = false;
+  try {
+    const records = await db.select().from(piiRecordsTable);
 
-    for (const field of PII_FIELDS) {
-      const val = record[field as keyof typeof record] as string | null;
-      if (!val) continue;
-      const plain = decrypt(val);
-      (updates as Record<string, string>)[field] = encrypt(plain, newKey);
-      changed = true;
-    }
+    // All re-encryption happens inside a single DB transaction.
+    // Any failure causes an automatic ROLLBACK — no records are left in a mixed-key state.
+    await db.transaction(async (tx) => {
+      for (const record of records) {
+        const updates: Partial<typeof piiRecordsTable.$inferInsert> = {};
+        let changed = false;
 
-    if (changed) {
-      await db.update(piiRecordsTable).set(updates).where(eq(piiRecordsTable.id, record.id));
-      rotated++;
-    }
+        for (const field of PII_FIELDS) {
+          const val = record[field as keyof typeof record] as string | null;
+          if (!val) continue;
+          // throws on bad ciphertext — rolls back entire transaction
+          const plain = decrypt(val);
+          (updates as Record<string, string>)[field] = encrypt(plain, newKey);
+          changed = true;
+        }
+
+        if (changed) {
+          await tx.update(piiRecordsTable).set(updates).where(eq(piiRecordsTable.id, record.id));
+          rotated++;
+        }
+      }
+    });
+
+    // Transaction committed — all records now use newKey, safe to swap cache
+    updateCachedKey(newKey);
+
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.sub,
+      userEmail: req.user!.email,
+      action: "PII_KEY_ROTATED",
+      details: `Re-encrypted ${rotated} PII record(s) with new key`,
+      resourceType: "pii_encryption_key",
+      ipAddress: req.ip ?? null,
+    });
+
+    res.json({
+      rotated,
+      success: true,
+      message: `Re-encrypted ${rotated} record(s). ACTION REQUIRED: Update the PII_ENCRYPTION_KEY Replit Secret before the next server restart.`,
+    });
+  } catch (err: unknown) {
+    // Transaction was rolled back — old key still active, all records readable
+    const message = err instanceof Error ? err.message : "Unknown error";
+    res.status(500).json({
+      error: `Key rotation failed and was rolled back. All records remain encrypted with the old key. Error: ${message}`,
+    });
+  } finally {
+    _rotationActive = false;
   }
-
-  // Cache updated only after all records have been successfully re-encrypted
-  updateCachedKey(newKey);
-
-  await db.insert(auditLogsTable).values({
-    userId: req.user!.sub,
-    userEmail: req.user!.email,
-    action: "PII_KEY_ROTATED",
-    details: `Re-encrypted ${rotated} PII record(s) with new key`,
-    resourceType: "pii_encryption_key",
-    ipAddress: req.ip ?? null,
-  });
-
-  res.json({
-    rotated,
-    success: true,
-    message: `Re-encrypted ${rotated} record(s). ACTION REQUIRED: Update the PII_ENCRYPTION_KEY Replit Secret before the next server restart.`,
-  });
 });
 
 export default router;

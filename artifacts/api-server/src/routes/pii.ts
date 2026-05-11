@@ -4,11 +4,9 @@ import {
   db,
   auditLogsTable,
   rolesTable,
-  appSettingsTable,
   piiFieldPermissionsTable,
   piiRecordsTable,
   PII_FIELD_TYPES,
-  type PiiFieldType,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey, updateCachedKey } from "../lib/crypto";
@@ -323,10 +321,9 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
     }
   }
 
-  // Update DB-stored key so future server restarts also use the new key
-  await db.update(appSettingsTable).set({ piiEncryptionKey: newKey });
-
   // Update in-memory cache immediately — no restart required, no downtime
+  // IMPORTANT: Admin must also update the PII_ENCRYPTION_KEY Replit Secret
+  // to the returned newKey value so decryption works after a server restart.
   updateCachedKey(newKey);
 
   await db.insert(auditLogsTable).values({
@@ -338,7 +335,13 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
     ipAddress: req.ip ?? null,
   });
 
-  res.json({ rotated, success: true });
+  res.json({
+    rotated,
+    success: true,
+    message: `Re-encrypted ${rotated} record(s). ` +
+      "In-memory key updated — decryption works immediately. " +
+      "ACTION REQUIRED: Update the PII_ENCRYPTION_KEY Replit Secret to the newKey value before the next server restart.",
+  });
 });
 
 export default router;

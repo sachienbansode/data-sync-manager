@@ -5,7 +5,6 @@ export const appSettingsTable = pgTable("app_settings", {
   appName: text("app_name").notNull().default("Ashika Platform"),
   logoData: text("logo_data"),
   logoMimeType: text("logo_mime_type"),
-  piiEncryptionKey: text("pii_encryption_key"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 

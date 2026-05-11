@@ -22,6 +22,8 @@ const PAGES = [
   { path: "/audit-log", name: "Audit Log" },
   { path: "/docs", name: "API Documentation" },
   { path: "/workflow", name: "Data Workflow" },
+  { path: "/admin/app-settings", name: "App Settings" },
+  { path: "/admin/email-settings", name: "Email Settings" },
   { path: "/admin/pii-permissions", name: "PII Permissions" },
   { path: "/admin/db-connections", name: "DB Connections" },
   { path: "/admin/field-mappings", name: "Field Mappings" },
@@ -30,7 +32,7 @@ const PAGES = [
 const ALL_ROLES_PATHS = ["/dashboard", "/profile", "/mfa-setup"];
 
 const PAGE_ACCESS: Record<string, string[]> = {
-  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
+  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/admin/app-settings", "/admin/email-settings", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
   Manager: [...ALL_ROLES_PATHS, "/docs", "/workflow"],
   Analyst: [...ALL_ROLES_PATHS, "/docs", "/workflow"],
   Viewer: [...ALL_ROLES_PATHS, "/docs"],

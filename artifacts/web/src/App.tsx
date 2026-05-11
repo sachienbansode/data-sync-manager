@@ -14,13 +14,15 @@ import AuditLog from "@/pages/audit-log";
 import MfaSetup from "@/pages/mfa-setup";
 import Forbidden from "@/pages/403";
 import AuthCallback from "@/pages/auth-callback";
+import EmailSettings from "@/pages/admin/email-settings";
+import AppSettings from "@/pages/admin/app-settings";
 import { ProtectedRoute } from "@/components/protected-route";
 
 const queryClient = new QueryClient();
 
 function RootRoute() {
   const { isAuthenticated, isLoading } = useAuth();
-  
+
   if (isLoading) return null;
   return isAuthenticated ? <Redirect to="/dashboard" /> : <Redirect to="/login" />;
 }
@@ -31,7 +33,7 @@ function Router() {
       <Route path="/" component={RootRoute} />
       <Route path="/login" component={Login} />
       <Route path="/403" component={Forbidden} />
-      
+
       <Route path="/mfa-setup">
         <ProtectedRoute component={MfaSetup} path="/mfa-setup" />
       </Route>
@@ -49,6 +51,12 @@ function Router() {
       </Route>
       <Route path="/audit-log">
         <ProtectedRoute component={AuditLog} path="/audit-log" />
+      </Route>
+      <Route path="/admin/email-settings">
+        <ProtectedRoute component={EmailSettings} path="/admin/email-settings" />
+      </Route>
+      <Route path="/admin/app-settings">
+        <ProtectedRoute component={AppSettings} path="/admin/app-settings" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

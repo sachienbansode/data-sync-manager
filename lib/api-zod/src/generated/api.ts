@@ -474,6 +474,15 @@ export const DeletePiiRecordParams = zod.object({
 });
 
 /**
+ * @summary Get the current user's PII field unmask permissions
+ */
+export const GetMyPiiPermissionsResponse = zod.object({
+  allowedFieldTypes: zod
+    .array(zod.string())
+    .describe("PII field types the caller is permitted to reveal"),
+});
+
+/**
  * @summary Reveal (decrypt) a single PII field for an authorized user
  */
 export const RevealPiiFieldBody = zod.object({

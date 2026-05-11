@@ -13,6 +13,7 @@ export * from "./changePasswordInput";
 export * from "./dashboardSummary";
 export * from "./dashboardSummaryUsersByRoleItem";
 export * from "./getAuditLogParams";
+export * from "./getMyPiiPermissions200";
 export * from "./healthStatus";
 export * from "./listPiiRecordsParams";
 export * from "./listUsersParams";

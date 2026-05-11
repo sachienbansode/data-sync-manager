@@ -22,6 +22,7 @@ import type {
   ChangePasswordInput,
   DashboardSummary,
   GetAuditLogParams,
+  GetMyPiiPermissions200,
   HealthStatus,
   ListPiiRecordsParams,
   ListUsersParams,
@@ -2307,6 +2308,81 @@ export const useDeletePiiRecord = <
 > => {
   return useMutation(getDeletePiiRecordMutationOptions(options));
 };
+
+/**
+ * @summary Get the current user's PII field unmask permissions
+ */
+export const getGetMyPiiPermissionsUrl = () => {
+  return `/api/pii/my-permissions`;
+};
+
+export const getMyPiiPermissions = async (
+  options?: RequestInit,
+): Promise<GetMyPiiPermissions200> => {
+  return customFetch<GetMyPiiPermissions200>(getGetMyPiiPermissionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMyPiiPermissionsQueryKey = () => {
+  return [`/api/pii/my-permissions`] as const;
+};
+
+export const getGetMyPiiPermissionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMyPiiPermissions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMyPiiPermissions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMyPiiPermissionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMyPiiPermissions>>
+  > = ({ signal }) => getMyPiiPermissions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMyPiiPermissions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMyPiiPermissionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMyPiiPermissions>>
+>;
+export type GetMyPiiPermissionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get the current user's PII field unmask permissions
+ */
+
+export function useGetMyPiiPermissions<
+  TData = Awaited<ReturnType<typeof getMyPiiPermissions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMyPiiPermissions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMyPiiPermissionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary Reveal (decrypt) a single PII field for an authorized user

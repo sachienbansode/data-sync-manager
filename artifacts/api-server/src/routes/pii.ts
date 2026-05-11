@@ -258,6 +258,13 @@ router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (
     return;
   }
 
+  const validFieldTypes = new Set<string>(PII_FIELD_TYPES);
+  const invalid = permissions.find(p => !validFieldTypes.has(p.fieldType));
+  if (invalid) {
+    res.status(400).json({ error: `Invalid fieldType: '${invalid.fieldType}'. Must be one of: ${[...PII_FIELD_TYPES].join(", ")}` });
+    return;
+  }
+
   for (const p of permissions) {
     await db
       .insert(piiFieldPermissionsTable)

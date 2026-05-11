@@ -334,3 +334,8 @@ export type ListPiiRecordsParams = {
   page?: number;
   pageSize?: number;
 };
+
+export type GetMyPiiPermissions200 = {
+  /** PII field types the caller is permitted to reveal */
+  allowedFieldTypes: string[];
+};

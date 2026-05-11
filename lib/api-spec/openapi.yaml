@@ -542,6 +542,26 @@ paths:
         "204":
           description: Deleted
 
+  /pii/my-permissions:
+    get:
+      operationId: getMyPiiPermissions
+      tags: [pii]
+      summary: Get the current user's PII field unmask permissions
+      responses:
+        "200":
+          description: List of field types the current user can reveal
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [allowedFieldTypes]
+                properties:
+                  allowedFieldTypes:
+                    type: array
+                    items:
+                      type: string
+                    description: PII field types the caller is permitted to reveal
+
   /pii/reveal:
     post:
       operationId: revealPiiField

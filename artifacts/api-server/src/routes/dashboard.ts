@@ -102,10 +102,9 @@ router.get("/dashboard/audit-log", authenticate, requirePageAccess("/audit-log")
 // POST /dashboard/audit-log/export-record — internal audit event when a user downloads the audit log
 router.post("/dashboard/audit-log/export-record", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
   const { filter, count } = req.body as { filter?: string; count?: number };
-  const user = (req as typeof req & { user?: { id: number; email: string } }).user;
   await db.insert(auditLogsTable).values({
-    userId: user?.id ?? null,
-    userEmail: user?.email ?? null,
+    userId: req.user!.sub,
+    userEmail: req.user!.email,
     action: "AUDIT_LOG_EXPORTED",
     details: `Exported ${count ?? 0} records${filter && filter !== "all" ? ` (filter: ${filter})` : ""}`,
     ipAddress: req.ip ?? null,

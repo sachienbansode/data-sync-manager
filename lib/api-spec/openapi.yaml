@@ -20,6 +20,8 @@ tags:
     description: Dashboard summary operations
   - name: pii
     description: PII encryption and masked display
+  - name: workflow
+    description: Data workflow, DB connection manager, and field mappings
 
 paths:
   /healthz:
@@ -620,6 +622,7 @@ paths:
       operationId: rotatePiiKey
       tags: [pii]
       summary: Re-encrypt all PII records with a new key (admin only)
+
       requestBody:
         required: true
         content:
@@ -633,6 +636,258 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PiiRotateKeyResponse"
+
+  # ─── DB CONNECTIONS ─────────────────────────────────────────────────────────
+
+  /admin/db-connections:
+    get:
+      operationId: listDbConnections
+      tags: [workflow]
+      summary: List all DB connections (admin)
+      responses:
+        "200":
+          description: List of DB connections
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DbConnection"
+    post:
+      operationId: createDbConnection
+      tags: [workflow]
+      summary: Create a DB connection (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DbConnectionInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbConnection"
+
+  /admin/db-connections/{id}:
+    put:
+      operationId: updateDbConnection
+      tags: [workflow]
+      summary: Update a DB connection (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DbConnectionInput"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbConnection"
+    delete:
+      operationId: deleteDbConnection
+      tags: [workflow]
+      summary: Delete a DB connection (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /admin/db-connections/{id}/test:
+    post:
+      operationId: testDbConnection
+      tags: [workflow]
+      summary: Test a DB connection (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DbConnectionTestResult"
+
+  # ─── WORKFLOW ────────────────────────────────────────────────────────────────
+
+  /workflow/field-mappings:
+    get:
+      operationId: getFieldMappings
+      tags: [workflow]
+      summary: Get all field mappings
+      responses:
+        "200":
+          description: Field mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldMapping"
+    put:
+      operationId: updateFieldMappings
+      tags: [workflow]
+      summary: Replace all field mappings (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FieldMappingsUpdate"
+      responses:
+        "200":
+          description: Updated mappings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/FieldMapping"
+
+  /workflow/jobs:
+    get:
+      operationId: listDataJobs
+      tags: [workflow]
+      summary: List data pipeline jobs
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Jobs list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataJobListResponse"
+
+  /workflow/jobs/{id}:
+    get:
+      operationId: getDataJob
+      tags: [workflow]
+      summary: Get a job with preview rows
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Job details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataJobDetail"
+
+  /workflow/fetch:
+    post:
+      operationId: fetchFromBackoffice
+      tags: [workflow]
+      summary: Fetch data from a BackOffice DB connection
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowFetchInput"
+      responses:
+        "200":
+          description: Fetch result with job ID and row preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowFetchResponse"
+
+  /workflow/upload-csv:
+    post:
+      operationId: uploadWorkflowCsv
+      tags: [workflow]
+      summary: Upload a pipe-delimited CSV file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Upload result with job ID and row preview
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowUploadResponse"
+
+  /workflow/jobs/{id}/download:
+    post:
+      operationId: downloadJobCsv
+      tags: [workflow]
+      summary: Download transformed pipe-delimited CSV for a job
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /workflow/jobs/{id}/push:
+    post:
+      operationId: pushJobToPath
+      tags: [workflow]
+      summary: Push transformed CSV to the configured output file path (Admin/Manager)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Push result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkflowPushResponse"
 
 components:
   schemas:
@@ -1102,3 +1357,240 @@ components:
           description: Number of records re-encrypted
         success:
           type: boolean
+
+    # ─── Workflow / DB Connections ────────────────────────────────────────────
+
+    DbConnection:
+      type: object
+      required: [id, name, type, host, port, dbName, schemaName, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [backoffice, trading]
+        host:
+          type: string
+        port:
+          type: integer
+        dbName:
+          type: string
+        schemaName:
+          type: string
+        outputFilePath:
+          type: ["string", "null"]
+        createdBy:
+          type: ["integer", "null"]
+        lastTestedAt:
+          type: ["string", "null"]
+          format: date-time
+        lastTestSuccess:
+          type: ["boolean", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    DbConnectionInput:
+      type: object
+      required: [name, type, host, dbName]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [backoffice, trading]
+        host:
+          type: string
+        port:
+          type: integer
+          default: 5432
+        dbName:
+          type: string
+        schemaName:
+          type: string
+          default: public
+        username:
+          type: string
+        password:
+          type: string
+        outputFilePath:
+          type: string
+
+    DbConnectionTestResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        error:
+          type: ["string", "null"]
+
+    FieldMapping:
+      type: object
+      required: [id, backofficeField, tradingField, transformType, sortOrder]
+      properties:
+        id:
+          type: integer
+        backofficeField:
+          type: string
+        tradingField:
+          type: string
+        transformType:
+          type: string
+          enum: [string, number, date-format]
+        transformParams:
+          type: ["string", "null"]
+        sortOrder:
+          type: integer
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FieldMappingsUpdate:
+      type: object
+      required: [mappings]
+      properties:
+        mappings:
+          type: array
+          items:
+            type: object
+            required: [backofficeField, tradingField]
+            properties:
+              backofficeField:
+                type: string
+              tradingField:
+                type: string
+              transformType:
+                type: string
+                enum: [string, number, date-format]
+              transformParams:
+                type: string
+              sortOrder:
+                type: integer
+
+    DataJob:
+      type: object
+      required: [id, type, status, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [fetch, upload_csv]
+        status:
+          type: string
+          enum: [pending, running, success, failed]
+        triggeredBy:
+          type: ["integer", "null"]
+        triggeredByEmail:
+          type: ["string", "null"]
+        connectionId:
+          type: ["integer", "null"]
+        connectionName:
+          type: ["string", "null"]
+        recordCount:
+          type: ["integer", "null"]
+        errorMessage:
+          type: ["string", "null"]
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    DataJobListResponse:
+      type: object
+      required: [jobs, total, page, pageSize]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/DataJob"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    DataJobDetail:
+      type: object
+      required: [job, preview]
+      properties:
+        job:
+          $ref: "#/components/schemas/DataJob"
+        preview:
+          type: array
+          items:
+            type: object
+            properties:
+              rowIndex:
+                type: integer
+              rawData:
+                type: object
+                additionalProperties: true
+
+    WorkflowFetchInput:
+      type: object
+      required: [connectionId]
+      properties:
+        connectionId:
+          type: integer
+        query:
+          type: string
+          description: Optional custom SELECT query; defaults to SELECT * FROM schema.backoffice_data LIMIT 1000
+
+    WorkflowFetchResponse:
+      type: object
+      required: [jobId, recordCount, preview]
+      properties:
+        jobId:
+          type: integer
+        recordCount:
+          type: integer
+        preview:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    WorkflowUploadResponse:
+      type: object
+      required: [jobId, headers, recordCount, preview]
+      properties:
+        jobId:
+          type: integer
+        headers:
+          type: array
+          items:
+            type: string
+        recordCount:
+          type: integer
+        preview:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    WorkflowPushResponse:
+      type: object
+      required: [success, path]
+      properties:
+        success:
+          type: boolean
+        path:
+          type: string

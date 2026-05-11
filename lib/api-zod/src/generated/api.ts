@@ -562,3 +562,260 @@ export const RotatePiiKeyResponse = zod.object({
   rotated: zod.number().describe("Number of records re-encrypted"),
   success: zod.boolean(),
 });
+
+/**
+ * @summary List all DB connections (admin)
+ */
+export const ListDbConnectionsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  type: zod.enum(["backoffice", "trading"]),
+  host: zod.string(),
+  port: zod.number(),
+  dbName: zod.string(),
+  schemaName: zod.string(),
+  outputFilePath: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  lastTestedAt: zod.coerce.date().nullish(),
+  lastTestSuccess: zod.boolean().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListDbConnectionsResponse = zod.array(
+  ListDbConnectionsResponseItem,
+);
+
+/**
+ * @summary Create a DB connection (admin)
+ */
+export const createDbConnectionBodyPortDefault = 5432;
+export const createDbConnectionBodySchemaNameDefault = `public`;
+
+export const CreateDbConnectionBody = zod.object({
+  name: zod.string(),
+  type: zod.enum(["backoffice", "trading"]),
+  host: zod.string(),
+  port: zod.number().default(createDbConnectionBodyPortDefault),
+  dbName: zod.string(),
+  schemaName: zod.string().default(createDbConnectionBodySchemaNameDefault),
+  username: zod.string().optional(),
+  password: zod.string().optional(),
+  outputFilePath: zod.string().optional(),
+});
+
+/**
+ * @summary Update a DB connection (admin)
+ */
+export const UpdateDbConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const updateDbConnectionBodyPortDefault = 5432;
+export const updateDbConnectionBodySchemaNameDefault = `public`;
+
+export const UpdateDbConnectionBody = zod.object({
+  name: zod.string(),
+  type: zod.enum(["backoffice", "trading"]),
+  host: zod.string(),
+  port: zod.number().default(updateDbConnectionBodyPortDefault),
+  dbName: zod.string(),
+  schemaName: zod.string().default(updateDbConnectionBodySchemaNameDefault),
+  username: zod.string().optional(),
+  password: zod.string().optional(),
+  outputFilePath: zod.string().optional(),
+});
+
+export const UpdateDbConnectionResponse = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  type: zod.enum(["backoffice", "trading"]),
+  host: zod.string(),
+  port: zod.number(),
+  dbName: zod.string(),
+  schemaName: zod.string(),
+  outputFilePath: zod.string().nullish(),
+  createdBy: zod.number().nullish(),
+  lastTestedAt: zod.coerce.date().nullish(),
+  lastTestSuccess: zod.boolean().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a DB connection (admin)
+ */
+export const DeleteDbConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Test a DB connection (admin)
+ */
+export const TestDbConnectionParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const TestDbConnectionResponse = zod.object({
+  success: zod.boolean(),
+  message: zod.string().optional(),
+  error: zod.string().nullish(),
+});
+
+/**
+ * @summary Get all field mappings
+ */
+export const GetFieldMappingsResponseItem = zod.object({
+  id: zod.number(),
+  backofficeField: zod.string(),
+  tradingField: zod.string(),
+  transformType: zod.enum(["string", "number", "date-format"]),
+  transformParams: zod.string().nullish(),
+  sortOrder: zod.number(),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
+export const GetFieldMappingsResponse = zod.array(GetFieldMappingsResponseItem);
+
+/**
+ * @summary Replace all field mappings (admin)
+ */
+export const UpdateFieldMappingsBody = zod.object({
+  mappings: zod.array(
+    zod.object({
+      backofficeField: zod.string(),
+      tradingField: zod.string(),
+      transformType: zod.enum(["string", "number", "date-format"]).optional(),
+      transformParams: zod.string().optional(),
+      sortOrder: zod.number().optional(),
+    }),
+  ),
+});
+
+export const UpdateFieldMappingsResponseItem = zod.object({
+  id: zod.number(),
+  backofficeField: zod.string(),
+  tradingField: zod.string(),
+  transformType: zod.enum(["string", "number", "date-format"]),
+  transformParams: zod.string().nullish(),
+  sortOrder: zod.number(),
+  createdAt: zod.coerce.date().optional(),
+  updatedAt: zod.coerce.date().optional(),
+});
+export const UpdateFieldMappingsResponse = zod.array(
+  UpdateFieldMappingsResponseItem,
+);
+
+/**
+ * @summary List data pipeline jobs
+ */
+export const listDataJobsQueryPageDefault = 1;
+export const listDataJobsQueryPageSizeDefault = 20;
+
+export const ListDataJobsQueryParams = zod.object({
+  page: zod.coerce.number().default(listDataJobsQueryPageDefault),
+  pageSize: zod.coerce.number().default(listDataJobsQueryPageSizeDefault),
+});
+
+export const ListDataJobsResponse = zod.object({
+  jobs: zod.array(
+    zod.object({
+      id: zod.number(),
+      type: zod.enum(["fetch", "upload_csv"]),
+      status: zod.enum(["pending", "running", "success", "failed"]),
+      triggeredBy: zod.number().nullish(),
+      triggeredByEmail: zod.string().nullish(),
+      connectionId: zod.number().nullish(),
+      connectionName: zod.string().nullish(),
+      recordCount: zod.number().nullish(),
+      errorMessage: zod.string().nullish(),
+      startedAt: zod.coerce.date().nullish(),
+      finishedAt: zod.coerce.date().nullish(),
+      createdAt: zod.coerce.date(),
+    }),
+  ),
+  total: zod.number(),
+  page: zod.number(),
+  pageSize: zod.number(),
+});
+
+/**
+ * @summary Get a job with preview rows
+ */
+export const GetDataJobParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const GetDataJobResponse = zod.object({
+  job: zod.object({
+    id: zod.number(),
+    type: zod.enum(["fetch", "upload_csv"]),
+    status: zod.enum(["pending", "running", "success", "failed"]),
+    triggeredBy: zod.number().nullish(),
+    triggeredByEmail: zod.string().nullish(),
+    connectionId: zod.number().nullish(),
+    connectionName: zod.string().nullish(),
+    recordCount: zod.number().nullish(),
+    errorMessage: zod.string().nullish(),
+    startedAt: zod.coerce.date().nullish(),
+    finishedAt: zod.coerce.date().nullish(),
+    createdAt: zod.coerce.date(),
+  }),
+  preview: zod.array(
+    zod.object({
+      rowIndex: zod.number().optional(),
+      rawData: zod.record(zod.string(), zod.unknown()).optional(),
+    }),
+  ),
+});
+
+/**
+ * @summary Fetch data from a BackOffice DB connection
+ */
+export const FetchFromBackofficeBody = zod.object({
+  connectionId: zod.number(),
+  query: zod
+    .string()
+    .optional()
+    .describe(
+      "Optional custom SELECT query; defaults to SELECT \* FROM schema.backoffice_data LIMIT 1000",
+    ),
+});
+
+export const FetchFromBackofficeResponse = zod.object({
+  jobId: zod.number(),
+  recordCount: zod.number(),
+  preview: zod.array(zod.record(zod.string(), zod.unknown())),
+});
+
+/**
+ * @summary Upload a pipe-delimited CSV file
+ */
+export const UploadWorkflowCsvBody = zod.object({
+  file: zod.instanceof(File),
+});
+
+export const UploadWorkflowCsvResponse = zod.object({
+  jobId: zod.number(),
+  headers: zod.array(zod.string()),
+  recordCount: zod.number(),
+  preview: zod.array(zod.record(zod.string(), zod.unknown())),
+});
+
+/**
+ * @summary Download transformed pipe-delimited CSV for a job
+ */
+export const DownloadJobCsvParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+/**
+ * @summary Push transformed CSV to the configured output file path (Admin/Manager)
+ */
+export const PushJobToPathParams = zod.object({
+  id: zod.coerce.number(),
+});
+
+export const PushJobToPathResponse = zod.object({
+  success: zod.boolean(),
+  path: zod.string(),
+});

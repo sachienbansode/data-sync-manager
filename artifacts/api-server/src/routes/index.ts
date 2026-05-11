@@ -8,6 +8,8 @@ import smtpRouter from "./smtp";
 import emailOtpRouter from "./email-otp";
 import appSettingsRouter from "./app-settings";
 import piiRouter from "./pii";
+import dbConnectionsRouter from "./db-connections";
+import workflowRouter from "./workflow";
 
 const router: IRouter = Router();
 
@@ -20,5 +22,7 @@ router.use(dashboardRouter);
 router.use(smtpRouter);
 router.use(appSettingsRouter);
 router.use(piiRouter);
+router.use(dbConnectionsRouter);
+router.use(workflowRouter);
 
 export default router;

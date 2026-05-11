@@ -298,6 +298,189 @@ export interface PiiRotateKeyResponse {
   success: boolean;
 }
 
+export type DbConnectionType =
+  (typeof DbConnectionType)[keyof typeof DbConnectionType];
+
+export const DbConnectionType = {
+  backoffice: "backoffice",
+  trading: "trading",
+} as const;
+
+export interface DbConnection {
+  id: number;
+  name: string;
+  type: DbConnectionType;
+  host: string;
+  port: number;
+  dbName: string;
+  schemaName: string;
+  /** @nullable */
+  outputFilePath?: string | null;
+  /** @nullable */
+  createdBy?: number | null;
+  /** @nullable */
+  lastTestedAt?: string | null;
+  /** @nullable */
+  lastTestSuccess?: boolean | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DbConnectionInputType =
+  (typeof DbConnectionInputType)[keyof typeof DbConnectionInputType];
+
+export const DbConnectionInputType = {
+  backoffice: "backoffice",
+  trading: "trading",
+} as const;
+
+export interface DbConnectionInput {
+  name: string;
+  type: DbConnectionInputType;
+  host: string;
+  port?: number;
+  dbName: string;
+  schemaName?: string;
+  username?: string;
+  password?: string;
+  outputFilePath?: string;
+}
+
+export interface DbConnectionTestResult {
+  success: boolean;
+  message?: string;
+  /** @nullable */
+  error?: string | null;
+}
+
+export type FieldMappingTransformType =
+  (typeof FieldMappingTransformType)[keyof typeof FieldMappingTransformType];
+
+export const FieldMappingTransformType = {
+  string: "string",
+  number: "number",
+  "date-format": "date-format",
+} as const;
+
+export interface FieldMapping {
+  id: number;
+  backofficeField: string;
+  tradingField: string;
+  transformType: FieldMappingTransformType;
+  /** @nullable */
+  transformParams?: string | null;
+  sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type FieldMappingsUpdateMappingsItemTransformType =
+  (typeof FieldMappingsUpdateMappingsItemTransformType)[keyof typeof FieldMappingsUpdateMappingsItemTransformType];
+
+export const FieldMappingsUpdateMappingsItemTransformType = {
+  string: "string",
+  number: "number",
+  "date-format": "date-format",
+} as const;
+
+export type FieldMappingsUpdateMappingsItem = {
+  backofficeField: string;
+  tradingField: string;
+  transformType?: FieldMappingsUpdateMappingsItemTransformType;
+  transformParams?: string;
+  sortOrder?: number;
+};
+
+export interface FieldMappingsUpdate {
+  mappings: FieldMappingsUpdateMappingsItem[];
+}
+
+export type DataJobType = (typeof DataJobType)[keyof typeof DataJobType];
+
+export const DataJobType = {
+  fetch: "fetch",
+  upload_csv: "upload_csv",
+} as const;
+
+export type DataJobStatus = (typeof DataJobStatus)[keyof typeof DataJobStatus];
+
+export const DataJobStatus = {
+  pending: "pending",
+  running: "running",
+  success: "success",
+  failed: "failed",
+} as const;
+
+export interface DataJob {
+  id: number;
+  type: DataJobType;
+  status: DataJobStatus;
+  /** @nullable */
+  triggeredBy?: number | null;
+  /** @nullable */
+  triggeredByEmail?: string | null;
+  /** @nullable */
+  connectionId?: number | null;
+  /** @nullable */
+  connectionName?: string | null;
+  /** @nullable */
+  recordCount?: number | null;
+  /** @nullable */
+  errorMessage?: string | null;
+  /** @nullable */
+  startedAt?: string | null;
+  /** @nullable */
+  finishedAt?: string | null;
+  createdAt: string;
+}
+
+export interface DataJobListResponse {
+  jobs: DataJob[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export type DataJobDetailPreviewItemRawData = { [key: string]: unknown };
+
+export type DataJobDetailPreviewItem = {
+  rowIndex?: number;
+  rawData?: DataJobDetailPreviewItemRawData;
+};
+
+export interface DataJobDetail {
+  job: DataJob;
+  preview: DataJobDetailPreviewItem[];
+}
+
+export interface WorkflowFetchInput {
+  connectionId: number;
+  /** Optional custom SELECT query; defaults to SELECT * FROM schema.backoffice_data LIMIT 1000 */
+  query?: string;
+}
+
+export type WorkflowFetchResponsePreviewItem = { [key: string]: unknown };
+
+export interface WorkflowFetchResponse {
+  jobId: number;
+  recordCount: number;
+  preview: WorkflowFetchResponsePreviewItem[];
+}
+
+export type WorkflowUploadResponsePreviewItem = { [key: string]: unknown };
+
+export interface WorkflowUploadResponse {
+  jobId: number;
+  headers: string[];
+  recordCount: number;
+  preview: WorkflowUploadResponsePreviewItem[];
+}
+
+export interface WorkflowPushResponse {
+  success: boolean;
+  path: string;
+}
+
 export type M365CallbackParams = {
   code?: string;
   state?: string;
@@ -338,4 +521,13 @@ export type ListPiiRecordsParams = {
 export type GetMyPiiPermissions200 = {
   /** PII field types the caller is permitted to reveal */
   allowedFieldTypes: string[];
+};
+
+export type ListDataJobsParams = {
+  page?: number;
+  pageSize?: number;
+};
+
+export type UploadWorkflowCsvBody = {
+  file: Blob;
 };

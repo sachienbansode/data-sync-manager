@@ -21,9 +21,17 @@ import type {
   AuthResponse,
   ChangePasswordInput,
   DashboardSummary,
+  DataJobDetail,
+  DataJobListResponse,
+  DbConnection,
+  DbConnectionInput,
+  DbConnectionTestResult,
+  FieldMapping,
+  FieldMappingsUpdate,
   GetAuditLogParams,
   GetMyPiiPermissions200,
   HealthStatus,
+  ListDataJobsParams,
   ListPiiRecordsParams,
   ListUsersParams,
   LoginInput,
@@ -44,6 +52,7 @@ import type {
   RefreshInput,
   Role,
   TokenPair,
+  UploadWorkflowCsvBody,
   User,
   UserInput,
   UserListResponse,
@@ -51,6 +60,10 @@ import type {
   UserRoleUpdate,
   UserStatusUpdate,
   UserUpdate,
+  WorkflowFetchInput,
+  WorkflowFetchResponse,
+  WorkflowPushResponse,
+  WorkflowUploadResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -2723,4 +2736,1104 @@ export const useRotatePiiKey = <
   TContext
 > => {
   return useMutation(getRotatePiiKeyMutationOptions(options));
+};
+
+/**
+ * @summary List all DB connections (admin)
+ */
+export const getListDbConnectionsUrl = () => {
+  return `/api/admin/db-connections`;
+};
+
+export const listDbConnections = async (
+  options?: RequestInit,
+): Promise<DbConnection[]> => {
+  return customFetch<DbConnection[]>(getListDbConnectionsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDbConnectionsQueryKey = () => {
+  return [`/api/admin/db-connections`] as const;
+};
+
+export const getListDbConnectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDbConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDbConnections>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDbConnectionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listDbConnections>>
+  > = ({ signal }) => listDbConnections({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDbConnections>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDbConnectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDbConnections>>
+>;
+export type ListDbConnectionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all DB connections (admin)
+ */
+
+export function useListDbConnections<
+  TData = Awaited<ReturnType<typeof listDbConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listDbConnections>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDbConnectionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a DB connection (admin)
+ */
+export const getCreateDbConnectionUrl = () => {
+  return `/api/admin/db-connections`;
+};
+
+export const createDbConnection = async (
+  dbConnectionInput: DbConnectionInput,
+  options?: RequestInit,
+): Promise<DbConnection> => {
+  return customFetch<DbConnection>(getCreateDbConnectionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dbConnectionInput),
+  });
+};
+
+export const getCreateDbConnectionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDbConnection>>,
+    TError,
+    { data: BodyType<DbConnectionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createDbConnection>>,
+  TError,
+  { data: BodyType<DbConnectionInput> },
+  TContext
+> => {
+  const mutationKey = ["createDbConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createDbConnection>>,
+    { data: BodyType<DbConnectionInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createDbConnection(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateDbConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createDbConnection>>
+>;
+export type CreateDbConnectionMutationBody = BodyType<DbConnectionInput>;
+export type CreateDbConnectionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a DB connection (admin)
+ */
+export const useCreateDbConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createDbConnection>>,
+    TError,
+    { data: BodyType<DbConnectionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createDbConnection>>,
+  TError,
+  { data: BodyType<DbConnectionInput> },
+  TContext
+> => {
+  return useMutation(getCreateDbConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Update a DB connection (admin)
+ */
+export const getUpdateDbConnectionUrl = (id: number) => {
+  return `/api/admin/db-connections/${id}`;
+};
+
+export const updateDbConnection = async (
+  id: number,
+  dbConnectionInput: DbConnectionInput,
+  options?: RequestInit,
+): Promise<DbConnection> => {
+  return customFetch<DbConnection>(getUpdateDbConnectionUrl(id), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(dbConnectionInput),
+  });
+};
+
+export const getUpdateDbConnectionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDbConnection>>,
+    TError,
+    { id: number; data: BodyType<DbConnectionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateDbConnection>>,
+  TError,
+  { id: number; data: BodyType<DbConnectionInput> },
+  TContext
+> => {
+  const mutationKey = ["updateDbConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateDbConnection>>,
+    { id: number; data: BodyType<DbConnectionInput> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateDbConnection(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateDbConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateDbConnection>>
+>;
+export type UpdateDbConnectionMutationBody = BodyType<DbConnectionInput>;
+export type UpdateDbConnectionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a DB connection (admin)
+ */
+export const useUpdateDbConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateDbConnection>>,
+    TError,
+    { id: number; data: BodyType<DbConnectionInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateDbConnection>>,
+  TError,
+  { id: number; data: BodyType<DbConnectionInput> },
+  TContext
+> => {
+  return useMutation(getUpdateDbConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Delete a DB connection (admin)
+ */
+export const getDeleteDbConnectionUrl = (id: number) => {
+  return `/api/admin/db-connections/${id}`;
+};
+
+export const deleteDbConnection = async (
+  id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteDbConnectionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteDbConnectionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDbConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteDbConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteDbConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteDbConnection>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteDbConnection(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteDbConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteDbConnection>>
+>;
+
+export type DeleteDbConnectionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a DB connection (admin)
+ */
+export const useDeleteDbConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteDbConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteDbConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDeleteDbConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Test a DB connection (admin)
+ */
+export const getTestDbConnectionUrl = (id: number) => {
+  return `/api/admin/db-connections/${id}/test`;
+};
+
+export const testDbConnection = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DbConnectionTestResult> => {
+  return customFetch<DbConnectionTestResult>(getTestDbConnectionUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getTestDbConnectionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testDbConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof testDbConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["testDbConnection"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof testDbConnection>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return testDbConnection(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type TestDbConnectionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof testDbConnection>>
+>;
+
+export type TestDbConnectionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Test a DB connection (admin)
+ */
+export const useTestDbConnection = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof testDbConnection>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof testDbConnection>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getTestDbConnectionMutationOptions(options));
+};
+
+/**
+ * @summary Get all field mappings
+ */
+export const getGetFieldMappingsUrl = () => {
+  return `/api/workflow/field-mappings`;
+};
+
+export const getFieldMappings = async (
+  options?: RequestInit,
+): Promise<FieldMapping[]> => {
+  return customFetch<FieldMapping[]>(getGetFieldMappingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetFieldMappingsQueryKey = () => {
+  return [`/api/workflow/field-mappings`] as const;
+};
+
+export const getGetFieldMappingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFieldMappings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFieldMappings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetFieldMappingsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFieldMappings>>
+  > = ({ signal }) => getFieldMappings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFieldMappings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFieldMappingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFieldMappings>>
+>;
+export type GetFieldMappingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get all field mappings
+ */
+
+export function useGetFieldMappings<
+  TData = Awaited<ReturnType<typeof getFieldMappings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getFieldMappings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFieldMappingsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Replace all field mappings (admin)
+ */
+export const getUpdateFieldMappingsUrl = () => {
+  return `/api/workflow/field-mappings`;
+};
+
+export const updateFieldMappings = async (
+  fieldMappingsUpdate: FieldMappingsUpdate,
+  options?: RequestInit,
+): Promise<FieldMapping[]> => {
+  return customFetch<FieldMapping[]>(getUpdateFieldMappingsUrl(), {
+    ...options,
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(fieldMappingsUpdate),
+  });
+};
+
+export const getUpdateFieldMappingsMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFieldMappings>>,
+    TError,
+    { data: BodyType<FieldMappingsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateFieldMappings>>,
+  TError,
+  { data: BodyType<FieldMappingsUpdate> },
+  TContext
+> => {
+  const mutationKey = ["updateFieldMappings"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateFieldMappings>>,
+    { data: BodyType<FieldMappingsUpdate> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return updateFieldMappings(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateFieldMappingsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateFieldMappings>>
+>;
+export type UpdateFieldMappingsMutationBody = BodyType<FieldMappingsUpdate>;
+export type UpdateFieldMappingsMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Replace all field mappings (admin)
+ */
+export const useUpdateFieldMappings = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateFieldMappings>>,
+    TError,
+    { data: BodyType<FieldMappingsUpdate> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateFieldMappings>>,
+  TError,
+  { data: BodyType<FieldMappingsUpdate> },
+  TContext
+> => {
+  return useMutation(getUpdateFieldMappingsMutationOptions(options));
+};
+
+/**
+ * @summary List data pipeline jobs
+ */
+export const getListDataJobsUrl = (params?: ListDataJobsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/workflow/jobs?${stringifiedParams}`
+    : `/api/workflow/jobs`;
+};
+
+export const listDataJobs = async (
+  params?: ListDataJobsParams,
+  options?: RequestInit,
+): Promise<DataJobListResponse> => {
+  return customFetch<DataJobListResponse>(getListDataJobsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListDataJobsQueryKey = (params?: ListDataJobsParams) => {
+  return [`/api/workflow/jobs`, ...(params ? [params] : [])] as const;
+};
+
+export const getListDataJobsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listDataJobs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDataJobsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDataJobs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListDataJobsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listDataJobs>>> = ({
+    signal,
+  }) => listDataJobs(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listDataJobs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListDataJobsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listDataJobs>>
+>;
+export type ListDataJobsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List data pipeline jobs
+ */
+
+export function useListDataJobs<
+  TData = Awaited<ReturnType<typeof listDataJobs>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListDataJobsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listDataJobs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListDataJobsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Get a job with preview rows
+ */
+export const getGetDataJobUrl = (id: number) => {
+  return `/api/workflow/jobs/${id}`;
+};
+
+export const getDataJob = async (
+  id: number,
+  options?: RequestInit,
+): Promise<DataJobDetail> => {
+  return customFetch<DataJobDetail>(getGetDataJobUrl(id), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetDataJobQueryKey = (id: number) => {
+  return [`/api/workflow/jobs/${id}`] as const;
+};
+
+export const getGetDataJobQueryOptions = <
+  TData = Awaited<ReturnType<typeof getDataJob>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDataJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetDataJobQueryKey(id);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getDataJob>>> = ({
+    signal,
+  }) => getDataJob(id, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!id,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getDataJob>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetDataJobQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getDataJob>>
+>;
+export type GetDataJobQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Get a job with preview rows
+ */
+
+export function useGetDataJob<
+  TData = Awaited<ReturnType<typeof getDataJob>>,
+  TError = ErrorType<unknown>,
+>(
+  id: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getDataJob>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetDataJobQueryOptions(id, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Fetch data from a BackOffice DB connection
+ */
+export const getFetchFromBackofficeUrl = () => {
+  return `/api/workflow/fetch`;
+};
+
+export const fetchFromBackoffice = async (
+  workflowFetchInput: WorkflowFetchInput,
+  options?: RequestInit,
+): Promise<WorkflowFetchResponse> => {
+  return customFetch<WorkflowFetchResponse>(getFetchFromBackofficeUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(workflowFetchInput),
+  });
+};
+
+export const getFetchFromBackofficeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchFromBackoffice>>,
+    TError,
+    { data: BodyType<WorkflowFetchInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof fetchFromBackoffice>>,
+  TError,
+  { data: BodyType<WorkflowFetchInput> },
+  TContext
+> => {
+  const mutationKey = ["fetchFromBackoffice"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof fetchFromBackoffice>>,
+    { data: BodyType<WorkflowFetchInput> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return fetchFromBackoffice(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FetchFromBackofficeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof fetchFromBackoffice>>
+>;
+export type FetchFromBackofficeMutationBody = BodyType<WorkflowFetchInput>;
+export type FetchFromBackofficeMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Fetch data from a BackOffice DB connection
+ */
+export const useFetchFromBackoffice = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchFromBackoffice>>,
+    TError,
+    { data: BodyType<WorkflowFetchInput> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof fetchFromBackoffice>>,
+  TError,
+  { data: BodyType<WorkflowFetchInput> },
+  TContext
+> => {
+  return useMutation(getFetchFromBackofficeMutationOptions(options));
+};
+
+/**
+ * @summary Upload a pipe-delimited CSV file
+ */
+export const getUploadWorkflowCsvUrl = () => {
+  return `/api/workflow/upload-csv`;
+};
+
+export const uploadWorkflowCsv = async (
+  uploadWorkflowCsvBody: UploadWorkflowCsvBody,
+  options?: RequestInit,
+): Promise<WorkflowUploadResponse> => {
+  const formData = new FormData();
+  formData.append(`file`, uploadWorkflowCsvBody.file);
+
+  return customFetch<WorkflowUploadResponse>(getUploadWorkflowCsvUrl(), {
+    ...options,
+    method: "POST",
+    body: formData,
+  });
+};
+
+export const getUploadWorkflowCsvMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadWorkflowCsv>>,
+    TError,
+    { data: BodyType<UploadWorkflowCsvBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof uploadWorkflowCsv>>,
+  TError,
+  { data: BodyType<UploadWorkflowCsvBody> },
+  TContext
+> => {
+  const mutationKey = ["uploadWorkflowCsv"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof uploadWorkflowCsv>>,
+    { data: BodyType<UploadWorkflowCsvBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return uploadWorkflowCsv(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UploadWorkflowCsvMutationResult = NonNullable<
+  Awaited<ReturnType<typeof uploadWorkflowCsv>>
+>;
+export type UploadWorkflowCsvMutationBody = BodyType<UploadWorkflowCsvBody>;
+export type UploadWorkflowCsvMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Upload a pipe-delimited CSV file
+ */
+export const useUploadWorkflowCsv = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof uploadWorkflowCsv>>,
+    TError,
+    { data: BodyType<UploadWorkflowCsvBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof uploadWorkflowCsv>>,
+  TError,
+  { data: BodyType<UploadWorkflowCsvBody> },
+  TContext
+> => {
+  return useMutation(getUploadWorkflowCsvMutationOptions(options));
+};
+
+/**
+ * @summary Download transformed pipe-delimited CSV for a job
+ */
+export const getDownloadJobCsvUrl = (id: number) => {
+  return `/api/workflow/jobs/${id}/download`;
+};
+
+export const downloadJobCsv = async (
+  id: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getDownloadJobCsvUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getDownloadJobCsvMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof downloadJobCsv>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof downloadJobCsv>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["downloadJobCsv"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof downloadJobCsv>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return downloadJobCsv(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DownloadJobCsvMutationResult = NonNullable<
+  Awaited<ReturnType<typeof downloadJobCsv>>
+>;
+
+export type DownloadJobCsvMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Download transformed pipe-delimited CSV for a job
+ */
+export const useDownloadJobCsv = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof downloadJobCsv>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof downloadJobCsv>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getDownloadJobCsvMutationOptions(options));
+};
+
+/**
+ * @summary Push transformed CSV to the configured output file path (Admin/Manager)
+ */
+export const getPushJobToPathUrl = (id: number) => {
+  return `/api/workflow/jobs/${id}/push`;
+};
+
+export const pushJobToPath = async (
+  id: number,
+  options?: RequestInit,
+): Promise<WorkflowPushResponse> => {
+  return customFetch<WorkflowPushResponse>(getPushJobToPathUrl(id), {
+    ...options,
+    method: "POST",
+  });
+};
+
+export const getPushJobToPathMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushJobToPath>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof pushJobToPath>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  const mutationKey = ["pushJobToPath"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof pushJobToPath>>,
+    { id: number }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return pushJobToPath(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type PushJobToPathMutationResult = NonNullable<
+  Awaited<ReturnType<typeof pushJobToPath>>
+>;
+
+export type PushJobToPathMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Push transformed CSV to the configured output file path (Admin/Manager)
+ */
+export const usePushJobToPath = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof pushJobToPath>>,
+    TError,
+    { id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof pushJobToPath>>,
+  TError,
+  { id: number },
+  TContext
+> => {
+  return useMutation(getPushJobToPathMutationOptions(options));
 };

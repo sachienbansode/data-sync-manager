@@ -18,6 +18,10 @@ import EmailSettings from "@/pages/admin/email-settings";
 import AppSettings from "@/pages/admin/app-settings";
 import PiiPermissions from "@/pages/admin/pii-permissions";
 import PiiRecords from "@/pages/pii-records";
+import DbConnections from "@/pages/admin/db-connections";
+import FieldMappings from "@/pages/admin/field-mappings";
+import Workflow from "@/pages/workflow";
+import WorkflowJobs from "@/pages/workflow-jobs";
 import { ProtectedRoute } from "@/components/protected-route";
 
 const queryClient = new QueryClient();
@@ -65,6 +69,18 @@ function Router() {
       </Route>
       <Route path="/admin/pii-permissions">
         <ProtectedRoute component={PiiPermissions} path="/admin/pii-permissions" />
+      </Route>
+      <Route path="/admin/db-connections">
+        <ProtectedRoute component={DbConnections} path="/admin/db-connections" />
+      </Route>
+      <Route path="/admin/field-mappings">
+        <ProtectedRoute component={FieldMappings} path="/admin/field-mappings" />
+      </Route>
+      <Route path="/workflow/jobs">
+        <ProtectedRoute component={WorkflowJobs} path="/workflow" />
+      </Route>
+      <Route path="/workflow">
+        <ProtectedRoute component={Workflow} path="/workflow" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

@@ -18,6 +18,15 @@ const DEFAULT_JSON_ACCEPT = "application/json, application/problem+json";
 let _baseUrl: string | null = null;
 let _authTokenGetter: AuthTokenGetter | null = null;
 
+// Callback registered by the auth layer to attempt a silent token refresh.
+// It should return the new access token on success, or null on failure.
+export type TokenRefresher = () => Promise<string | null>;
+let _tokenRefresher: TokenRefresher | null = null;
+
+export function setTokenRefresher(refresher: TokenRefresher | null): void {
+  _tokenRefresher = refresher;
+}
+
 /**
  * Set a base URL that is prepended to every relative request URL
  * (i.e. paths that start with `/`).
@@ -361,6 +370,22 @@ export async function customFetch<T = unknown>(
   const requestInfo = { method, url: resolveUrl(input) };
 
   const response = await fetch(input, { ...init, method, headers });
+
+  // On 401: attempt a silent token refresh (once) and retry the original request.
+  // This handles the case where a short-lived access token expires during an active
+  // session — the user never sees a failure or is forced to re-login.
+  if (response.status === 401 && _tokenRefresher) {
+    const newToken = await _tokenRefresher();
+    if (newToken) {
+      headers.set("authorization", `Bearer ${newToken}`);
+      const retryResponse = await fetch(input, { ...init, method, headers });
+      if (retryResponse.ok) {
+        return (await parseSuccessBody(retryResponse, responseType, requestInfo)) as T;
+      }
+      const retryErrorData = await parseErrorBody(retryResponse, method);
+      throw new ApiError(retryResponse, retryErrorData, requestInfo);
+    }
+  }
 
   if (!response.ok) {
     const errorData = await parseErrorBody(response, method);

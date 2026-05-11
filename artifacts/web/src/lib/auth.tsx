@@ -46,6 +46,34 @@ export const setRefreshToken = (token: string | null): void => {
 export const getRefreshToken = (): string | null =>
   sessionStorage.getItem(REFRESH_TOKEN_KEY);
 
+// Silent refresh: called by the API client on any 401 received during active use.
+// Exchanges the stored refresh token for a fresh pair and updates in-memory state.
+// Returns the new access token on success, null on failure.
+export async function silentRefresh(): Promise<string | null> {
+  const rt = getRefreshToken();
+  if (!rt) return null;
+  try {
+    const resp = await fetch(`${import.meta.env.BASE_URL}api/auth/refresh`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: rt }),
+    });
+    if (!resp.ok) {
+      setRefreshToken(null);
+      setAccessToken(null);
+      return null;
+    }
+    const data = await resp.json();
+    setAccessToken(data.accessToken);
+    setRefreshToken(data.refreshToken);
+    return data.accessToken as string;
+  } catch {
+    setRefreshToken(null);
+    setAccessToken(null);
+    return null;
+  }
+}
+
 // Bootstrap: always called on mount. Exchanges the stored refresh token for a
 // fresh access token so an expired in-memory token never blocks session restore.
 async function bootstrapSession(): Promise<boolean> {

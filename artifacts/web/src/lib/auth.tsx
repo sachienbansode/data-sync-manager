@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import { useGetMe } from "@workspace/api-client-react";
+import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useLocation } from "wouter";
 
 type UserProfile = {
@@ -104,7 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const { data, isLoading, isError } = useGetMe({
     query: {
-      queryKey: [],
+      queryKey: getGetMeQueryKey(),
       retry: false,
       staleTime: Infinity,
       enabled: hasToken,
@@ -154,8 +154,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkPermission = (path: string): boolean => {
     if (!user) return false;
-    const publicPaths = ["/dashboard", "/profile", "/mfa-setup"];
-    if (publicPaths.includes(path)) return true;
     return user.pagePermissions?.includes(path) ?? false;
   };
 

@@ -224,6 +224,18 @@ router.post("/auth/refresh", async (req, res): Promise<void> => {
     return;
   }
 
+  // Check session revocation — if the session was explicitly revoked (e.g. logout),
+  // reject even if the refresh_tokens row was not yet cleaned up.
+  const [session] = await db
+    .select()
+    .from(sessionsTable)
+    .where(eq(sessionsTable.refreshTokenHash, hashedIncoming));
+  if (session?.isRevoked) {
+    await db.delete(refreshTokensTable).where(eq(refreshTokensTable.id, stored.id));
+    res.status(401).json({ error: "Session has been revoked" });
+    return;
+  }
+
   const user = await getUserWithRole(stored.userId);
   if (!user || !user.isActive) {
     await db.delete(refreshTokensTable).where(eq(refreshTokensTable.id, stored.id));

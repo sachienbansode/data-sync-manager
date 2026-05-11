@@ -7,7 +7,7 @@ import { authenticate, requireRole, requirePageAccess } from "../middlewares/aut
 const router: IRouter = Router();
 
 // GET /dashboard/summary
-router.get("/dashboard/summary", authenticate, async (_req, res): Promise<void> => {
+router.get("/dashboard/summary", authenticate, requirePageAccess("/dashboard"), async (_req, res): Promise<void> => {
   const [totals] = await db
     .select({
       total: sql<number>`count(*)::int`,

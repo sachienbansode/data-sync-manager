@@ -14,6 +14,7 @@ import { Shield, ShieldAlert, Users, Save } from "lucide-react";
 import { toast } from "sonner";
 import { getGetRolePagePermissionsQueryKey } from "@workspace/api-client-react";
 
+
 export default function Roles() {
   const queryClient = useQueryClient();
   const { data: roles, isLoading: isLoadingRoles } = useListRoles();
@@ -21,7 +22,7 @@ export default function Roles() {
 
   const { data: permissions, isLoading: isLoadingPermissions } = useGetRolePagePermissions(
     selectedRoleId!,
-    { query: { queryKey: [], enabled: !!selectedRoleId } }
+    { query: { queryKey: getGetRolePagePermissionsQueryKey(selectedRoleId!), enabled: !!selectedRoleId } }
   );
 
   const updatePermissionsMutation = useUpdateRolePagePermissions();

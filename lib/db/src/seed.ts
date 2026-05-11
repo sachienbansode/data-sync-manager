@@ -18,6 +18,7 @@ const PAGES = [
   { path: "/users", name: "User Management" },
   { path: "/roles", name: "Role & Permissions" },
   { path: "/profile", name: "My Profile" },
+  { path: "/mfa-setup", name: "MFA Setup" },
   { path: "/audit-log", name: "Audit Log" },
   { path: "/docs", name: "API Documentation" },
   { path: "/workflow", name: "Data Workflow" },
@@ -26,12 +27,14 @@ const PAGES = [
   { path: "/admin/field-mappings", name: "Field Mappings" },
 ];
 
+const ALL_ROLES_PATHS = ["/dashboard", "/profile", "/mfa-setup"];
+
 const PAGE_ACCESS: Record<string, string[]> = {
-  Admin: ["/dashboard", "/users", "/roles", "/profile", "/audit-log", "/docs", "/workflow", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
-  Manager: ["/dashboard", "/profile", "/docs", "/workflow"],
-  Analyst: ["/dashboard", "/profile", "/docs", "/workflow"],
-  Viewer: ["/dashboard", "/profile", "/docs"],
-  ExternalUser: ["/dashboard", "/profile", "/docs"],
+  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
+  Manager: [...ALL_ROLES_PATHS, "/docs", "/workflow"],
+  Analyst: [...ALL_ROLES_PATHS, "/docs", "/workflow"],
+  Viewer: [...ALL_ROLES_PATHS, "/docs"],
+  ExternalUser: [...ALL_ROLES_PATHS, "/docs"],
 };
 
 const USERS = [

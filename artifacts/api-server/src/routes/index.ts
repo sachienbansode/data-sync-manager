@@ -7,6 +7,7 @@ import dashboardRouter from "./dashboard";
 import smtpRouter from "./smtp";
 import emailOtpRouter from "./email-otp";
 import appSettingsRouter from "./app-settings";
+import piiRouter from "./pii";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(rolesRouter);
 router.use(dashboardRouter);
 router.use(smtpRouter);
 router.use(appSettingsRouter);
+router.use(piiRouter);
 
 export default router;

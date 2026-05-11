@@ -14,6 +14,8 @@ import {
   Settings,
   ChevronDown,
   ChevronRight,
+  Lock,
+  Database,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,11 +30,13 @@ const mainNavItems = [
   { href: "/users", label: "Users", icon: Users },
   { href: "/roles", label: "Roles & Permissions", icon: ShieldAlert },
   { href: "/audit-log", label: "Audit Log", icon: FileText },
+  { href: "/pii-records", label: "PII Records", icon: Lock },
 ];
 
 const adminNavItems = [
   { href: "/admin/app-settings", label: "App Settings", icon: Settings },
   { href: "/admin/email-settings", label: "Email Settings", icon: Mail },
+  { href: "/admin/pii-permissions", label: "PII Permissions", icon: Database },
 ];
 
 function SidebarContent({ onNav }: { onNav?: () => void }) {

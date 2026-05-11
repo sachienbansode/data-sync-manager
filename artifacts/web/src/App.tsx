@@ -16,6 +16,8 @@ import Forbidden from "@/pages/403";
 import AuthCallback from "@/pages/auth-callback";
 import EmailSettings from "@/pages/admin/email-settings";
 import AppSettings from "@/pages/admin/app-settings";
+import PiiPermissions from "@/pages/admin/pii-permissions";
+import PiiRecords from "@/pages/pii-records";
 import { ProtectedRoute } from "@/components/protected-route";
 
 const queryClient = new QueryClient();
@@ -52,11 +54,17 @@ function Router() {
       <Route path="/audit-log">
         <ProtectedRoute component={AuditLog} path="/audit-log" />
       </Route>
+      <Route path="/pii-records">
+        <ProtectedRoute component={PiiRecords} path="/pii-records" />
+      </Route>
       <Route path="/admin/email-settings">
         <ProtectedRoute component={EmailSettings} path="/admin/email-settings" />
       </Route>
       <Route path="/admin/app-settings">
         <ProtectedRoute component={AppSettings} path="/admin/app-settings" />
+      </Route>
+      <Route path="/admin/pii-permissions">
+        <ProtectedRoute component={PiiPermissions} path="/admin/pii-permissions" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

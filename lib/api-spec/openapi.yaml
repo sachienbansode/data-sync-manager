@@ -18,6 +18,8 @@ tags:
     description: Role and permission management
   - name: dashboard
     description: Dashboard summary operations
+  - name: pii
+    description: PII encryption and masked display
 
 paths:
   /healthz:
@@ -482,6 +484,136 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuditLogResponse"
 
+  # ─── PII ────────────────────────────────────────────────────────────────────
+
+  /pii/records:
+    get:
+      operationId: listPiiRecords
+      tags: [pii]
+      summary: List PII records (all fields masked)
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Paginated PII records with masked field values
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiRecordListResponse"
+    post:
+      operationId: createPiiRecord
+      tags: [pii]
+      summary: Create a new PII record (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiiRecordInput"
+      responses:
+        "201":
+          description: Created record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiRecordMasked"
+
+  /pii/records/{id}:
+    delete:
+      operationId: deletePiiRecord
+      tags: [pii]
+      summary: Delete a PII record (admin)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /pii/reveal:
+    post:
+      operationId: revealPiiField
+      tags: [pii]
+      summary: Reveal (decrypt) a single PII field for an authorized user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiiRevealInput"
+      responses:
+        "200":
+          description: Decrypted field value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiRevealResponse"
+        "403":
+          description: Not authorized to unmask this field
+        "429":
+          description: Rate limit exceeded
+
+  /pii/field-permissions:
+    get:
+      operationId: getPiiFieldPermissions
+      tags: [pii]
+      summary: Get PII field unmask permissions matrix (admin)
+      responses:
+        "200":
+          description: Permissions matrix
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiFieldPermissionsMatrix"
+    put:
+      operationId: updatePiiFieldPermissions
+      tags: [pii]
+      summary: Update PII field unmask permissions (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiiFieldPermissionsUpdate"
+      responses:
+        "200":
+          description: Updated permissions matrix
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiFieldPermissionsMatrix"
+
+  /pii/rotate-key:
+    post:
+      operationId: rotatePiiKey
+      tags: [pii]
+      summary: Re-encrypt all PII records with a new key (admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PiiRotateKeyInput"
+      responses:
+        "200":
+          description: Key rotation complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PiiRotateKeyResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -797,3 +929,150 @@ components:
           type: integer
         pageSize:
           type: integer
+
+    # ─── PII ─────────────────────────────────────────────────────────────────
+
+    PiiRecordMasked:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        company:
+          type: ["string", "null"]
+        phone:
+          type: ["string", "null"]
+        nationalId:
+          type: ["string", "null"]
+        bankAccount:
+          type: ["string", "null"]
+        panNumber:
+          type: ["string", "null"]
+        emailCounterparty:
+          type: ["string", "null"]
+        address:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    PiiRecordListResponse:
+      type: object
+      required: [records, total, page, pageSize]
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/PiiRecordMasked"
+        total:
+          type: integer
+        page:
+          type: integer
+        pageSize:
+          type: integer
+
+    PiiRecordInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        company:
+          type: string
+        phone:
+          type: string
+        nationalId:
+          type: string
+        bankAccount:
+          type: string
+        panNumber:
+          type: string
+        emailCounterparty:
+          type: string
+        address:
+          type: string
+
+    PiiRevealInput:
+      type: object
+      required: [recordId, fieldName]
+      properties:
+        recordId:
+          type: integer
+        fieldName:
+          type: string
+          enum: [phone, nationalId, bankAccount, panNumber, emailCounterparty, address]
+
+    PiiRevealResponse:
+      type: object
+      required: [value]
+      properties:
+        value:
+          type: string
+
+    PiiFieldPermissionsMatrix:
+      type: object
+      required: [fieldTypes, roles, permissions]
+      properties:
+        fieldTypes:
+          type: array
+          items:
+            type: string
+        roles:
+          type: array
+          items:
+            type: object
+            required: [id, name]
+            properties:
+              id:
+                type: integer
+              name:
+                type: string
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [roleId, fieldType, canUnmask]
+            properties:
+              roleId:
+                type: integer
+              fieldType:
+                type: string
+              canUnmask:
+                type: boolean
+
+    PiiFieldPermissionsUpdate:
+      type: object
+      required: [permissions]
+      properties:
+        permissions:
+          type: array
+          items:
+            type: object
+            required: [roleId, fieldType, canUnmask]
+            properties:
+              roleId:
+                type: integer
+              fieldType:
+                type: string
+              canUnmask:
+                type: boolean
+
+    PiiRotateKeyInput:
+      type: object
+      required: [newKey]
+      properties:
+        newKey:
+          type: string
+          description: New 64-char hex AES-256 key
+
+    PiiRotateKeyResponse:
+      type: object
+      required: [rotated, success]
+      properties:
+        rotated:
+          type: integer
+          description: Number of records re-encrypted
+        success:
+          type: boolean

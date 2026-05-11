@@ -24,6 +24,7 @@ const PAGES = [
   { path: "/admin/app-settings", name: "App Settings" },
   { path: "/admin/email-settings", name: "Email Settings" },
   { path: "/admin/pii-permissions", name: "PII Permissions" },
+  { path: "/pii-records", name: "PII Records" },
   { path: "/admin/db-connections", name: "DB Connections" },
   { path: "/admin/field-mappings", name: "Field Mappings" },
 ];
@@ -31,10 +32,10 @@ const PAGES = [
 const ALL_ROLES_PATHS = ["/dashboard", "/profile", "/mfa-setup"];
 
 const PAGE_ACCESS: Record<string, string[]> = {
-  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/admin/app-settings", "/admin/email-settings", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
-  Manager: [...ALL_ROLES_PATHS, "/docs", "/workflow"],
-  Analyst: [...ALL_ROLES_PATHS, "/docs", "/workflow"],
-  Viewer: [...ALL_ROLES_PATHS, "/docs"],
+  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/pii-records", "/admin/app-settings", "/admin/email-settings", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
+  Manager: [...ALL_ROLES_PATHS, "/docs", "/workflow", "/pii-records"],
+  Analyst: [...ALL_ROLES_PATHS, "/docs", "/workflow", "/pii-records"],
+  Viewer: [...ALL_ROLES_PATHS, "/docs", "/pii-records"],
   ExternalUser: [...ALL_ROLES_PATHS, "/docs"],
 };
 

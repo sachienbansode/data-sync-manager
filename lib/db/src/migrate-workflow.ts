@@ -60,6 +60,9 @@ async function main() {
     );
 
     CREATE UNIQUE INDEX IF NOT EXISTS field_mapping_bo_idx ON field_mappings(backoffice_field);
+
+    -- Additive migrations: safe to re-run (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS)
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS fetch_query TEXT;
   `);
 
   console.log("Workflow tables created successfully");

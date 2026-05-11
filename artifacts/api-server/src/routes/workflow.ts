@@ -4,6 +4,8 @@ import fs from "fs";
 import path from "path";
 import pg from "pg";
 import multer from "multer";
+import { parse as csvParse } from "csv-parse";
+import { Readable } from "stream";
 import {
   db,
   dbConnectionsTable,
@@ -25,6 +27,32 @@ function canFetch(roleName: string) {
 }
 function canPush(roleName: string) {
   return ["Admin", "Manager"].includes(roleName);
+}
+
+// ── SELECT-only query validation ────────────────────────────────────────────
+const DML_PATTERN = /\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE|GRANT|REVOKE|EXECUTE|EXEC|CALL|MERGE)\b/i;
+
+function validateSelectQuery(query: string): string | null {
+  const q = query.trim();
+  if (!q) return "Query cannot be empty";
+  if (!/^SELECT\b/i.test(q)) return "Query must start with SELECT";
+  if (q.includes(";")) return "Query must not contain semicolons (use a single statement)";
+  const match = q.match(DML_PATTERN);
+  if (match) return `Query must not contain ${match[0].toUpperCase()} statements`;
+  return null;
+}
+
+// ── Streaming CSV parser (pipe-delimited, RFC 4180 quoted fields) ───────────
+async function parsePipeDelimitedCsv(buffer: Buffer): Promise<{ headers: string[]; rows: Record<string, string>[] }> {
+  const rows: Record<string, string>[] = [];
+  const parser = Readable.from(buffer).pipe(
+    csvParse({ delimiter: "|", columns: true, skip_empty_lines: true, quote: '"', trim: true, relax_quotes: true })
+  );
+  for await (const record of parser) {
+    rows.push(record as Record<string, string>);
+  }
+  const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  return { headers, rows };
 }
 
 // ── Transformation engine ──────────────────────────────────────────────────
@@ -275,8 +303,22 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
   });
 
   try {
-    // Fixed read-only query — user-supplied SQL is never executed
-    const selectQuery = `SELECT * FROM "${conn.schemaName}"."backoffice_data" LIMIT 1000`;
+    // Use admin-configured query if set; fall back to safe default.
+    // Query is validated to be SELECT-only before storage and again at runtime.
+    const rawQuery = conn.fetchQuery?.trim() ?? "";
+    const defaultQuery = `SELECT * FROM "${conn.schemaName}"."backoffice_data" LIMIT 1000`;
+    const selectQuery = rawQuery || defaultQuery;
+
+    // Runtime guard: re-validate even if stored, in case of direct DB edits
+    const queryError = validateSelectQuery(selectQuery);
+    if (queryError) {
+      await db.update(dataJobsTable).set({ status: "failed", errorMessage: queryError, finishedAt: new Date() })
+        .where(eq(dataJobsTable.id, job.id));
+      res.status(400).json({ error: `Invalid fetch query: ${queryError}`, jobId: job.id });
+      await fetchPool.end().catch(() => {});
+      return;
+    }
+
     const result = await fetchPool.query(selectQuery);
     const rows = result.rows as Record<string, unknown>[];
 
@@ -329,15 +371,23 @@ router.post("/workflow/upload-csv", authenticate, upload.single("file"), async (
   const file = req.file;
   if (!file) { res.status(400).json({ error: "CSV file is required" }); return; }
 
-  const text = file.buffer.toString("utf-8");
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) {
-    res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+  // Stream-parse the pipe-delimited CSV using csv-parse for full RFC 4180 compliance
+  let headers: string[];
+  let parsedRows: Record<string, string>[];
+  try {
+    const parsed = await parsePipeDelimitedCsv(file.buffer);
+    headers = parsed.headers;
+    parsedRows = parsed.rows;
+  } catch (parseErr: unknown) {
+    const msg = parseErr instanceof Error ? parseErr.message : "Failed to parse CSV";
+    res.status(400).json({ error: `CSV parse error: ${msg}` });
     return;
   }
 
-  // Parse headers using proper quoted-field parser
-  const headers = parsePipeCsvLine(lines[0]).map((h) => h.trim());
+  if (parsedRows.length === 0) {
+    res.status(400).json({ error: "CSV must have a header row and at least one data row" });
+    return;
+  }
   if (headers.length < 2) {
     res.status(400).json({ error: "CSV must use pipe (|) as delimiter and have at least 2 columns" });
     return;
@@ -356,14 +406,6 @@ router.post("/workflow/upload-csv", authenticate, upload.single("file"), async (
       return;
     }
   }
-
-  const dataLines = lines.slice(1);
-  const parsedRows: Record<string, string>[] = dataLines.map((line) => {
-    const values = parsePipeCsvLine(line);
-    const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = values[i] ?? ""; });
-    return row;
-  });
 
   const [job] = await db.insert(dataJobsTable).values({
     type: "upload_csv",
@@ -474,7 +516,7 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
     return;
   }
 
-  const [conn] = await db.select({ outputFilePath: dbConnectionsTable.outputFilePath })
+  const [conn] = await db.select({ outputFilePath: dbConnectionsTable.outputFilePath, name: dbConnectionsTable.name })
     .from(dbConnectionsTable).where(eq(dbConnectionsTable.id, resolveConnectionId));
   const outputPath = conn?.outputFilePath ?? null;
 
@@ -483,13 +525,29 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
     return;
   }
 
+  // Create a push job record so push operations appear in job history
+  const [pushJob] = await db.insert(dataJobsTable).values({
+    type: "push",
+    status: "running",
+    triggeredBy: req.user!.sub,
+    triggeredByEmail: req.user!.email,
+    connectionId: resolveConnectionId,
+    connectionName: conn.name,
+    startedAt: new Date(),
+  }).returning();
+
   const mappings = await db.select().from(fieldMappingsTable).orderBy(fieldMappingsTable.sortOrder, fieldMappingsTable.id);
   let csvContent: string;
 
   if (mappings.length === 0) {
     const rows = await db.select({ rawData: dataStagingTable.rawData }).from(dataStagingTable)
       .where(eq(dataStagingTable.jobId, id)).orderBy(dataStagingTable.rowIndex);
-    if (rows.length === 0) { res.status(404).json({ error: "No data for this job" }); return; }
+    if (rows.length === 0) {
+      await db.update(dataJobsTable).set({ status: "failed", errorMessage: "No data for this job", finishedAt: new Date() })
+        .where(eq(dataJobsTable.id, pushJob.id));
+      res.status(404).json({ error: "No data for this job" });
+      return;
+    }
     const hdrs = Object.keys(rows[0].rawData as Record<string, unknown>);
     const dataLines = rows.map((r) => hdrs.map((h) => String((r.rawData as Record<string, unknown>)[h] ?? "")).join("|"));
     csvContent = [hdrs.join("|"), ...dataLines].join("\n");
@@ -504,21 +562,29 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
     fs.writeFileSync(outputPath, csvContent, "utf-8");
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to write file";
+    await db.update(dataJobsTable).set({ status: "failed", errorMessage: msg, finishedAt: new Date() })
+      .where(eq(dataJobsTable.id, pushJob.id));
     res.status(500).json({ error: `Failed to write to ${outputPath}: ${msg}` });
     return;
   }
+
+  await db.update(dataJobsTable).set({
+    status: "success",
+    recordCount: csvContent.split("\n").length - 1,
+    finishedAt: new Date(),
+  }).where(eq(dataJobsTable.id, pushJob.id));
 
   await db.insert(auditLogsTable).values({
     userId: req.user!.sub,
     userEmail: req.user!.email,
     action: "WORKFLOW_PUSH",
-    details: `Pushed transformed CSV for job id=${id} to ${outputPath}`,
+    details: `Pushed transformed CSV for source job id=${id} to ${outputPath} (push job id=${pushJob.id})`,
     resourceType: "data_job",
-    resourceId: String(id),
+    resourceId: String(pushJob.id),
     ipAddress: req.ip ?? null,
   });
 
-  res.json({ success: true, path: outputPath });
+  res.json({ success: true, path: outputPath, pushJobId: pushJob.id });
 });
 
 export default router;

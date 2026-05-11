@@ -19,6 +19,7 @@ interface DbConnection {
   dbName: string;
   schemaName: string;
   outputFilePath: string | null;
+  fetchQuery: string | null;
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
@@ -27,7 +28,7 @@ interface DbConnection {
 const EMPTY_FORM = {
   name: "", type: "backoffice" as "backoffice" | "trading",
   host: "", port: "5432", dbName: "", schemaName: "public",
-  username: "", password: "", outputFilePath: "",
+  username: "", password: "", outputFilePath: "", fetchQuery: "",
 };
 
 const apiBase = `${import.meta.env.BASE_URL}api`;
@@ -69,7 +70,7 @@ export default function DbConnections() {
     setForm({
       name: c.name, type: c.type, host: c.host, port: String(c.port),
       dbName: c.dbName, schemaName: c.schemaName, username: "", password: "",
-      outputFilePath: c.outputFilePath ?? "",
+      outputFilePath: c.outputFilePath ?? "", fetchQuery: c.fetchQuery ?? "",
     });
     setDialogOpen(true);
   }
@@ -90,6 +91,7 @@ export default function DbConnections() {
         name: form.name, type: form.type, host: form.host, port: parseInt(form.port) || 5432,
         dbName: form.dbName, schemaName: form.schemaName || "public",
         outputFilePath: form.outputFilePath || undefined,
+        fetchQuery: form.fetchQuery.trim() || undefined,
       };
       if (form.username) body.username = form.username;
       if (form.password) body.password = form.password;
@@ -266,6 +268,23 @@ export default function DbConnections() {
                 <Label>Output File Path <span className="text-xs text-muted-foreground">(optional — for CSV push)</span></Label>
                 <Input value={form.outputFilePath} onChange={e => setForm(f => ({ ...f, outputFilePath: e.target.value }))} placeholder="/data/output/trading-data.csv" />
               </div>
+              {form.type === "backoffice" && (
+                <div className="col-span-2 space-y-1">
+                  <Label>
+                    Fetch Query <span className="text-xs text-muted-foreground">(optional — SELECT only)</span>
+                  </Label>
+                  <textarea
+                    className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+                    value={form.fetchQuery}
+                    onChange={e => setForm(f => ({ ...f, fetchQuery: e.target.value }))}
+                    placeholder={`SELECT * FROM "public"."backoffice_data" LIMIT 1000`}
+                    spellCheck={false}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Read-only SELECT statement executed when fetching data from this connection. Must not contain INSERT, UPDATE, DELETE, or DDL.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

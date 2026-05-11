@@ -15,6 +15,8 @@ export const dbConnectionsTable = pgTable("db_connections", {
   usernameEnc: text("username_enc").notNull(),
   passwordEnc: text("password_enc").notNull(),
   outputFilePath: text("output_file_path"),
+  /** Admin-configurable SELECT query executed during workflow fetch. Must be read-only. */
+  fetchQuery: text("fetch_query"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   lastTestSuccess: boolean("last_test_success"),
@@ -24,7 +26,7 @@ export const dbConnectionsTable = pgTable("db_connections", {
 
 export type DbConnection = typeof dbConnectionsTable.$inferSelect;
 
-export const DATA_JOB_TYPES = ["fetch", "upload_csv"] as const;
+export const DATA_JOB_TYPES = ["fetch", "upload_csv", "push"] as const;
 export const DATA_JOB_STATUSES = ["pending", "running", "success", "failed"] as const;
 
 export const dataJobsTable = pgTable("data_jobs", {

@@ -27,6 +27,35 @@ interface DataJob {
   createdAt: string;
 }
 
+interface FieldMapping {
+  backofficeField: string;
+  tradingField: string;
+  transformType: "string" | "number" | "date-format";
+  transformParams: string | null;
+  sortOrder: number;
+}
+
+function applyClientTransform(value: unknown, type: string, params: string | null): string {
+  const str = value == null ? "" : String(value);
+  if (type === "number") {
+    const n = parseFloat(str.replace(/,/g, ""));
+    return isNaN(n) ? str : String(n);
+  }
+  if (type === "date-format" && params) {
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      if (params === "DD/MM/YYYY") {
+        return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
+      }
+      if (params === "YYYY-MM-DD") {
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+      }
+    }
+    return str;
+  }
+  return str;
+}
+
 const apiBase = `${import.meta.env.BASE_URL}api`;
 
 export default function Workflow() {
@@ -47,8 +76,21 @@ export default function Workflow() {
   const [lastJobId, setLastJobId] = useState<number | null>(null);
   const [recentJobs, setRecentJobs] = useState<DataJob[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
+  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
 
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Derived: apply field mappings to raw preview rows to show trading format
+  const transformedHeaders = fieldMappings.length > 0
+    ? [...fieldMappings].sort((a, b) => a.sortOrder - b.sortOrder).map(m => m.tradingField)
+    : [];
+  const transformedRows: Record<string, string>[] = previewRows.map(rawRow => {
+    const out: Record<string, string> = {};
+    [...fieldMappings].sort((a, b) => a.sortOrder - b.sortOrder).forEach(m => {
+      out[m.tradingField] = applyClientTransform(rawRow[m.backofficeField], m.transformType, m.transformParams);
+    });
+    return out;
+  });
 
   const loadConnections = useCallback(async () => {
     try {
@@ -76,6 +118,14 @@ export default function Workflow() {
   useEffect(() => {
     loadConnections();
     loadRecentJobs();
+    // Load field mappings for transformation preview
+    (async () => {
+      try {
+        const token = getAccessToken();
+        const res = await fetch(`${apiBase}/workflow/field-mappings`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) setFieldMappings(await res.json());
+      } catch { /* ignore */ }
+    })();
   }, [loadConnections, loadRecentJobs]);
 
   async function fetchFromBackoffice() {
@@ -260,50 +310,89 @@ export default function Workflow() {
         </div>
 
         {previewRows.length > 0 && lastJobId && (
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Data Preview — Job #{lastJobId}</CardTitle>
-                  <CardDescription>Showing up to 20 rows of raw data. Use Download to get the transformed Trading CSV.</CardDescription>
-                </div>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => downloadCsv(lastJobId)} disabled={downloading === lastJobId}>
-                    {downloading === lastJobId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                    Download CSV
-                  </Button>
-                  {canPush && (
-                    <Button onClick={() => pushToPath(lastJobId)} disabled={pushing === lastJobId}>
-                      {pushing === lastJobId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRight className="h-4 w-4 mr-2" />}
-                      Push to Path
+          <>
+            {/* ── Raw (BackOffice) Preview ── */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Before — Raw Data (Job #{lastJobId})</CardTitle>
+                    <CardDescription>
+                      Up to 20 rows as received from the BackOffice source before any transformation.
+                    </CardDescription>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={() => downloadCsv(lastJobId)} disabled={downloading === lastJobId}>
+                      {downloading === lastJobId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
+                      Download CSV
                     </Button>
-                  )}
+                    {canPush && (
+                      <Button onClick={() => pushToPath(lastJobId)} disabled={pushing === lastJobId}>
+                        {pushing === lastJobId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRight className="h-4 w-4 mr-2" />}
+                        Push to Path
+                      </Button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b bg-muted/40">
-                      {previewHeaders.map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-muted-foreground whitespace-nowrap">{h}</th>)}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previewRows.map((row, i) => (
-                      <tr key={i} className="border-b hover:bg-muted/20">
-                        {previewHeaders.map(h => (
-                          <td key={h} className="px-3 py-1.5 whitespace-nowrap font-mono max-w-[200px] truncate">
-                            {String(row[h] ?? "")}
-                          </td>
-                        ))}
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b bg-muted/40">
+                        {previewHeaders.map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-muted-foreground whitespace-nowrap">{h}</th>)}
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                    </thead>
+                    <tbody>
+                      {previewRows.map((row, i) => (
+                        <tr key={i} className="border-b hover:bg-muted/20">
+                          {previewHeaders.map(h => (
+                            <td key={h} className="px-3 py-1.5 whitespace-nowrap font-mono max-w-[200px] truncate">
+                              {String(row[h] ?? "")}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* ── Transformed (Trading) Preview — only when field mappings are configured ── */}
+            {transformedHeaders.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>After — Transformed Data (Trading Format)</CardTitle>
+                  <CardDescription>
+                    Same rows with field mappings and type transforms applied. This is what Download / Push will produce.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b bg-primary/10">
+                          {transformedHeaders.map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-primary whitespace-nowrap">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transformedRows.map((row, i) => (
+                          <tr key={i} className="border-b hover:bg-muted/20">
+                            {transformedHeaders.map(h => (
+                              <td key={h} className="px-3 py-1.5 whitespace-nowrap font-mono max-w-[200px] truncate">
+                                {String(row[h] ?? "")}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </>
         )}
 
         <Card>

@@ -18,6 +18,7 @@ function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
     dbName: r.dbName,
     schemaName: r.schemaName,
     outputFilePath: r.outputFilePath,
+    fetchQuery: r.fetchQuery,
     createdBy: r.createdBy,
     lastTestedAt: r.lastTestedAt,
     lastTestSuccess: r.lastTestSuccess,
@@ -34,10 +35,10 @@ router.get("/admin/db-connections", authenticate, requireRole("Admin"), async (_
 
 // POST /api/admin/db-connections
 router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (req, res) => {
-  const { name, type, host, port, dbName, schemaName, username, password, outputFilePath } = req.body as {
+  const { name, type, host, port, dbName, schemaName, username, password, outputFilePath, fetchQuery } = req.body as {
     name: string; type: string; host: string; port?: number;
     dbName: string; schemaName?: string; username: string; password: string;
-    outputFilePath?: string;
+    outputFilePath?: string; fetchQuery?: string;
   };
 
   if (!name || !type || !host || !dbName || !username || !password) {
@@ -60,6 +61,7 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
     usernameEnc: encrypt(username),
     passwordEnc: encrypt(password),
     outputFilePath: outputFilePath ?? null,
+    fetchQuery: fetchQuery ?? null,
     createdBy: req.user!.sub,
   }).returning();
 
@@ -79,10 +81,10 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
 // PUT /api/admin/db-connections/:id
 router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), async (req, res) => {
   const id = parseInt(req.params.id);
-  const { name, type, host, port, dbName, schemaName, username, password, outputFilePath } = req.body as {
+  const { name, type, host, port, dbName, schemaName, username, password, outputFilePath, fetchQuery } = req.body as {
     name?: string; type?: string; host?: string; port?: number;
     dbName?: string; schemaName?: string; username?: string; password?: string;
-    outputFilePath?: string;
+    outputFilePath?: string; fetchQuery?: string;
   };
 
   const [existing] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
@@ -106,6 +108,7 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
   if (username) updates.usernameEnc = encrypt(username);
   if (password) updates.passwordEnc = encrypt(password);
   if (outputFilePath !== undefined) updates.outputFilePath = outputFilePath;
+  if (fetchQuery !== undefined) updates.fetchQuery = fetchQuery || null;
 
   const [updated] = await db.update(dbConnectionsTable).set(updates).where(eq(dbConnectionsTable.id, id)).returning();
 

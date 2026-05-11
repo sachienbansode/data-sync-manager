@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, usersTable, rolesTable, mfaSecretsTable, refreshTokensTable, auditLogsTable, pagePermissionsTable } from "@workspace/db";
+import { db, usersTable, rolesTable, mfaSecretsTable, refreshTokensTable, auditLogsTable, pagePermissionsTable, sessionsTable } from "@workspace/db";
 import {
   LoginBody,
   VerifyMfaBody,
@@ -97,6 +97,13 @@ async function issueTokens(userId: number) {
     expiresAt,
   });
 
+  // Track session metadata
+  await db.insert(sessionsTable).values({
+    userId: user.id,
+    refreshTokenHash: hashedRefresh,
+    expiresAt,
+  }).onConflictDoNothing();
+
   await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
 
   const pagePermissions = await getPagePermissions(user.roleId);
@@ -187,6 +194,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 router.post("/auth/logout", authenticate, async (req, res): Promise<void> => {
   if (req.user) {
     await db.delete(refreshTokensTable).where(eq(refreshTokensTable.userId, req.user.sub));
+    await db.update(sessionsTable)
+      .set({ isRevoked: "true" })
+      .where(eq(sessionsTable.userId, req.user.sub));
     await logAudit(req.user.sub, req.user.email, "LOGOUT", null, req.ip ?? null);
   }
   res.json({ success: true });
@@ -221,8 +231,11 @@ router.post("/auth/refresh", async (req, res): Promise<void> => {
     return;
   }
 
-  // Rotate: delete old token, issue new
+  // Rotate: delete old token, issue new; update session last-used timestamp
   await db.delete(refreshTokensTable).where(eq(refreshTokensTable.id, stored.id));
+  await db.update(sessionsTable)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(sessionsTable.refreshTokenHash, hashedIncoming));
   const tokens = await issueTokens(user.id);
 
   res.json(tokens);

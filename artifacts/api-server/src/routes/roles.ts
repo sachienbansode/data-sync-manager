@@ -6,12 +6,12 @@ import {
   UpdateRolePagePermissionsParams,
   UpdateRolePagePermissionsBody,
 } from "@workspace/api-zod";
-import { authenticate, requireRole } from "../middlewares/authenticate";
+import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 
 const router: IRouter = Router();
 
 // GET /roles
-router.get("/roles", authenticate, async (_req, res): Promise<void> => {
+router.get("/roles", authenticate, requirePageAccess("/roles"), async (_req, res): Promise<void> => {
   const roles = await db
     .select({
       id: rolesTable.id,
@@ -28,7 +28,7 @@ router.get("/roles", authenticate, async (_req, res): Promise<void> => {
 });
 
 // GET /roles/:id/page-permissions
-router.get("/roles/:id/page-permissions", authenticate, async (req, res): Promise<void> => {
+router.get("/roles/:id/page-permissions", authenticate, requirePageAccess("/roles"), async (req, res): Promise<void> => {
   const params = GetRolePagePermissionsParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -45,7 +45,7 @@ router.get("/roles/:id/page-permissions", authenticate, async (req, res): Promis
 });
 
 // PUT /roles/:id/page-permissions
-router.put("/roles/:id/page-permissions", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.put("/roles/:id/page-permissions", authenticate, requirePageAccess("/roles"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = UpdateRolePagePermissionsParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

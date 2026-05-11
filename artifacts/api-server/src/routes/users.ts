@@ -15,7 +15,7 @@ import {
   ListUsersQueryParams,
 } from "@workspace/api-zod";
 import { hashPassword } from "../lib/auth";
-import { authenticate, requireRole } from "../middlewares/authenticate";
+import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 
 const router: IRouter = Router();
 
@@ -39,7 +39,7 @@ function buildUserSelect() {
 }
 
 // GET /users
-router.get("/users", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.get("/users", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = ListUsersQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -78,7 +78,7 @@ router.get("/users", authenticate, requireRole("Admin"), async (req, res): Promi
 });
 
 // POST /users
-router.post("/users", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.post("/users", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const parsed = CreateUserBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -129,7 +129,7 @@ router.post("/users", authenticate, requireRole("Admin"), async (req, res): Prom
 });
 
 // GET /users/:id
-router.get("/users/:id", authenticate, async (req, res): Promise<void> => {
+router.get("/users/:id", authenticate, requirePageAccess("/users"), async (req, res): Promise<void> => {
   const params = GetUserParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -151,7 +151,7 @@ router.get("/users/:id", authenticate, async (req, res): Promise<void> => {
 });
 
 // PATCH /users/:id
-router.patch("/users/:id", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.patch("/users/:id", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = UpdateUserParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -181,7 +181,7 @@ router.patch("/users/:id", authenticate, requireRole("Admin"), async (req, res):
 });
 
 // DELETE /users/:id
-router.delete("/users/:id", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.delete("/users/:id", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = DeleteUserParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -212,7 +212,7 @@ router.delete("/users/:id", authenticate, requireRole("Admin"), async (req, res)
 });
 
 // PATCH /users/:id/status
-router.patch("/users/:id/status", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.patch("/users/:id/status", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = UpdateUserStatusParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -253,7 +253,7 @@ router.patch("/users/:id/status", authenticate, requireRole("Admin"), async (req
 });
 
 // PATCH /users/:id/role
-router.patch("/users/:id/role", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.patch("/users/:id/role", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = UpdateUserRoleParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });
@@ -289,7 +289,7 @@ router.patch("/users/:id/role", authenticate, requireRole("Admin"), async (req, 
 });
 
 // POST /users/:id/reset-mfa
-router.post("/users/:id/reset-mfa", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.post("/users/:id/reset-mfa", authenticate, requirePageAccess("/users"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = ResetUserMfaParams.safeParse(req.params);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

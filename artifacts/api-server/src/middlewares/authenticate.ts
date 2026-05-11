@@ -71,3 +71,31 @@ export async function checkPageAccess(req: Request, res: Response, next: NextFun
   }
   next();
 }
+
+/**
+ * Middleware factory: checks that the authenticated user's role has canAccess=true
+ * for the given page path in the page_permissions table.
+ * Must be used AFTER `authenticate`.
+ */
+export function requirePageAccess(pagePath: string) {
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!req.user) {
+      res.status(401).json({ error: "Not authenticated" });
+      return;
+    }
+    const [perm] = await db
+      .select()
+      .from(pagePermissionsTable)
+      .where(
+        and(
+          eq(pagePermissionsTable.roleId, req.user.roleId),
+          eq(pagePermissionsTable.pagePath, pagePath)
+        )
+      );
+    if (!perm?.canAccess) {
+      res.status(403).json({ error: `Access denied: your role cannot access ${pagePath}` });
+      return;
+    }
+    next();
+  };
+}

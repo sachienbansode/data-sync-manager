@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, sql, desc, and } from "drizzle-orm";
 import { db, usersTable, rolesTable, auditLogsTable } from "@workspace/db";
 import { GetAuditLogQueryParams } from "@workspace/api-zod";
-import { authenticate, requireRole } from "../middlewares/authenticate";
+import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 
 const router: IRouter = Router();
 
@@ -53,7 +53,7 @@ router.get("/dashboard/summary", authenticate, async (_req, res): Promise<void> 
 });
 
 // GET /dashboard/audit-log
-router.get("/dashboard/audit-log", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+router.get("/dashboard/audit-log", authenticate, requirePageAccess("/audit-log"), requireRole("Admin"), async (req, res): Promise<void> => {
   const params = GetAuditLogQueryParams.safeParse(req.query);
   if (!params.success) {
     res.status(400).json({ error: params.error.message });

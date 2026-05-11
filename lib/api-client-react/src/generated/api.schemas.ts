@@ -474,6 +474,20 @@ export interface WorkflowUploadResponse {
   preview: WorkflowUploadResponsePreviewItem[];
 }
 
+export interface WorkflowConnectionItem {
+  id: number;
+  name: string;
+  type: string;
+  host: string;
+  dbName: string;
+  schemaName?: string;
+}
+
+export interface PushJobBody {
+  /** Required when the job was created from a file upload (no associated connection). Specifies which BackOffice connection output_file_path to write to. */
+  connectionId?: number;
+}
+
 export interface WorkflowPushResponse {
   success: boolean;
   path: string;

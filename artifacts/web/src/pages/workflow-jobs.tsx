@@ -3,7 +3,8 @@ import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Download, ArrowRight, ChevronLeft, History, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
@@ -15,12 +16,20 @@ interface DataJob {
   type: string;
   status: "pending" | "running" | "success" | "failed";
   triggeredByEmail: string | null;
+  connectionId: number | null;
   connectionName: string | null;
   recordCount: number | null;
   errorMessage: string | null;
   startedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
+}
+
+interface BackOfficeConnection {
+  id: number;
+  name: string;
+  host: string;
+  dbName: string;
 }
 
 interface JobDetail {
@@ -55,6 +64,11 @@ export default function WorkflowJobs() {
   const [detailJob, setDetailJob] = useState<JobDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // For upload-based jobs that need a connection to resolve the push target
+  const [connections, setConnections] = useState<BackOfficeConnection[]>([]);
+  const [pushDialogJob, setPushDialogJob] = useState<DataJob | null>(null);
+  const [pushConnectionId, setPushConnectionId] = useState<string>("");
+
   const pageSize = 20;
 
   const load = useCallback(async () => {
@@ -76,6 +90,51 @@ export default function WorkflowJobs() {
   }, [page]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Load BackOffice connections for upload-job push target selection
+  useEffect(() => {
+    if (!canPush) return;
+    (async () => {
+      try {
+        const token = getAccessToken();
+        const res = await fetch(`${apiBase}/workflow/connections`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) setConnections(await res.json());
+      } catch { /* ignore */ }
+    })();
+  }, [canPush]);
+
+  function handlePushClick(job: DataJob) {
+    if (job.connectionId) {
+      // Fetch/API jobs already know their connection — push directly
+      executePush(job.id, null);
+    } else {
+      // Upload-based jobs need the user to select a target connection
+      setPushConnectionId(connections[0] ? String(connections[0].id) : "");
+      setPushDialogJob(job);
+    }
+  }
+
+  async function executePush(jobId: number, overrideConnectionId: number | null) {
+    setPushing(jobId);
+    try {
+      const token = getAccessToken();
+      const body: Record<string, unknown> = {};
+      if (overrideConnectionId) body.connectionId = overrideConnectionId;
+      const res = await fetch(`${apiBase}/workflow/jobs/${jobId}/push`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Push failed");
+      toast.success(`File written to ${data.path}`);
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Push failed");
+    } finally {
+      setPushing(null);
+      setPushDialogJob(null);
+    }
+  }
 
   async function openDetail(id: number) {
     setDetailLoading(true);
@@ -111,22 +170,6 @@ export default function WorkflowJobs() {
     }
   }
 
-  async function pushToPath(jobId: number) {
-    setPushing(jobId);
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`${apiBase}/workflow/jobs/${jobId}/push`, {
-        method: "POST", headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Push failed");
-      toast.success(`File written to ${data.path}`);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Push failed");
-    } finally {
-      setPushing(null);
-    }
-  }
 
   const totalPages = Math.ceil(total / pageSize);
 
@@ -187,7 +230,7 @@ export default function WorkflowJobs() {
                             <span className="ml-1 hidden sm:inline">Download</span>
                           </Button>
                           {canPush && (
-                            <Button size="sm" onClick={() => pushToPath(job.id)} disabled={pushing === job.id}>
+                            <Button size="sm" onClick={() => handlePushClick(job)} disabled={pushing === job.id}>
                               {pushing === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
                               <span className="ml-1 hidden sm:inline">Push</span>
                             </Button>
@@ -283,7 +326,7 @@ export default function WorkflowJobs() {
                     Download CSV
                   </Button>
                   {canPush && (
-                    <Button onClick={() => pushToPath(detailJob.job.id)} disabled={pushing === detailJob.job.id}>
+                    <Button onClick={() => handlePushClick(detailJob.job)} disabled={pushing === detailJob.job.id}>
                       {pushing === detailJob.job.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRight className="h-4 w-4 mr-2" />}
                       Push to Path
                     </Button>
@@ -292,6 +335,47 @@ export default function WorkflowJobs() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Push target connection picker — shown only for upload-based jobs with no connectionId */}
+      <Dialog open={!!pushDialogJob} onOpenChange={() => setPushDialogJob(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Select Push Destination</DialogTitle>
+            <DialogDescription>
+              Job #{pushDialogJob?.id} was created from a file upload and has no associated connection.
+              Choose a BackOffice connection to write the output file to.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2">
+            {connections.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No BackOffice connections available. Create one in the DB Connections admin page first.</p>
+            ) : (
+              <Select value={pushConnectionId} onValueChange={setPushConnectionId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a connection…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {connections.map(c => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.name} — {c.host}/{c.dbName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPushDialogJob(null)}>Cancel</Button>
+            <Button
+              disabled={!pushConnectionId || !pushDialogJob || pushing === pushDialogJob?.id}
+              onClick={() => pushDialogJob && executePush(pushDialogJob.id, parseInt(pushConnectionId))}
+            >
+              {pushing === pushDialogJob?.id ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRight className="h-4 w-4 mr-2" />}
+              Push
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -49,6 +49,7 @@ import type {
   PiiRevealResponse,
   PiiRotateKeyInput,
   PiiRotateKeyResponse,
+  PushJobBody,
   RefreshInput,
   Role,
   TokenPair,
@@ -60,6 +61,7 @@ import type {
   UserRoleUpdate,
   UserStatusUpdate,
   UserUpdate,
+  WorkflowConnectionItem,
   WorkflowFetchInput,
   WorkflowFetchResponse,
   WorkflowPushResponse,
@@ -3410,6 +3412,85 @@ export function useListDataJobs<
 }
 
 /**
+ * @summary List BackOffice connections available for workflow operations (public fields only)
+ */
+export const getListWorkflowConnectionsUrl = () => {
+  return `/api/workflow/connections`;
+};
+
+export const listWorkflowConnections = async (
+  options?: RequestInit,
+): Promise<WorkflowConnectionItem[]> => {
+  return customFetch<WorkflowConnectionItem[]>(
+    getListWorkflowConnectionsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListWorkflowConnectionsQueryKey = () => {
+  return [`/api/workflow/connections`] as const;
+};
+
+export const getListWorkflowConnectionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWorkflowConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listWorkflowConnections>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListWorkflowConnectionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listWorkflowConnections>>
+  > = ({ signal }) => listWorkflowConnections({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWorkflowConnections>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWorkflowConnectionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWorkflowConnections>>
+>;
+export type ListWorkflowConnectionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List BackOffice connections available for workflow operations (public fields only)
+ */
+
+export function useListWorkflowConnections<
+  TData = Awaited<ReturnType<typeof listWorkflowConnections>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listWorkflowConnections>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWorkflowConnectionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * @summary Get a job with preview rows
  */
 export const getGetDataJobUrl = (id: number) => {
@@ -3763,11 +3844,14 @@ export const getPushJobToPathUrl = (id: number) => {
 
 export const pushJobToPath = async (
   id: number,
+  pushJobBody?: PushJobBody,
   options?: RequestInit,
 ): Promise<WorkflowPushResponse> => {
   return customFetch<WorkflowPushResponse>(getPushJobToPathUrl(id), {
     ...options,
     method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(pushJobBody),
   });
 };
 
@@ -3778,14 +3862,14 @@ export const getPushJobToPathMutationOptions = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof pushJobToPath>>,
     TError,
-    { id: number },
+    { id: number; data: BodyType<PushJobBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
   Awaited<ReturnType<typeof pushJobToPath>>,
   TError,
-  { id: number },
+  { id: number; data: BodyType<PushJobBody> },
   TContext
 > => {
   const mutationKey = ["pushJobToPath"];
@@ -3799,11 +3883,11 @@ export const getPushJobToPathMutationOptions = <
 
   const mutationFn: MutationFunction<
     Awaited<ReturnType<typeof pushJobToPath>>,
-    { id: number }
+    { id: number; data: BodyType<PushJobBody> }
   > = (props) => {
-    const { id } = props ?? {};
+    const { id, data } = props ?? {};
 
-    return pushJobToPath(id, requestOptions);
+    return pushJobToPath(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
@@ -3812,7 +3896,7 @@ export const getPushJobToPathMutationOptions = <
 export type PushJobToPathMutationResult = NonNullable<
   Awaited<ReturnType<typeof pushJobToPath>>
 >;
-
+export type PushJobToPathMutationBody = BodyType<PushJobBody>;
 export type PushJobToPathMutationError = ErrorType<unknown>;
 
 /**
@@ -3825,14 +3909,14 @@ export const usePushJobToPath = <
   mutation?: UseMutationOptions<
     Awaited<ReturnType<typeof pushJobToPath>>,
     TError,
-    { id: number },
+    { id: number; data: BodyType<PushJobBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
   Awaited<ReturnType<typeof pushJobToPath>>,
   TError,
-  { id: number },
+  { id: number; data: BodyType<PushJobBody> },
   TContext
 > => {
   return useMutation(getPushJobToPathMutationOptions(options));

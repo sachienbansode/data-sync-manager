@@ -125,6 +125,29 @@ function parsePipeCsvLine(line: string): string[] {
   return fields;
 }
 
+// ── GET /api/workflow/connections — BackOffice connections for fetch/push ───
+// Accessible to Admin, Manager, Analyst. Returns only public-safe fields
+// (no credentials, no outputFilePath) to populate the connection selector UI.
+router.get("/workflow/connections", authenticate, async (req, res) => {
+  const roleName = req.user!.roleName;
+  if (!canFetch(roleName)) {
+    res.status(403).json({ error: "Insufficient role to list connections" });
+    return;
+  }
+  const rows = await db
+    .select({
+      id: dbConnectionsTable.id,
+      name: dbConnectionsTable.name,
+      type: dbConnectionsTable.type,
+      host: dbConnectionsTable.host,
+      dbName: dbConnectionsTable.dbName,
+      schemaName: dbConnectionsTable.schemaName,
+    })
+    .from(dbConnectionsTable)
+    .where(eq(dbConnectionsTable.type, "backoffice"));
+  res.json(rows);
+});
+
 // ── GET /api/workflow/field-mappings ────────────────────────────────────────
 router.get("/workflow/field-mappings", authenticate, async (_req, res) => {
   const mappings = await db.select().from(fieldMappingsTable).orderBy(fieldMappingsTable.sortOrder, fieldMappingsTable.id);
@@ -187,10 +210,19 @@ router.get("/workflow/jobs", authenticate, async (req, res) => {
 });
 
 // ── GET /api/workflow/jobs/:id ─────────────────────────────────────────────
+// Viewer role receives job metadata only (no raw data preview).
+// Admin, Manager, Analyst receive full preview rows.
 router.get("/workflow/jobs/:id", authenticate, async (req, res) => {
   const id = parseInt(req.params.id);
   const [job] = await db.select().from(dataJobsTable).where(eq(dataJobsTable.id, id));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
+
+  const roleName = req.user!.roleName;
+  if (!canFetch(roleName)) {
+    // Viewer: history metadata only, no staged row data
+    res.json({ job, preview: [] });
+    return;
+  }
 
   const previewRows = await db.select().from(dataStagingTable)
     .where(eq(dataStagingTable.jobId, id))
@@ -414,7 +446,10 @@ router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
 });
 
 // ── POST /api/workflow/jobs/:id/push — Push to local file path ─────────────
-// Allowed roles: Admin, Manager only
+// Allowed roles: Admin, Manager only.
+// Body: { connectionId?: number } — required when the job has no associated
+// connection (e.g. CSV upload jobs). The output_file_path of the specified
+// connection is used as the push destination.
 router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
   const roleName = req.user!.roleName;
   if (!canPush(roleName)) {
@@ -427,12 +462,22 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (job.status !== "success") { res.status(400).json({ error: "Job has not completed successfully" }); return; }
 
-  let outputPath: string | null = null;
-  if (job.connectionId) {
-    const [conn] = await db.select({ outputFilePath: dbConnectionsTable.outputFilePath })
-      .from(dbConnectionsTable).where(eq(dbConnectionsTable.id, job.connectionId));
-    outputPath = conn?.outputFilePath ?? null;
+  // Resolve output path from the job's connection, or from an override connection
+  // supplied in the request body (required for upload-csv jobs with no connectionId).
+  const bodyConnectionId = (req.body as { connectionId?: number }).connectionId ?? null;
+  const resolveConnectionId = job.connectionId ?? bodyConnectionId;
+
+  if (!resolveConnectionId) {
+    res.status(400).json({
+      error: "This job has no associated connection. Provide a connectionId in the request body to specify the push destination.",
+    });
+    return;
   }
+
+  const [conn] = await db.select({ outputFilePath: dbConnectionsTable.outputFilePath })
+    .from(dbConnectionsTable).where(eq(dbConnectionsTable.id, resolveConnectionId));
+  const outputPath = conn?.outputFilePath ?? null;
+
   if (!outputPath) {
     res.status(400).json({ error: "No output file path configured for this connection" });
     return;

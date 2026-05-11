@@ -739,6 +739,21 @@ export const ListDataJobsResponse = zod.object({
 });
 
 /**
+ * @summary List BackOffice connections available for workflow operations (public fields only)
+ */
+export const ListWorkflowConnectionsResponseItem = zod.object({
+  id: zod.number(),
+  name: zod.string(),
+  type: zod.string(),
+  host: zod.string(),
+  dbName: zod.string(),
+  schemaName: zod.string().optional(),
+});
+export const ListWorkflowConnectionsResponse = zod.array(
+  ListWorkflowConnectionsResponseItem,
+);
+
+/**
  * @summary Get a job with preview rows
  */
 export const GetDataJobParams = zod.object({
@@ -807,6 +822,15 @@ export const DownloadJobCsvParams = zod.object({
  */
 export const PushJobToPathParams = zod.object({
   id: zod.coerce.number(),
+});
+
+export const PushJobToPathBody = zod.object({
+  connectionId: zod
+    .number()
+    .optional()
+    .describe(
+      "Required when the job was created from a file upload (no associated connection). Specifies which BackOffice connection output_file_path to write to.",
+    ),
 });
 
 export const PushJobToPathResponse = zod.object({

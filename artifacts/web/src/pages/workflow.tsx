@@ -53,10 +53,10 @@ export default function Workflow() {
   const loadConnections = useCallback(async () => {
     try {
       const token = getAccessToken();
-      const res = await fetch(`${apiBase}/admin/db-connections`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${apiBase}/workflow/connections`, { headers: { Authorization: `Bearer ${token}` } });
       if (!res.ok) return;
       const all: DbConnection[] = await res.json();
-      setConnections(all.filter(c => c.type === "backoffice"));
+      setConnections(all);
     } catch { /* ignore */ }
   }, []);
 
@@ -160,9 +160,13 @@ export default function Workflow() {
     setPushing(jobId);
     try {
       const token = getAccessToken();
+      // Always include the selected connection so upload-based jobs have a push target.
+      const body: Record<string, unknown> = {};
+      if (selectedConnection) body.connectionId = parseInt(selectedConnection);
       const res = await fetch(`${apiBase}/workflow/jobs/${jobId}/push`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Push failed");

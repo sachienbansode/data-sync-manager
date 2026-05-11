@@ -4,34 +4,20 @@ const ALGO = "aes-256-gcm";
 const IV_LENGTH = 12;
 const AUTH_TAG_LENGTH = 16;
 
-/**
- * In-memory active key cache.
- * Sourced ONLY from process.env.PII_ENCRYPTION_KEY (env/secret injection).
- * The key is NEVER persisted to the database — keeping the trust boundary
- * between ciphertext (DB) and key (environment) intact.
- *
- * On rotation: updateCachedKey() is called after re-encryption so decryption
- * works immediately for the current process. Admin must then update the
- * PII_ENCRYPTION_KEY environment secret before the next restart.
- */
 let _cachedKey: string | null = null;
 let _ephemeralWarned = false;
 
-/**
- * Load the active encryption key from process.env.PII_ENCRYPTION_KEY.
- * If unset (dev/test only), generates an ephemeral key and warns loudly.
- * Throws in production if key is missing.
- */
+const HEX_64 = /^[0-9a-fA-F]{64}$/;
+
 export function loadEncryptionKey(): string {
   if (_cachedKey) return _cachedKey;
 
   const envKey = process.env.PII_ENCRYPTION_KEY;
 
   if (envKey) {
-    if (envKey.length !== 64 || !/^[0-9a-fA-F]+$/.test(envKey)) {
+    if (!HEX_64.test(envKey)) {
       throw new Error(
-        "PII_ENCRYPTION_KEY must be a 64-character hex string (32 bytes for AES-256). " +
-        "Generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
+        "PII_ENCRYPTION_KEY must be a 64-character hex string (32 bytes for AES-256)."
       );
     }
     _cachedKey = envKey;
@@ -40,21 +26,17 @@ export function loadEncryptionKey(): string {
 
   if (process.env.NODE_ENV === "production") {
     throw new Error(
-      "PII_ENCRYPTION_KEY environment variable is required in production. " +
-      "Set it as a Replit secret or inject it via your secrets manager."
+      "PII_ENCRYPTION_KEY is required in production. Set it as a Replit Secret."
     );
   }
 
-  // Development fallback: ephemeral in-memory key (data will not survive restarts)
   if (!_ephemeralWarned) {
     const ephemeral = randomBytes(32).toString("hex");
     _cachedKey = ephemeral;
     console.warn(
-      "\n⚠️  PII_ENCRYPTION_KEY is not set. Using an ephemeral key for this session only.\n" +
-      "   Encrypted data CANNOT be decrypted after a server restart.\n" +
-      "   Set PII_ENCRYPTION_KEY as a Replit Secret to persist encrypted data:\n" +
-      `   Value to set: ${ephemeral}\n` +
-      "   (Admin → Secrets → PII_ENCRYPTION_KEY)\n"
+      `\n⚠  PII_ENCRYPTION_KEY not set — using ephemeral key for this session only.\n` +
+      `   Data CANNOT be decrypted after restart. Set as Replit Secret:\n` +
+      `   PII_ENCRYPTION_KEY = ${ephemeral}\n`
     );
     _ephemeralWarned = true;
   }
@@ -62,11 +44,6 @@ export function loadEncryptionKey(): string {
   return _cachedKey!;
 }
 
-/**
- * Update the in-memory cached key after a rotation.
- * The new key is NOT persisted — admin must update PII_ENCRYPTION_KEY
- * environment secret before the next server restart.
- */
 export function updateCachedKey(newKey: string): void {
   _cachedKey = newKey;
 }
@@ -95,16 +72,10 @@ export function decrypt(ciphertext: string, keyHex?: string): string {
   return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString("utf8");
 }
 
-/**
- * Returns true if the value looks like AES-256-GCM ciphertext produced by encrypt().
- * Used by the migration utility to skip already-encrypted values.
- * Minimum encoded length = IV(12) + AuthTag(16) + 1 byte data = 29 bytes → base64 = 40 chars.
- */
 export function looksEncrypted(value: string): boolean {
   if (!value || value.length < 40) return false;
   try {
     const buf = Buffer.from(value, "base64");
-    // Re-encoding should yield the same string (valid base64)
     return buf.toString("base64") === value && buf.length >= IV_LENGTH + AUTH_TAG_LENGTH + 1;
   } catch {
     return false;

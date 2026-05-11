@@ -15,7 +15,6 @@ const router: IRouter = Router();
 
 const MASKED = "••••••••";
 
-// Maps camelCase API fieldNames → DB column keys on piiRecordsTable
 const FIELD_MAP: Record<string, keyof typeof piiRecordsTable.$inferSelect> = {
   phone: "phone",
   nationalId: "nationalId",
@@ -25,7 +24,6 @@ const FIELD_MAP: Record<string, keyof typeof piiRecordsTable.$inferSelect> = {
   address: "address",
 };
 
-// Maps camelCase API fieldNames → DB field_type strings in pii_field_permissions
 const FIELD_TYPE_MAP: Record<string, string> = {
   phone: "phone",
   nationalId: "national_id",
@@ -34,6 +32,10 @@ const FIELD_TYPE_MAP: Record<string, string> = {
   emailCounterparty: "email_counterparty",
   address: "address",
 };
+
+const PII_FIELDS = ["phone", "nationalId", "bankAccount", "panNumber", "emailCounterparty", "address"] as const;
+
+const HEX_64 = /^[0-9a-fA-F]{64}$/;
 
 function maskRecord(r: typeof piiRecordsTable.$inferSelect) {
   return {
@@ -50,7 +52,7 @@ function maskRecord(r: typeof piiRecordsTable.$inferSelect) {
   };
 }
 
-// ─── Rate limiter: per user, 20 reveals per minute ───────────────────────────
+// Per-user rate limit: 20 reveals per 60-second window
 const revealRateLimit = new Map<number, { count: number; resetAt: number }>();
 function checkRateLimit(userId: number): boolean {
   const now = Date.now();
@@ -68,7 +70,7 @@ setInterval(() => {
   for (const [k, v] of revealRateLimit) if (v.resetAt < now) revealRateLimit.delete(k);
 }, 60_000);
 
-// ─── GET /pii/records ─────────────────────────────────────────────────────────
+// GET /pii/records — paginated list, all PII fields masked
 router.get("/pii/records", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const pageSize = Math.min(100, parseInt(req.query.pageSize as string) || 20);
@@ -77,26 +79,21 @@ router.get("/pii/records", authenticate, requirePageAccess("/pii-records"), asyn
   const [countRow] = await db.select({ count: sql<number>`count(*)::int` }).from(piiRecordsTable);
   const records = await db.select().from(piiRecordsTable).limit(pageSize).offset(offset);
 
-  res.json({
-    records: records.map(maskRecord),
-    total: countRow.count,
-    page,
-    pageSize,
-  });
+  res.json({ records: records.map(maskRecord), total: countRow.count, page, pageSize });
 });
 
-// ─── GET /pii/my-permissions — which fields the current user's role can unmask ─
+// GET /pii/my-permissions — field types the caller's role may unmask
 router.get("/pii/my-permissions", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const roleId = req.user!.roleId;
-  const perms = await db.select({ fieldType: piiFieldPermissionsTable.fieldType, canUnmask: piiFieldPermissionsTable.canUnmask })
+  const perms = await db
+    .select({ fieldType: piiFieldPermissionsTable.fieldType, canUnmask: piiFieldPermissionsTable.canUnmask })
     .from(piiFieldPermissionsTable)
     .where(eq(piiFieldPermissionsTable.roleId, roleId));
 
-  const allowed = perms.filter(p => p.canUnmask).map(p => p.fieldType);
-  res.json({ allowedFieldTypes: allowed });
+  res.json({ allowedFieldTypes: perms.filter(p => p.canUnmask).map(p => p.fieldType) });
 });
 
-// ─── POST /pii/records ────────────────────────────────────────────────────────
+// POST /pii/records — create new PII record; all sensitive fields AES-256-GCM encrypted
 router.post("/pii/records", authenticate, requirePageAccess("/pii-records"), requireRole("Admin"), async (req, res) => {
   await loadEncryptionKey();
 
@@ -136,7 +133,7 @@ router.post("/pii/records", authenticate, requirePageAccess("/pii-records"), req
   res.status(201).json(maskRecord(record));
 });
 
-// ─── DELETE /pii/records/:id ──────────────────────────────────────────────────
+// DELETE /pii/records/:id — hard delete with audit event
 router.delete("/pii/records/:id", authenticate, requirePageAccess("/pii-records"), requireRole("Admin"), async (req, res) => {
   const id = parseInt(req.params.id as string);
   const [existing] = await db.select().from(piiRecordsTable).where(eq(piiRecordsTable.id, id));
@@ -157,7 +154,7 @@ router.delete("/pii/records/:id", authenticate, requirePageAccess("/pii-records"
   res.status(204).send();
 });
 
-// ─── POST /pii/reveal ─────────────────────────────────────────────────────────
+// POST /pii/reveal — decrypt a single field after RBAC + rate-limit checks
 router.post("/pii/reveal", authenticate, requirePageAccess("/pii-records"), async (req, res) => {
   const { recordId, fieldName, recordType = "pii_record" } = req.body as {
     recordId: number;
@@ -230,7 +227,7 @@ router.post("/pii/reveal", authenticate, requirePageAccess("/pii-records"), asyn
   res.json({ value: plaintext });
 });
 
-// ─── GET /pii/field-permissions ───────────────────────────────────────────────
+// GET /pii/field-permissions — role × field unmask matrix
 router.get("/pii/field-permissions", authenticate, requireRole("Admin"), async (_req, res) => {
   const roles = await db.select({ id: rolesTable.id, name: rolesTable.name }).from(rolesTable).orderBy(rolesTable.id);
   const perms = await db.select().from(piiFieldPermissionsTable);
@@ -242,7 +239,7 @@ router.get("/pii/field-permissions", authenticate, requireRole("Admin"), async (
   });
 });
 
-// ─── PUT /pii/field-permissions ───────────────────────────────────────────────
+// PUT /pii/field-permissions — upsert role × field grants
 router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (req, res) => {
   const { permissions } = req.body as {
     permissions: Array<{ roleId: number; fieldType: string; canUnmask: boolean }>;
@@ -281,38 +278,40 @@ router.put("/pii/field-permissions", authenticate, requireRole("Admin"), async (
   });
 });
 
-// ─── POST /pii/rotate-key ─────────────────────────────────────────────────────
-// Re-encrypts all PII records with the new key, then updates the DB-stored key
-// and the in-memory cached key so decryption works immediately (no downtime).
+// POST /pii/rotate-key — re-encrypts all records with newKey; only updates in-memory key
+// after full successful rotation. Admin must update PII_ENCRYPTION_KEY secret before restart.
 router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, res) => {
   const { newKey } = req.body as { newKey?: string };
 
-  if (!newKey || newKey.length !== 64) {
-    res.status(400).json({ error: "newKey must be a 64-character hex string (32 bytes AES-256)" });
+  if (!newKey || !HEX_64.test(newKey)) {
+    res.status(400).json({ error: "newKey must be exactly 64 hexadecimal characters (32-byte AES-256 key)." });
     return;
   }
 
   await loadEncryptionKey();
+
+  // Validate new key with a round-trip before touching any records
+  try {
+    decrypt(encrypt("validation-probe", newKey), newKey);
+  } catch {
+    res.status(400).json({ error: "newKey failed round-trip validation — key may be malformed." });
+    return;
+  }
+
   const records = await db.select().from(piiRecordsTable);
   let rotated = 0;
 
-  const fields = ["phone", "nationalId", "bankAccount", "panNumber", "emailCounterparty", "address"] as const;
-
+  // Re-encrypt every record; any crypto failure aborts the entire rotation
   for (const record of records) {
     const updates: Partial<typeof piiRecordsTable.$inferInsert> = {};
     let changed = false;
 
-    for (const field of fields) {
+    for (const field of PII_FIELDS) {
       const val = record[field as keyof typeof record] as string | null;
-      if (val) {
-        try {
-          const plain = decrypt(val);
-          (updates as Record<string, string>)[field] = encrypt(plain, newKey);
-          changed = true;
-        } catch {
-          // Skip values that can't be decrypted with current key
-        }
-      }
+      if (!val) continue;
+      const plain = decrypt(val);
+      (updates as Record<string, string>)[field] = encrypt(plain, newKey);
+      changed = true;
     }
 
     if (changed) {
@@ -321,9 +320,7 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
     }
   }
 
-  // Update in-memory cache immediately — no restart required, no downtime
-  // IMPORTANT: Admin must also update the PII_ENCRYPTION_KEY Replit Secret
-  // to the returned newKey value so decryption works after a server restart.
+  // Cache updated only after all records have been successfully re-encrypted
   updateCachedKey(newKey);
 
   await db.insert(auditLogsTable).values({
@@ -338,9 +335,7 @@ router.post("/pii/rotate-key", authenticate, requireRole("Admin"), async (req, r
   res.json({
     rotated,
     success: true,
-    message: `Re-encrypted ${rotated} record(s). ` +
-      "In-memory key updated — decryption works immediately. " +
-      "ACTION REQUIRED: Update the PII_ENCRYPTION_KEY Replit Secret to the newKey value before the next server restart.",
+    message: `Re-encrypted ${rotated} record(s). ACTION REQUIRED: Update the PII_ENCRYPTION_KEY Replit Secret before the next server restart.`,
   });
 });
 

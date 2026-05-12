@@ -2,28 +2,10 @@ import { useState, ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import {
-  LayoutDashboard,
-  Users,
-  ShieldAlert,
-  FileText,
-  LogOut,
-  UserCircle,
-  Menu,
-  Activity,
-  Mail,
-  Settings,
-  ChevronDown,
-  ChevronRight,
-  Lock,
-  Database,
-  GitBranch,
-  Shuffle,
-  BookOpen,
-  Settings2,
-  Shield,
-  Eye,
-  ServerCog,
-  Network,
+  LayoutDashboard, Users, ShieldAlert, FileText, LogOut, UserCircle, Menu,
+  Activity, Mail, Settings, ChevronDown, ChevronRight, Lock, Database,
+  GitBranch, Shuffle, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
+  Type, FileType, LogIn, Info,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -31,17 +13,13 @@ import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAppSettings, getLogoUrl } from "@/lib/use-app-settings";
 
-interface LayoutProps {
-  children: ReactNode;
-}
-
+interface LayoutProps { children: ReactNode; }
 interface NavItem {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
 }
-
 interface NavGroup {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
@@ -51,8 +29,17 @@ interface NavGroup {
 const topNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/workflow", label: "Data Workflow", icon: GitBranch },
-  { href: "/docs", label: "API Documentation", icon: BookOpen },
+  { href: "/about", label: "About", icon: Info },
 ];
+
+const apiDocGroup: NavGroup = {
+  label: "API Documentation",
+  icon: BookOpen,
+  items: [
+    { href: "/docs", label: "Browse", icon: BookOpen },
+    { href: "/docs/admin", label: "API Docs", icon: Settings2, adminOnly: true },
+  ],
+};
 
 const adminGroups: NavGroup[] = [
   {
@@ -68,6 +55,7 @@ const adminGroups: NavGroup[] = [
     icon: Eye,
     items: [
       { href: "/audit-log", label: "Audit Log", icon: FileText },
+      { href: "/admin/login-report", label: "Login Report", icon: LogIn },
       { href: "/pii-records", label: "PII Records", icon: Lock },
       { href: "/admin/pii-permissions", label: "PII Permissions", icon: Database },
     ],
@@ -77,7 +65,9 @@ const adminGroups: NavGroup[] = [
     icon: Settings,
     items: [
       { href: "/admin/app-settings", label: "App Settings", icon: Settings },
+      { href: "/admin/font-settings", label: "Font Settings", icon: Type },
       { href: "/admin/email-settings", label: "Email Settings", icon: Mail },
+      { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
     ],
   },
   {
@@ -86,30 +76,19 @@ const adminGroups: NavGroup[] = [
     items: [
       { href: "/admin/db-connections", label: "Connections", icon: Network },
       { href: "/admin/field-mappings", label: "Field Mappings", icon: Shuffle },
-      { href: "/docs/admin", label: "API Docs Admin", icon: Settings2, adminOnly: true },
     ],
   },
 ];
 
 function NavLink({ href, label, Icon, isActive, onNav, indent = false }: {
-  href: string;
-  label: string;
-  Icon: React.ComponentType<{ className?: string }>;
-  isActive: boolean;
-  onNav?: () => void;
-  indent?: boolean;
+  href: string; label: string; Icon: React.ComponentType<{ className?: string }>;
+  isActive: boolean; onNav?: () => void; indent?: boolean;
 }) {
   return (
     <Link href={href} className="block" onClick={onNav}>
-      <div
-        className={`flex items-center py-2 text-sm font-medium rounded-md transition-colors ${
-          indent ? "px-3 pl-7" : "px-3"
-        } ${
-          isActive
-            ? "bg-sidebar-accent text-sidebar-accent-foreground"
-            : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-        }`}
-      >
+      <div className={`flex items-center py-2 text-sm font-medium rounded-md transition-colors ${indent ? "px-3 pl-7" : "px-3"} ${
+        isActive ? "bg-sidebar-accent text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+      }`}>
         <Icon className={`h-4 w-4 mr-3 shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`} />
         {label}
       </div>
@@ -117,12 +96,9 @@ function NavLink({ href, label, Icon, isActive, onNav, indent = false }: {
   );
 }
 
-function CollapsibleGroup({ group, location, onNav, isAdmin, checkPermission }: {
-  group: NavGroup;
-  location: string;
-  onNav?: () => void;
-  isAdmin: boolean;
-  checkPermission: (href: string) => boolean;
+function CollapsibleGroup({ group, location, onNav, isAdmin, checkPermission, indent = true }: {
+  group: NavGroup; location: string; onNav?: () => void;
+  isAdmin: boolean; checkPermission: (href: string) => boolean; indent?: boolean;
 }) {
   const visibleItems = group.items.filter(item => {
     if (item.adminOnly) return isAdmin;
@@ -139,9 +115,7 @@ function CollapsibleGroup({ group, location, onNav, isAdmin, checkPermission }: 
       <button
         onClick={() => setExpanded(p => !p)}
         className={`w-full flex items-center justify-between px-3 py-2 text-sm font-medium rounded-md transition-colors ${
-          isAnyActive && !expanded
-            ? "text-sidebar-foreground bg-sidebar-accent/30"
-            : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/20"
+          isAnyActive && !expanded ? "text-sidebar-foreground bg-sidebar-accent/30" : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent/20"
         }`}
       >
         <span className="flex items-center gap-3">
@@ -163,7 +137,7 @@ function CollapsibleGroup({ group, location, onNav, isAdmin, checkPermission }: 
                 Icon={Icon}
                 isActive={isActive}
                 onNav={onNav}
-                indent
+                indent={indent}
               />
             );
           })}
@@ -186,7 +160,10 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const { data: appCfg } = useAppSettings();
   const logoUrl = appCfg?.hasLogo ? getLogoUrl() : null;
 
-  const filteredTop = topNavItems.filter(item => checkPermission(item.href));
+  const filteredTop = topNavItems.filter(item => {
+    if (item.href === "/about") return true;
+    return checkPermission(item.href);
+  });
 
   return (
     <div className="flex flex-col h-full bg-sidebar">
@@ -207,16 +184,19 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
             const Icon = item.icon;
             const isActive = location === item.href || location.startsWith(`${item.href}/`);
             return (
-              <NavLink
-                key={item.href}
-                href={item.href}
-                label={item.label}
-                Icon={Icon}
-                isActive={isActive}
-                onNav={onNav}
-              />
+              <NavLink key={item.href} href={item.href} label={item.label} Icon={Icon} isActive={isActive} onNav={onNav} />
             );
           })}
+
+          {/* API Documentation group — visible to anyone with /docs access or admin */}
+          <CollapsibleGroup
+            group={apiDocGroup}
+            location={location}
+            onNav={onNav}
+            isAdmin={isAdmin}
+            checkPermission={checkPermission}
+            indent={false}
+          />
 
           <div className="pt-2">
             <button
@@ -255,7 +235,6 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
             <p className="text-xs text-muted-foreground truncate">{user?.roleName}</p>
           </div>
         </div>
-
         <div className="space-y-0.5">
           <Link href="/profile" className="block" onClick={onNav}>
             <div className="flex items-center px-3 py-2 text-sm font-medium rounded-md text-sidebar-foreground/70 hover:bg-sidebar-accent/50 transition-colors">
@@ -290,13 +269,11 @@ export function Layout({ children }: LayoutProps) {
       <aside className="hidden lg:flex w-64 flex-col border-r border-border shrink-0">
         <SidebarContent />
       </aside>
-
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
         <SheetContent side="left" className="p-0 w-64">
           <SidebarContent onNav={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
-
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
         <header className="h-14 flex items-center justify-between px-4 border-b border-border bg-card shrink-0 lg:hidden">
           <div className="flex items-center">
@@ -314,7 +291,6 @@ export function Layout({ children }: LayoutProps) {
             </Button>
           </div>
         </header>
-
         <ScrollArea className="flex-1">
           <div className="p-6 md:p-8 max-w-7xl mx-auto">
             {children}

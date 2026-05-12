@@ -4,6 +4,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { ThemeProvider } from "@/lib/theme";
+import { useFontSettings } from "@/lib/use-app-settings";
 
 import NotFound from "@/pages/not-found";
 import Login from "@/pages/login";
@@ -21,12 +22,16 @@ import PiiPermissions from "@/pages/admin/pii-permissions";
 import PiiRecords from "@/pages/pii-records";
 import DbConnections from "@/pages/admin/db-connections";
 import FieldMappings from "@/pages/admin/field-mappings";
+import FontSettings from "@/pages/admin/font-settings";
+import AllowedFileTypes from "@/pages/admin/allowed-file-types";
+import LoginReport from "@/pages/admin/login-report";
 import Workflow from "@/pages/workflow";
 import WorkflowJobs from "@/pages/workflow-jobs";
 import PipelineMappings from "@/pages/pipeline-mappings";
 import Docs from "@/pages/docs";
 import DocsViewer from "@/pages/docs-viewer";
 import DocsAdmin from "@/pages/docs-admin";
+import About from "@/pages/about";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 
@@ -34,9 +39,14 @@ const queryClient = new QueryClient();
 
 function RootRoute() {
   const { isAuthenticated, isLoading } = useAuth();
-
   if (isLoading) return null;
   return isAuthenticated ? <Redirect to="/dashboard" /> : <Redirect to="/login" />;
+}
+
+/** Applies font settings from DB as CSS variables on <html> */
+function FontApplicator() {
+  useFontSettings();
+  return null;
 }
 
 function Router() {
@@ -67,6 +77,9 @@ function Router() {
       <Route path="/pii-records">
         <ProtectedRoute component={PiiRecords} path="/pii-records" />
       </Route>
+      <Route path="/about">
+        <ProtectedRoute component={About} path="/about" skipPermissionCheck />
+      </Route>
       <Route path="/admin/email-settings">
         <ProtectedRoute component={EmailSettings} path="/admin/email-settings" />
       </Route>
@@ -81,6 +94,15 @@ function Router() {
       </Route>
       <Route path="/admin/field-mappings">
         <ProtectedRoute component={FieldMappings} path="/admin/field-mappings" />
+      </Route>
+      <Route path="/admin/font-settings">
+        <ProtectedRoute component={FontSettings} path="/admin/font-settings" requireRole="Admin" />
+      </Route>
+      <Route path="/admin/allowed-file-types">
+        <ProtectedRoute component={AllowedFileTypes} path="/admin/allowed-file-types" requireRole="Admin" />
+      </Route>
+      <Route path="/admin/login-report">
+        <ProtectedRoute component={LoginReport} path="/admin/login-report" requireRole="Admin" />
       </Route>
       <Route path="/workflow/jobs">
         <ProtectedRoute component={WorkflowJobs} path="/workflow/jobs" />
@@ -102,7 +124,6 @@ function Router() {
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />
-
       <Route component={NotFound} />
     </Switch>
   );
@@ -116,6 +137,7 @@ function App() {
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthProvider>
               <FaviconSync />
+              <FontApplicator />
               <Router />
               <Toaster richColors position="top-right" />
             </AuthProvider>

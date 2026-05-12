@@ -31,6 +31,10 @@ router.get("/admin/app-settings", async (_req, res): Promise<void> => {
     id: cfg.id,
     appName: cfg.appName,
     hasLogo: !!cfg.logoData,
+    fontFamily: cfg.fontFamily,
+    menuFontSize: cfg.menuFontSize,
+    bodyFontSize: cfg.bodyFontSize,
+    headingFontSize: cfg.headingFontSize,
     updatedAt: cfg.updatedAt,
   });
 });
@@ -67,6 +71,41 @@ router.put("/admin/app-settings", authenticate, requireRole("Admin"), async (req
   });
 
   res.json({ success: true, id: cfg.id, appName: appName.trim() });
+});
+
+// GET /admin/font-settings
+router.get("/admin/font-settings", authenticate, requireRole("Admin"), async (_req, res): Promise<void> => {
+  const cfg = await getOrCreateSettings();
+  res.json({
+    fontFamily: cfg.fontFamily,
+    menuFontSize: cfg.menuFontSize,
+    bodyFontSize: cfg.bodyFontSize,
+    headingFontSize: cfg.headingFontSize,
+  });
+});
+
+// PUT /admin/font-settings
+router.put("/admin/font-settings", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+  const { fontFamily, menuFontSize, bodyFontSize, headingFontSize } = req.body as {
+    fontFamily?: string; menuFontSize?: string; bodyFontSize?: string; headingFontSize?: string;
+  };
+  await getOrCreateSettings();
+  const updates: Record<string, string> = {};
+  if (fontFamily?.trim()) updates.fontFamily = fontFamily.trim();
+  if (menuFontSize?.trim()) updates.menuFontSize = menuFontSize.trim();
+  if (bodyFontSize?.trim()) updates.bodyFontSize = bodyFontSize.trim();
+  if (headingFontSize?.trim()) updates.headingFontSize = headingFontSize.trim();
+  if (Object.keys(updates).length > 0) {
+    await db.update(appSettingsTable).set(updates);
+  }
+  const user = (req as Express.Request & { user?: { id: number; email: string } }).user;
+  await db.insert(auditLogsTable).values({
+    userId: user?.id ?? null, userEmail: user?.email ?? null,
+    action: "FONT_SETTINGS_UPDATED", details: `Font: ${fontFamily}, sizes: menu=${menuFontSize}, body=${bodyFontSize}, heading=${headingFontSize}`,
+    ipAddress: req.ip ?? null,
+  });
+  const cfg = await getOrCreateSettings();
+  res.json({ fontFamily: cfg.fontFamily, menuFontSize: cfg.menuFontSize, bodyFontSize: cfg.bodyFontSize, headingFontSize: cfg.headingFontSize });
 });
 
 // POST /admin/app-settings/logo — upload logo image

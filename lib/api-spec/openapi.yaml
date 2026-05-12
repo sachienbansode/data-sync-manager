@@ -1402,6 +1402,24 @@ components:
           type: integer
         mfaEnabledUsers:
           type: integer
+        totalConnections:
+          type: integer
+        totalPipelines:
+          type: integer
+        totalApiApps:
+          type: integer
+        loginActivity:
+          type: array
+          items:
+            type: object
+            required: [date, successes, failures]
+            properties:
+              date:
+                type: string
+              successes:
+                type: integer
+              failures:
+                type: integer
         usersByRole:
           type: array
           items:

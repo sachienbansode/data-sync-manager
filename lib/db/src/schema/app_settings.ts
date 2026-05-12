@@ -5,6 +5,14 @@ export const appSettingsTable = pgTable("app_settings", {
   appName: text("app_name").notNull().default("Ashika Platform"),
   logoData: text("logo_data"),
   logoMimeType: text("logo_mime_type"),
+  /** Font family applied across the application */
+  fontFamily: text("font_family").notNull().default("Inter"),
+  /** Font size in px for menu/sidebar items */
+  menuFontSize: text("menu_font_size").notNull().default("14"),
+  /** Font size in px for body content */
+  bodyFontSize: text("body_font_size").notNull().default("14"),
+  /** Font size in px for page headings */
+  headingFontSize: text("heading_font_size").notNull().default("24"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 

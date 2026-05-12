@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, smtpSettingsTable, auditLogsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
-import { createTransporter } from "../lib/mailer";
+import { createTransporter, invalidateMailerCache } from "../lib/mailer";
 
 const router: IRouter = Router();
 
@@ -46,6 +46,9 @@ router.put("/admin/smtp-settings", authenticate, requireRole("Admin"), async (re
     details: `SMTP host: ${host}, enabled: ${enabled}`,
     ipAddress: req.ip ?? null,
   });
+
+  // Invalidate the cached SMTP transporter so the next send uses new config
+  invalidateMailerCache();
 
   res.json({ success: true });
 });

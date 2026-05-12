@@ -11,11 +11,12 @@ import { authenticate, requireRole, requirePageAccess } from "../middlewares/aut
 
 const router: IRouter = Router();
 
-const ALL_PAGES = [
+export const ALL_PAGES = [
   { path: "/dashboard", name: "Dashboard" },
   { path: "/users", name: "Users" },
   { path: "/roles", name: "Roles & Permissions" },
   { path: "/audit-log", name: "Audit Log" },
+  { path: "/admin/login-report", name: "Login Report" },
   { path: "/pii-records", name: "PII Records" },
   { path: "/workflow", name: "Data Workflow" },
   { path: "/workflow/jobs", name: "Workflow Jobs" },
@@ -23,6 +24,8 @@ const ALL_PAGES = [
   { path: "/admin/field-mappings", name: "Field Mappings" },
   { path: "/admin/email-settings", name: "Email Settings" },
   { path: "/admin/app-settings", name: "App Settings" },
+  { path: "/admin/font-settings", name: "Font Settings" },
+  { path: "/admin/allowed-file-types", name: "Allowed File Types" },
   { path: "/admin/pii-permissions", name: "PII Permissions" },
   { path: "/docs", name: "API Documentation" },
 ];
@@ -37,6 +40,11 @@ const UpdateRoleBody = z.object({
   name: z.string().min(1).max(60).optional(),
   description: z.string().max(200).optional(),
   mfaRequired: z.boolean().optional(),
+});
+
+// GET /roles/pages — list of all pages that can be permission-controlled
+router.get("/roles/pages", authenticate, async (_req, res): Promise<void> => {
+  res.json(ALL_PAGES);
 });
 
 // GET /roles

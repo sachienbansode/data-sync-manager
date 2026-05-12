@@ -22,6 +22,10 @@ export const dbConnectionsTable = pgTable("db_connections", {
   passwordEnc: text("password_enc"),
   /** Extra engine-specific params (bucket, region, remotePath, etc.) stored as JSON */
   extraParams: jsonb("extra_params").$type<Record<string, string>>(),
+  /** SELECT-only query for fetching data from this BackOffice connection */
+  fetchQuery: text("fetch_query"),
+  /** Local file path where transformed CSV output is written during push */
+  outputFilePath: text("output_file_path"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   lastTestSuccess: boolean("last_test_success"),

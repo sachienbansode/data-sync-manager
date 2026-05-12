@@ -8,22 +8,23 @@ interface ProtectedRouteProps {
   component: React.ComponentType;
   path: string;
   requireRole?: string;
+  skipPermissionCheck?: boolean;
 }
 
-export function ProtectedRoute({ component: Component, path, requireRole }: ProtectedRouteProps) {
+export function ProtectedRoute({ component: Component, path, requireRole, skipPermissionCheck }: ProtectedRouteProps) {
   const { user, isLoading, checkPermission } = useAuth();
   const [location, setLocation] = useLocation();
 
-  const hasPermission = !isLoading && !!user && checkPermission(path);
+  const hasPermission = skipPermissionCheck ? true : !isLoading && !!user && checkPermission(path);
   const hasRole = !requireRole || user?.roleName === requireRole;
 
   useEffect(() => {
     if (!isLoading && !user) {
       setLocation("/login");
-    } else if (!isLoading && user && (!checkPermission(path) || !hasRole)) {
+    } else if (!isLoading && user && (!hasPermission || !hasRole)) {
       setLocation("/403");
     }
-  }, [user, isLoading, location, setLocation, path, checkPermission, hasRole]);
+  }, [user, isLoading, location, setLocation, path, checkPermission, hasRole, hasPermission]);
 
   if (isLoading) {
     return (
@@ -33,7 +34,7 @@ export function ProtectedRoute({ component: Component, path, requireRole }: Prot
     );
   }
 
-  if (!user || !hasPermission || !hasRole) {
+  if (!user || (!skipPermissionCheck && !hasPermission) || !hasRole) {
     return null;
   }
 

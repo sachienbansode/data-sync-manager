@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc, and } from "drizzle-orm";
-import { db, usersTable, rolesTable, auditLogsTable } from "@workspace/db";
+import { eq, sql, desc, and, gte } from "drizzle-orm";
+import { db, usersTable, rolesTable, auditLogsTable, dbConnectionsTable, dataPipelinesTable, apiApplicationsTable } from "@workspace/db";
 import { GetAuditLogQueryParams } from "@workspace/api-zod";
 import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 
@@ -27,27 +27,53 @@ router.get("/dashboard/summary", authenticate, requirePageAccess("/dashboard"), 
     .groupBy(rolesTable.id, rolesTable.name)
     .orderBy(rolesTable.id);
 
+  // Platform-wide counts
+  const [[{ totalConnections }], [{ totalPipelines }], [{ totalApiApps }]] = await Promise.all([
+    db.select({ totalConnections: sql<number>`count(*)::int` }).from(dbConnectionsTable),
+    db.select({ totalPipelines: sql<number>`count(*)::int` }).from(dataPipelinesTable),
+    db.select({ totalApiApps: sql<number>`count(*)::int` }).from(apiApplicationsTable),
+  ]);
+
+  // Daily login activity last 7 days for a bar chart
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+  const loginActivity = await db
+    .select({
+      date: sql<string>`date_trunc('day', ${auditLogsTable.createdAt})::date::text`,
+      successes: sql<number>`count(*) filter (where ${auditLogsTable.action} = 'LOGIN_SUCCESS')::int`,
+      failures: sql<number>`count(*) filter (where ${auditLogsTable.action} = 'LOGIN_FAILED')::int`,
+    })
+    .from(auditLogsTable)
+    .where(gte(auditLogsTable.createdAt, sevenDaysAgo))
+    .groupBy(sql`date_trunc('day', ${auditLogsTable.createdAt})::date`)
+    .orderBy(sql`date_trunc('day', ${auditLogsTable.createdAt})::date`);
+
+  // Recent logins (compact — 5 only, for quick glance)
   const recentLogins = await db
     .select({
       id: auditLogsTable.id,
-      userId: auditLogsTable.userId,
       userEmail: auditLogsTable.userEmail,
       action: auditLogsTable.action,
-      details: auditLogsTable.details,
       ipAddress: auditLogsTable.ipAddress,
       createdAt: auditLogsTable.createdAt,
     })
     .from(auditLogsTable)
     .where(eq(auditLogsTable.action, "LOGIN_SUCCESS"))
     .orderBy(desc(auditLogsTable.createdAt))
-    .limit(10);
+    .limit(5);
 
   res.json({
     totalUsers: totals?.total ?? 0,
     activeUsers: totals?.active ?? 0,
     inactiveUsers: totals?.inactive ?? 0,
     mfaEnabledUsers: totals?.mfaEnabled ?? 0,
+    totalConnections: totalConnections ?? 0,
+    totalPipelines: totalPipelines ?? 0,
+    totalApiApps: totalApiApps ?? 0,
     usersByRole,
+    loginActivity,
     recentLogins,
   });
 });

@@ -9,6 +9,7 @@ import {
   apiApplicationsTable,
   apiSpecsTable,
   apiAppRoleAccessTable,
+  apiDocAttachmentsTable,
   rolesTable,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
@@ -296,6 +297,78 @@ router.put("/docs/apps/:id/rbac", authenticate, requireRole("Admin"), async (req
   const access = await db.select().from(apiAppRoleAccessTable).where(eq(apiAppRoleAccessTable.appId, appId));
   const allowedRoleIds = new Set(access.map((a) => a.roleId));
   res.json(roles.map((role) => ({ roleId: role.id, roleName: role.name, hasAccess: allowedRoleIds.has(role.id) })));
+});
+
+// GET /docs/apps/:id/attachments — list attachments for an app
+router.get("/docs/apps/:id/attachments", authenticate, requireRole("Admin"), async (req: Request, res: Response): Promise<void> => {
+  const appId = Number(req.params.id);
+  if (isNaN(appId)) { res.status(400).json({ error: "Invalid app id" }); return; }
+  const attachments = await db.select({
+    id: apiDocAttachmentsTable.id,
+    fileName: apiDocAttachmentsTable.fileName,
+    fileSize: apiDocAttachmentsTable.fileSize,
+    mimeType: apiDocAttachmentsTable.mimeType,
+    uploadedAt: apiDocAttachmentsTable.uploadedAt,
+  }).from(apiDocAttachmentsTable).where(eq(apiDocAttachmentsTable.appId, appId)).orderBy(apiDocAttachmentsTable.uploadedAt);
+  res.json(attachments);
+});
+
+// POST /docs/apps/:id/attachments — upload supporting document (max 5 per app)
+router.post(
+  "/docs/apps/:id/attachments",
+  authenticate,
+  requireRole("Admin"),
+  upload.single("file"),
+  async (req: Request, res: Response): Promise<void> => {
+    const appId = Number(req.params.id);
+    if (isNaN(appId)) { res.status(400).json({ error: "Invalid app id" }); return; }
+    if (!req.file) { res.status(400).json({ error: "No file uploaded" }); return; }
+    const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(apiDocAttachmentsTable).where(eq(apiDocAttachmentsTable.appId, appId));
+    if (count >= 5) { res.status(400).json({ error: "Maximum 5 attachments per API application reached" }); return; }
+    const content = req.file.buffer.toString("base64");
+    const [attachment] = await db.insert(apiDocAttachmentsTable).values({
+      appId,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      content,
+    }).returning();
+    res.status(201).json({
+      id: attachment!.id,
+      fileName: attachment!.fileName,
+      fileSize: attachment!.fileSize,
+      mimeType: attachment!.mimeType,
+      uploadedAt: attachment!.uploadedAt,
+    });
+  }
+);
+
+// DELETE /docs/apps/:id/attachments/:attachId
+router.delete("/docs/apps/:id/attachments/:attachId", authenticate, requireRole("Admin"), async (req: Request, res: Response): Promise<void> => {
+  const appId = Number(req.params.id);
+  const attachId = Number(req.params.attachId);
+  if (isNaN(appId) || isNaN(attachId)) { res.status(400).json({ error: "Invalid id" }); return; }
+  await db.delete(apiDocAttachmentsTable).where(and(eq(apiDocAttachmentsTable.id, attachId), eq(apiDocAttachmentsTable.appId, appId)));
+  res.sendStatus(204);
+});
+
+// GET /docs/apps/:id/attachments/:attachId/download — download a supporting document
+router.get("/docs/apps/:id/attachments/:attachId/download", authenticate, async (req: Request, res: Response): Promise<void> => {
+  const appId = Number(req.params.id);
+  const attachId = Number(req.params.attachId);
+  if (isNaN(appId) || isNaN(attachId)) { res.status(400).json({ error: "Invalid id" }); return; }
+  const user = req.user!;
+  if (user.roleName !== "Admin") {
+    if (!(await userCanAccessApp(user.roleId, appId))) { res.status(403).json({ error: "Access denied" }); return; }
+  }
+  const [attachment] = await db.select().from(apiDocAttachmentsTable)
+    .where(and(eq(apiDocAttachmentsTable.id, attachId), eq(apiDocAttachmentsTable.appId, appId)));
+  if (!attachment) { res.status(404).json({ error: "Attachment not found" }); return; }
+  const buffer = Buffer.from(attachment.content, "base64");
+  res.setHeader("Content-Type", attachment.mimeType);
+  res.setHeader("Content-Disposition", `attachment; filename="${attachment.fileName}"`);
+  res.setHeader("Content-Length", String(buffer.length));
+  res.send(buffer);
 });
 
 export default router;

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -35,7 +35,7 @@ import { toast } from "sonner";
 import {
   Plus, Settings, Trash2, Upload, LinkIcon, Shield, FileCode,
   ChevronDown, ChevronRight, Edit3, Eye, ArrowLeft, CheckCircle,
-  AlertCircle, Copy, Download,
+  AlertCircle, Copy, Download, Paperclip, X, FileText,
 } from "lucide-react";
 
 const SAMPLE_OPENAPI = `openapi: "3.0.3"
@@ -105,6 +105,7 @@ export default function DocsAdmin() {
   const [deleteAppId, setDeleteAppId] = useState<number | null>(null);
   const [specAppId, setSpecAppId] = useState<number | null>(null);
   const [rbacAppId, setRbacAppId] = useState<number | null>(null);
+  const [attachAppId, setAttachAppId] = useState<number | null>(null);
   const [expandedAppId, setExpandedAppId] = useState<number | null>(null);
 
   const deleteMutation = useDeleteDocApp();
@@ -132,9 +133,9 @@ export default function DocsAdmin() {
             </Button>
           </Link>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">API Docs Admin</h1>
+            <h1 className="text-3xl font-bold tracking-tight">API Docs</h1>
             <p className="text-muted-foreground mt-1">
-              Register applications, write or upload OpenAPI specs, and control access by role.
+              Register applications, upload OpenAPI specs, attach supporting documents, and control access by role.
             </p>
           </div>
         </div>
@@ -145,11 +146,12 @@ export default function DocsAdmin() {
       </div>
 
       {/* Workflow steps hint */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
         {[
           { step: "1", title: "Register", desc: "Add a new API application with name, description and tags." },
           { step: "2", title: "Add Spec", desc: "Write an OpenAPI spec inline, upload a YAML/JSON file, or link a URL." },
-          { step: "3", title: "Set Access", desc: "Grant roles permission to view each application's documentation." },
+          { step: "3", title: "Attachments", desc: "Attach up to 5 supporting documents (PDFs, diagrams, guides) per application." },
+          { step: "4", title: "Set Access", desc: "Grant roles permission to view each application's documentation." },
         ].map((s) => (
           <div key={s.step} className="flex items-start gap-3 p-3 rounded-lg bg-muted/30 border">
             <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">
@@ -214,6 +216,9 @@ export default function DocsAdmin() {
                   <div className="flex gap-1 shrink-0 ml-2">
                     <Button variant="ghost" size="icon" title="Manage spec versions" onClick={() => setSpecAppId(app.id)}>
                       <Upload className="h-4 w-4" />
+                    </Button>
+                    <Button variant="ghost" size="icon" title="Supporting attachments" onClick={() => setAttachAppId(app.id)}>
+                      <Paperclip className="h-4 w-4" />
                     </Button>
                     <Button variant="ghost" size="icon" title="View docs" asChild>
                       <Link href={`/docs/${app.id}`}>
@@ -322,6 +327,10 @@ export default function DocsAdmin() {
             setRbacAppId(null);
           }}
         />
+      )}
+
+      {attachAppId != null && (
+        <AttachmentsDialog appId={attachAppId} onClose={() => setAttachAppId(null)} />
       )}
     </div>
   );
@@ -887,6 +896,162 @@ function RbacDialog({ appId, onClose, onSuccess }: {
           <Button onClick={handleSave} disabled={updateRbacMutation.isPending || isLoading}>
             {updateRbacMutation.isPending ? "Saving…" : "Save Access"}
           </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type AttachmentRow = { id: number; fileName: string; fileSize: number; mimeType: string; uploadedAt: string };
+
+function AttachmentsDialog({ appId, onClose }: { appId: number; onClose: () => void }) {
+  const BASE = (import.meta.env.BASE_URL as string).replace(/\/$/, "");
+  const token = getAccessToken();
+  const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const headers = () => ({ ...(token ? { Authorization: `Bearer ${token}` } : {}) });
+
+  const fetchAttachments = async () => {
+    try {
+      const resp = await fetch(`${BASE}/api/docs/apps/${appId}/attachments`, { headers: headers() });
+      if (resp.ok) setAttachments(await resp.json());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchAttachments(); }, []);
+
+  const handleUpload = async (file: File) => {
+    if (attachments.length >= 5) { toast.error("Maximum 5 attachments per application"); return; }
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const resp = await fetch(`${BASE}/api/docs/apps/${appId}/attachments`, {
+        method: "POST",
+        headers: headers(),
+        body: form,
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({})) as { error?: string };
+        throw new Error(err.error ?? "Upload failed");
+      }
+      toast.success(`${file.name} uploaded`);
+      await fetchAttachments();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const handleDelete = async (id: number, name: string) => {
+    try {
+      await fetch(`${BASE}/api/docs/apps/${appId}/attachments/${id}`, { method: "DELETE", headers: headers() });
+      toast.success(`${name} removed`);
+      setAttachments(prev => prev.filter(a => a.id !== id));
+    } catch {
+      toast.error("Failed to remove attachment");
+    }
+  };
+
+  const handleDownload = (id: number, name: string) => {
+    const a = document.createElement("a");
+    a.href = `${BASE}/api/docs/apps/${appId}/attachments/${id}/download`;
+    a.download = name;
+    if (token) {
+      fetch(a.href, { headers: headers() })
+        .then(r => r.blob())
+        .then(blob => {
+          const url = URL.createObjectURL(blob);
+          a.href = url;
+          a.click();
+          URL.revokeObjectURL(url);
+        });
+    } else {
+      a.click();
+    }
+  };
+
+  function formatBytes(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-primary" />
+            Supporting Attachments
+          </DialogTitle>
+          <DialogDescription>
+            Attach up to 5 supporting documents (guides, diagrams, PDFs). Max 10 MB each.
+            <span className="ml-1 font-medium text-foreground">{attachments.length}/5 used.</span>
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          {loading ? (
+            <div className="space-y-2">{[1,2].map(i => <Skeleton key={i} className="h-14 w-full" />)}</div>
+          ) : attachments.length === 0 ? (
+            <div className="text-center py-6 border-2 border-dashed rounded-lg text-muted-foreground text-sm">
+              No attachments yet. Upload a file below.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {attachments.map(att => (
+                <div key={att.id} className="flex items-center gap-3 p-3 border rounded-lg bg-card">
+                  <div className="h-8 w-8 rounded bg-primary/10 flex items-center justify-center shrink-0">
+                    <FileText className="h-4 w-4 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{att.fileName}</p>
+                    <p className="text-xs text-muted-foreground">{formatBytes(att.fileSize)} · {new Date(att.uploadedAt).toLocaleDateString()}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="icon" variant="ghost" className="h-7 w-7" title="Download" onClick={() => handleDownload(att.id, att.fileName)}>
+                      <Download className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" title="Remove" onClick={() => handleDelete(att.id, att.fileName)}>
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {attachments.length < 5 && (
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); }}
+              />
+              <Button
+                variant="outline"
+                className="w-full gap-2"
+                disabled={uploading}
+                onClick={() => fileRef.current?.click()}
+              >
+                <Upload className="h-4 w-4" />
+                {uploading ? "Uploading…" : "Upload File"}
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Close</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -185,11 +185,21 @@ export interface AuditLogEntry {
   createdAt: string;
 }
 
+export type DashboardSummaryLoginActivityItem = {
+  date: string;
+  successes: number;
+  failures: number;
+};
+
 export interface DashboardSummary {
   totalUsers: number;
   activeUsers: number;
   inactiveUsers: number;
   mfaEnabledUsers: number;
+  totalConnections?: number;
+  totalPipelines?: number;
+  totalApiApps?: number;
+  loginActivity?: DashboardSummaryLoginActivityItem[];
   usersByRole: DashboardSummaryUsersByRoleItem[];
   recentLogins: AuditLogEntry[];
 }

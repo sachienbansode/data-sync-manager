@@ -69,7 +69,6 @@ export * from "./role";
 export * from "./tokenPair";
 export * from "./uploadDocAppSpecBodyOne";
 export * from "./uploadDocAppSpecBodyTwo";
-export * from "./uploadWorkflowCsvBody";
 export * from "./user";
 export * from "./userAuthProvider";
 export * from "./userInput";

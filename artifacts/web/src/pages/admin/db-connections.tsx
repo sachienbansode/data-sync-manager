@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen } from "lucide-react";
@@ -23,6 +24,8 @@ interface DbConnection {
   dbName: string | null;
   schemaName: string | null;
   extraParams: Record<string, string> | null;
+  fetchQuery: string | null;
+  outputFilePath: string | null;
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
@@ -49,6 +52,9 @@ const EMPTY_FORM = {
   remotePath: "", privateKey: "",
   // CSV
   filePath: "",
+  // BackOffice workflow fields
+  fetchQuery: "",
+  outputFilePath: "",
 };
 
 function engineBadgeColor(engine: DbEngine) {
@@ -127,6 +133,8 @@ export default function DbConnections() {
       accessKeyId: "", secretAccessKey: "",
       remotePath: ep.remotePath ?? "", privateKey: "",
       filePath: ep.filePath ?? "",
+      fetchQuery: c.fetchQuery ?? "",
+      outputFilePath: c.outputFilePath ?? "",
     });
     setDialogOpen(true);
   }
@@ -182,6 +190,10 @@ export default function DbConnections() {
         if (form.username)  body.username = form.username;
         if (form.password)  body.password = form.password;
         if (form.privateKey) { extraParams.privateKey = form.privateKey; body.extraParams = extraParams; }
+      }
+      if (form.type === "backoffice") {
+        body.fetchQuery = form.fetchQuery.trim() || null;
+        body.outputFilePath = form.outputFilePath.trim() || null;
       }
 
       const url    = editId ? `${apiBase}/admin/db-connections/${editId}` : `${apiBase}/admin/db-connections`;
@@ -476,6 +488,38 @@ export default function DbConnections() {
               <div className="space-y-1">
                 <Label>File Path</Label>
                 <Input value={form.filePath} onChange={e => setForm(f => ({ ...f, filePath: e.target.value }))} placeholder="/mnt/data/export.csv" />
+              </div>
+            )}
+
+            {/* BackOffice workflow fields */}
+            {form.type === "backoffice" && (
+              <div className="rounded-lg border border-dashed p-4 space-y-3 bg-muted/30">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">BackOffice Workflow</p>
+                <div className="space-y-1">
+                  <Label>
+                    Fetch Query <span className="text-xs text-muted-foreground font-normal">(optional — SELECT only)</span>
+                  </Label>
+                  <Textarea
+                    value={form.fetchQuery}
+                    onChange={e => setForm(f => ({ ...f, fetchQuery: e.target.value }))}
+                    placeholder={`SELECT * FROM "public"."backoffice_data" LIMIT 1000`}
+                    rows={3}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">Used by Data Workflow fetch. Must be a SELECT statement.</p>
+                </div>
+                <div className="space-y-1">
+                  <Label>
+                    Output File Path <span className="text-xs text-muted-foreground font-normal">(optional — for push)</span>
+                  </Label>
+                  <Input
+                    value={form.outputFilePath}
+                    onChange={e => setForm(f => ({ ...f, outputFilePath: e.target.value }))}
+                    placeholder="/mnt/trading/output.csv"
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">Local path where transformed CSV is written during push.</p>
+                </div>
               </div>
             )}
           </div>

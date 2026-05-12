@@ -5,7 +5,7 @@ import {
   useUpdateRolePagePermissions,
   getGetRolePagePermissionsQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -28,7 +29,7 @@ import {
 import {
   Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
-import { Shield, ShieldAlert, Users, Save, Plus, Pencil, Trash2, Lock, Loader2 } from "lucide-react";
+import { Shield, ShieldAlert, Users, Save, Plus, Pencil, Trash2, Lock, Loader2, CheckSquare, Square } from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL;
@@ -56,25 +57,26 @@ const roleFormSchema = z.object({
 });
 type RoleForm = z.infer<typeof roleFormSchema>;
 
-type RoleItem = {
-  id: number;
-  name: string;
-  description: string;
-  mfaRequired: boolean;
-  userCount: number;
-};
+type RoleItem = { id: number; name: string; description: string; mfaRequired: boolean; userCount: number; };
+type PageItem = { path: string; name: string };
+
+function useAllPages() {
+  return useQuery<PageItem[]>({
+    queryKey: ["roles-pages"],
+    queryFn: () => apiFetch("/roles/pages"),
+    staleTime: Infinity,
+  });
+}
 
 function RoleDialog({
-  open,
-  onOpenChange,
-  existing,
-  onSaved,
+  open, onOpenChange, existing, onSaved,
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  existing?: RoleItem;
-  onSaved: () => void;
+  open: boolean; onOpenChange: (v: boolean) => void;
+  existing?: RoleItem; onSaved: () => void;
 }) {
+  const { data: allPages = [] } = useAllPages();
+  const [pageAccess, setPageAccess] = useState<Record<string, boolean>>({});
+
   const form = useForm<RoleForm>({
     resolver: zodResolver(roleFormSchema),
     values: existing
@@ -82,29 +84,49 @@ function RoleDialog({
       : { name: "", description: "", mfaRequired: false },
   });
 
+  const togglePage = (path: string, val: boolean) => setPageAccess(prev => ({ ...prev, [path]: val }));
+  const selectAll = () => { const all: Record<string, boolean> = {}; allPages.forEach(p => { all[p.path] = true; }); setPageAccess(all); };
+  const selectNone = () => { const none: Record<string, boolean> = {}; allPages.forEach(p => { none[p.path] = false; }); setPageAccess(none); };
+
   const mutation = useMutation({
-    mutationFn: (data: RoleForm) =>
-      existing
-        ? apiFetch(`/roles/${existing.id}`, { method: "PUT", body: JSON.stringify(data) })
-        : apiFetch("/roles", { method: "POST", body: JSON.stringify(data) }),
+    mutationFn: async (data: RoleForm) => {
+      if (existing) {
+        return apiFetch(`/roles/${existing.id}`, { method: "PUT", body: JSON.stringify(data) });
+      }
+      // Create role
+      const role = await apiFetch("/roles", { method: "POST", body: JSON.stringify(data) });
+      // Set page permissions
+      const permissions = allPages.map(p => ({
+        pagePath: p.path,
+        canAccess: pageAccess[p.path] ?? false,
+      }));
+      if (permissions.length > 0) {
+        await apiFetch(`/roles/${role.id}/page-permissions`, {
+          method: "PUT",
+          body: JSON.stringify({ permissions }),
+        });
+      }
+      return role;
+    },
     onSuccess: () => {
-      toast.success(existing ? "Role updated" : "Role created");
+      toast.success(existing ? "Role updated" : "Role created with page permissions");
       onSaved();
       onOpenChange(false);
       form.reset();
+      setPageAccess({});
     },
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const isCreate = !existing;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{existing ? "Edit Role" : "Create Role"}</DialogTitle>
           <DialogDescription>
-            {existing
-              ? "Update the role name, description, and MFA requirement."
-              : "Create a new role. You can configure page permissions after creation."}
+            {existing ? "Update role details." : "Define the role and set which pages it can access."}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
@@ -139,6 +161,46 @@ function RoleDialog({
                 </FormControl>
               </FormItem>
             )} />
+
+            {/* Page access section (only for new roles) */}
+            {isCreate && allPages.length > 0 && (
+              <div className="space-y-3">
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-semibold">Page Access</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Select which pages this role can access.</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button type="button" size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={selectAll}>
+                      <CheckSquare className="h-3 w-3" />All
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={selectNone}>
+                      <Square className="h-3 w-3" />None
+                    </Button>
+                  </div>
+                </div>
+                <div className="max-h-52 overflow-y-auto space-y-1 rounded-md border p-2">
+                  {allPages.map(page => {
+                    const checked = pageAccess[page.path] ?? false;
+                    return (
+                      <div key={page.path} className={`flex items-center justify-between px-2 py-1.5 rounded transition-colors ${checked ? "bg-primary/5" : ""}`}>
+                        <div>
+                          <p className="text-sm font-medium">{page.name}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">{page.path}</p>
+                        </div>
+                        <Checkbox
+                          checked={checked}
+                          onCheckedChange={(v) => togglePage(page.path, !!v)}
+                          className="h-4 w-4"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <DialogFooter className="pt-2">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
               <Button type="submit" disabled={mutation.isPending}>
@@ -171,10 +233,7 @@ export default function Roles() {
   const [pendingChanges, setPendingChanges] = useState<Record<string, boolean>>({});
 
   const handleRoleSelect = (id: number) => {
-    if (id !== selectedRoleId) {
-      setSelectedRoleId(id);
-      setPendingChanges({});
-    }
+    if (id !== selectedRoleId) { setSelectedRoleId(id); setPendingChanges({}); }
   };
 
   const handlePermissionToggle = (pagePath: string, canAccess: boolean) => {
@@ -191,7 +250,7 @@ export default function Roles() {
       await updatePermissionsMutation.mutateAsync({ id: selectedRoleId, data: { permissions: updatedPermissions } });
       queryClient.invalidateQueries({ queryKey: getGetRolePagePermissionsQueryKey(selectedRoleId) });
       setPendingChanges({});
-      toast.success("Role permissions updated");
+      toast.success("Permissions updated");
     } catch {
       toast.error("Failed to update permissions");
     }
@@ -225,7 +284,7 @@ export default function Roles() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Roles & Permissions</h1>
-          <p className="text-muted-foreground mt-2">Create roles, set MFA requirements, and manage page access.</p>
+          <p className="text-muted-foreground mt-2">Create roles with page access defined upfront, or edit permissions anytime.</p>
         </div>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
@@ -252,22 +311,14 @@ export default function Roles() {
                     <div
                       key={role.id}
                       className={`rounded-lg border transition-all ${
-                        selectedRoleId === role.id
-                          ? "bg-primary/5 border-primary/20 shadow-sm"
-                          : "bg-card border-border hover:bg-muted/50"
+                        selectedRoleId === role.id ? "bg-primary/5 border-primary/20 shadow-sm" : "bg-card border-border hover:bg-muted/50"
                       }`}
                     >
-                      <button
-                        onClick={() => handleRoleSelect(role.id)}
-                        className="w-full flex flex-col text-left px-4 py-3"
-                      >
+                      <button onClick={() => handleRoleSelect(role.id)} className="w-full flex flex-col text-left px-4 py-3">
                         <div className="flex items-center justify-between w-full mb-1">
-                          <span className={`font-semibold text-sm ${selectedRoleId === role.id ? "text-primary" : ""}`}>
-                            {role.name}
-                          </span>
+                          <span className={`font-semibold text-sm ${selectedRoleId === role.id ? "text-primary" : ""}`}>{role.name}</span>
                           <div className="flex items-center text-xs text-muted-foreground">
-                            <Users className="h-3 w-3 mr-1" />
-                            {role.userCount}
+                            <Users className="h-3 w-3 mr-1" />{role.userCount}
                           </div>
                         </div>
                         <span className="text-xs text-muted-foreground line-clamp-1">{role.description}</span>
@@ -278,17 +329,11 @@ export default function Roles() {
                         )}
                       </button>
                       <div className="flex items-center gap-1 px-3 pb-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 px-2 text-xs"
-                          onClick={() => setEditRole(role)}
-                        >
+                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setEditRole(role)}>
                           <Pencil className="h-3 w-3 mr-1" />Edit
                         </Button>
                         <Button
-                          variant="ghost"
-                          size="sm"
+                          variant="ghost" size="sm"
                           className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
                           onClick={() => setDeleteRole(role)}
                           disabled={role.userCount > 0}
@@ -313,17 +358,11 @@ export default function Roles() {
                 Page Access
               </CardTitle>
               <CardDescription>
-                {selectedRole
-                  ? `Configure page access for "${selectedRole.name}"`
-                  : "Select a role to configure permissions"}
+                {selectedRole ? `Configure page access for "${selectedRole.name}"` : "Select a role to configure permissions"}
               </CardDescription>
             </div>
             {selectedRoleId && (
-              <Button
-                onClick={handleSave}
-                disabled={!hasChanges || updatePermissionsMutation.isPending}
-                size="sm"
-              >
+              <Button onClick={handleSave} disabled={!hasChanges || updatePermissionsMutation.isPending} size="sm">
                 <Save className="h-4 w-4 mr-2" />
                 Save Changes
               </Button>
@@ -333,35 +372,30 @@ export default function Roles() {
             {!selectedRoleId ? (
               <div className="h-full flex flex-col items-center justify-center text-muted-foreground p-8 text-center">
                 <Shield className="h-12 w-12 mb-4 opacity-20" />
-                <p>Select a role from the sidebar to view and manage its permissions.</p>
+                <p>Select a role from the list to view and manage its page permissions.</p>
               </div>
             ) : isLoadingPermissions ? (
               <div className="p-6 space-y-4">
                 {Array(5).fill(0).map((_, i) => (
                   <div key={i} className="flex items-center justify-between p-4 border rounded-lg">
-                    <Skeleton className="h-5 w-32" />
-                    <Skeleton className="h-6 w-10 rounded-full" />
+                    <Skeleton className="h-5 w-32" /><Skeleton className="h-6 w-10 rounded-full" />
                   </div>
                 ))}
               </div>
             ) : (
               <ScrollArea className="h-full p-6">
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {permissions?.map((permission) => {
-                    const isChecked = pendingChanges[permission.pagePath] !== undefined
-                      ? pendingChanges[permission.pagePath]
-                      : permission.canAccess;
+                    const isChecked = pendingChanges[permission.pagePath] !== undefined ? pendingChanges[permission.pagePath] : permission.canAccess;
                     const isChanged = pendingChanges[permission.pagePath] !== undefined;
                     return (
                       <div
                         key={permission.id}
-                        className={`flex items-center justify-between p-4 border rounded-lg transition-colors ${
-                          isChanged ? "bg-muted/30 border-primary/30" : "bg-card"
-                        }`}
+                        className={`flex items-center justify-between p-3.5 border rounded-lg transition-colors ${isChanged ? "bg-muted/30 border-primary/30" : "bg-card"}`}
                       >
                         <div>
                           <p className="font-medium text-sm">{permission.pageName}</p>
-                          <p className="text-xs text-muted-foreground font-mono mt-1">{permission.pagePath}</p>
+                          <p className="text-xs text-muted-foreground font-mono mt-0.5">{permission.pagePath}</p>
                         </div>
                         <div className="flex items-center gap-3">
                           {isChanged && <span className="text-[10px] uppercase font-bold text-primary mr-2">Modified</span>}
@@ -381,18 +415,9 @@ export default function Roles() {
         </Card>
       </div>
 
-      <RoleDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        onSaved={handleRoleSaved}
-      />
+      <RoleDialog open={createOpen} onOpenChange={setCreateOpen} onSaved={handleRoleSaved} />
       {editRole && (
-        <RoleDialog
-          open={!!editRole}
-          onOpenChange={(v) => !v && setEditRole(null)}
-          existing={editRole}
-          onSaved={handleRoleSaved}
-        />
+        <RoleDialog open={!!editRole} onOpenChange={(v) => !v && setEditRole(null)} existing={editRole} onSaved={handleRoleSaved} />
       )}
 
       <AlertDialog open={!!deleteRole} onOpenChange={(v) => !v && setDeleteRole(null)}>
@@ -400,17 +425,12 @@ export default function Roles() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete role "{deleteRole?.name}"?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently delete the role and all its page permission settings.
-              This action cannot be undone.
+              This will permanently delete the role and all its page permission settings. This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteConfirm}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
+            <AlertDialogAction onClick={handleDeleteConfirm} disabled={isDeleting} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Delete Role
             </AlertDialogAction>

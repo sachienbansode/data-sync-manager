@@ -12,6 +12,8 @@ import dbConnectionsRouter from "./db-connections";
 import workflowRouter from "./workflow";
 import pipelinesRouter from "./pipelines";
 import docsRouter from "./docs";
+import allowedFileTypesRouter from "./allowed-file-types";
+import loginReportRouter from "./login-report";
 
 const router: IRouter = Router();
 
@@ -28,5 +30,7 @@ router.use(dbConnectionsRouter);
 router.use(workflowRouter);
 router.use(pipelinesRouter);
 router.use(docsRouter);
+router.use(allowedFileTypesRouter);
+router.use(loginReportRouter);
 
 export default router;

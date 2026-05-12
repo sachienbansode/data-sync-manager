@@ -21,6 +21,7 @@ import {
   getRefreshTokenExpiry,
 } from "../lib/auth";
 import { authenticate } from "../middlewares/authenticate";
+import { ALL_PAGES } from "./roles";
 import crypto from "crypto";
 
 const router: IRouter = Router();
@@ -56,7 +57,10 @@ async function getUserWithRole(userId: number) {
   return row;
 }
 
-async function getPagePermissions(roleId: number): Promise<string[]> {
+async function getPagePermissions(roleId: number, roleName?: string): Promise<string[]> {
+  if (roleName === "Admin") {
+    return ALL_PAGES.map(p => p.path);
+  }
   const perms = await db
     .select({ pagePath: pagePermissionsTable.pagePath })
     .from(pagePermissionsTable)
@@ -106,7 +110,7 @@ async function issueTokens(userId: number) {
 
   await db.update(usersTable).set({ lastLoginAt: new Date() }).where(eq(usersTable.id, user.id));
 
-  const pagePermissions = await getPagePermissions(user.roleId);
+  const pagePermissions = await getPagePermissions(user.roleId, user.roleName);
 
   return {
     userId: user.id,
@@ -361,7 +365,7 @@ router.get("/auth/me", authenticate, async (req, res): Promise<void> => {
     return;
   }
 
-  const pagePermissions = await getPagePermissions(user.roleId);
+  const pagePermissions = await getPagePermissions(user.roleId, user.roleName);
 
   res.json({
     id: user.id,

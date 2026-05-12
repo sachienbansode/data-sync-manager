@@ -2,7 +2,7 @@ import { pgTable, serial, text, integer, boolean, timestamp, jsonb, uniqueIndex 
 import { usersTable } from "./users";
 
 export const DB_CONNECTION_TYPES = ["backoffice", "trading"] as const;
-export type DbConnectionType = typeof DB_CONNECTION_TYPES[number];
+export type DbConnectionType = string;
 
 export const DB_ENGINES = ["postgresql", "mysql", "mssql", "oracle", "s3", "sftp", "csv"] as const;
 export type DbEngine = typeof DB_ENGINES[number];
@@ -12,7 +12,7 @@ export type DbEngine = typeof DB_ENGINES[number];
 export const dbConnectionsTable = pgTable("db_connections", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
-  type: text("type").$type<DbConnectionType>().notNull(),
+  type: text("type").notNull(),
   dbEngine: text("db_engine").$type<DbEngine>().notNull().default("postgresql"),
   host: text("host"),
   port: integer("port").default(5432),

@@ -513,6 +513,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
   const [tab, setTab] = useState<"write" | "upload" | "url">("write");
   const [specContent, setSpecContent] = useState(SAMPLE_OPENAPI);
   const [specUrl, setSpecUrl] = useState("");
+  const [specLabel, setSpecLabel] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [editingVersion, setEditingVersion] = useState<number | null>(null);
@@ -566,7 +567,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
           const resp = await fetch(`${base}/api/docs/apps/${appId}/specs`, {
             method: "POST",
             headers,
-            body: JSON.stringify({ content: specContent }),
+            body: JSON.stringify({ content: specContent, specLabel: specLabel.trim() || undefined }),
           });
           if (!resp.ok) {
             const err = await resp.json().catch(() => ({})) as { error?: string };
@@ -580,7 +581,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
         const resp = await fetch(`${base}/api/docs/apps/${appId}/specs`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ content: text }),
+          body: JSON.stringify({ content: text, specLabel: specLabel.trim() || undefined }),
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({})) as { error?: string };
@@ -592,7 +593,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
         const resp = await fetch(`${base}/api/docs/apps/${appId}/specs`, {
           method: "POST",
           headers,
-          body: JSON.stringify({ specUrl: specUrl.trim() }),
+          body: JSON.stringify({ specUrl: specUrl.trim(), specLabel: specLabel.trim() || undefined }),
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({})) as { error?: string };
@@ -601,6 +602,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
         toast.success("Spec URL registered");
       }
 
+      setSpecLabel("");
       onSuccess();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to save spec");
@@ -638,7 +640,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
         <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <FileCode className="h-5 w-5 text-primary" />
-            {editingVersion != null ? `Edit Spec v${editingVersion}` : "Add Spec Version"}
+            {editingVersion != null ? `Edit Spec v${editingVersion}` : "Add API Spec"}
           </DialogTitle>
           <DialogDescription>
             Write your OpenAPI spec inline, upload a file, or link an external URL.
@@ -658,15 +660,15 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
                     ? "bg-primary text-primary-foreground"
                     : "hover:bg-muted"
                 }`}
-                onClick={() => { setEditingVersion(null); setSpecContent(SAMPLE_OPENAPI); setTab("write"); }}
+                onClick={() => { setEditingVersion(null); setSpecContent(SAMPLE_OPENAPI); setSpecLabel(""); setTab("write"); }}
               >
                 <Plus className="h-3 w-3 shrink-0" />
-                New version
+                New API spec
               </button>
               {(specs ?? []).map((spec) => (
                 <button
                   key={spec.id}
-                  className={`w-full text-left px-2 py-2 rounded-md text-sm transition-colors flex items-center gap-2 ${
+                  className={`w-full text-left px-2 py-2 rounded-md text-sm transition-colors flex flex-col items-start gap-0.5 ${
                     editingVersion === spec.version
                       ? "bg-primary text-primary-foreground"
                       : "hover:bg-muted"
@@ -674,9 +676,16 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
                   onClick={() => loadVersionForEdit(spec.version)}
                   disabled={loadingVersion}
                 >
-                  <span className="font-medium shrink-0">v{spec.version}</span>
-                  {spec.isActive && (
-                    <CheckCircle className="h-3 w-3 shrink-0 text-emerald-500" />
+                  <div className="flex items-center gap-1.5 w-full">
+                    <span className="font-medium shrink-0">v{spec.version}</span>
+                    {spec.isActive && (
+                      <CheckCircle className="h-3 w-3 shrink-0 text-emerald-500" />
+                    )}
+                  </div>
+                  {spec.specLabel && (
+                    <span className={`text-[10px] leading-tight truncate w-full ${editingVersion === spec.version ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      {spec.specLabel}
+                    </span>
                   )}
                 </button>
               ))}
@@ -730,6 +739,19 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
             </div>
 
             <div className="flex-1 overflow-auto p-4">
+              {/* Label field — only shown when creating a new spec, not when editing an existing one */}
+              {editingVersion == null && (
+                <div className="mb-4">
+                  <Label className="text-xs font-medium">API Name / Label <span className="text-muted-foreground font-normal">(optional)</span></Label>
+                  <Input
+                    className="mt-1 h-8 text-sm"
+                    placeholder='e.g. "User Management API", "GraphQL API", "Webhooks"'
+                    value={specLabel}
+                    onChange={(e) => setSpecLabel(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">Give this spec a name so it can be identified when multiple APIs exist for this application.</p>
+                </div>
+              )}
               <Tabs value={tab}>
                 <TabsContent value="write" className="mt-0 h-full">
                   <div className="space-y-2 h-full flex flex-col">
@@ -808,7 +830,7 @@ function SpecManagerDialog({ appId, onClose, onSuccess }: {
           <p className="text-xs text-muted-foreground">
             {editingVersion != null
               ? `Updating inline content of v${editingVersion} — this replaces the existing spec content.`
-              : "A new version number will be assigned automatically and set as the active version."}
+              : "A new version number will be assigned automatically. All existing specs remain active."}
           </p>
           <div className="flex gap-2">
             <Button variant="outline" onClick={onClose}>Cancel</Button>

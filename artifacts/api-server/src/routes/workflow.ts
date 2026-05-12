@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, sql, or, like, gte, lte } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
 import pg from "pg";
@@ -199,8 +199,41 @@ router.get("/workflow/jobs", authenticate, async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page as string) || 1);
   const pageSize = Math.min(100, parseInt(req.query.pageSize as string) || 20);
 
-  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(dataJobsTable);
-  const jobs = await db.select().from(dataJobsTable).orderBy(desc(dataJobsTable.createdAt))
+  const statusFilter = req.query.status as string | undefined;
+  const typeFilter   = req.query.type as string | undefined;
+  const trigger      = req.query.trigger as string | undefined;   // "scheduled" | "manual"
+  const search       = req.query.search as string | undefined;
+  const dateFrom     = req.query.dateFrom as string | undefined;
+  const dateTo       = req.query.dateTo as string | undefined;
+  const pipelineId   = req.query.pipelineId ? parseInt(req.query.pipelineId as string) : undefined;
+
+  const conditions = [];
+  if (statusFilter)              conditions.push(eq(dataJobsTable.status, statusFilter as typeof dataJobsTable.status._.data));
+  if (typeFilter)                conditions.push(eq(dataJobsTable.type, typeFilter as typeof dataJobsTable.type._.data));
+  if (trigger === "scheduled")   conditions.push(eq(dataJobsTable.triggeredBySchedule, true));
+  if (trigger === "manual")      conditions.push(eq(dataJobsTable.triggeredBySchedule, false));
+  if (pipelineId && !isNaN(pipelineId)) conditions.push(eq(dataJobsTable.pipelineId, pipelineId));
+  if (dateFrom)                  conditions.push(gte(dataJobsTable.createdAt, new Date(dateFrom)));
+  if (dateTo) {
+    const to = new Date(dateTo);
+    to.setHours(23, 59, 59, 999);
+    conditions.push(lte(dataJobsTable.createdAt, to));
+  }
+  if (search) {
+    const q = `%${search}%`;
+    conditions.push(or(
+      like(dataJobsTable.connectionName, q),
+      like(dataJobsTable.triggeredByEmail, q),
+    ));
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ count }] = await db.select({ count: sql<number>`count(*)::int` })
+    .from(dataJobsTable).where(where);
+  const jobs = await db.select().from(dataJobsTable)
+    .where(where)
+    .orderBy(desc(dataJobsTable.createdAt))
     .limit(pageSize).offset((page - 1) * pageSize);
 
   res.json({ jobs, total: count, page, pageSize });

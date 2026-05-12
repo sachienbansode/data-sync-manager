@@ -102,13 +102,14 @@ export default function DocsViewer() {
                 value={selectedVersion?.toString() ?? ""}
                 onValueChange={(val) => setSelectedVersion(Number(val))}
               >
-                <SelectTrigger className="w-32 h-8 text-sm">
+                <SelectTrigger className="w-48 h-8 text-sm">
                   <SelectValue placeholder="Select version" />
                 </SelectTrigger>
                 <SelectContent>
                   {specs.map((s) => (
                     <SelectItem key={s.version} value={s.version.toString()}>
-                      v{s.version}{s.isActive ? " (active)" : ""}
+                      {s.specLabel ? `${s.specLabel}` : `v${s.version}`}
+                      {s.isActive ? " ★" : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>

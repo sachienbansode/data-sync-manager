@@ -143,6 +143,7 @@ router.get("/docs/apps/:id/specs", authenticate, async (req: Request, res: Respo
   }
   const specs = await db.select({
     id: apiSpecsTable.id, appId: apiSpecsTable.appId, version: apiSpecsTable.version,
+    specLabel: apiSpecsTable.specLabel,
     s3Key: apiSpecsTable.s3Key, specUrl: apiSpecsTable.specUrl,
     hasInlineContent: sql<boolean>`(inline_content IS NOT NULL AND inline_content != '')`,
     isActive: apiSpecsTable.isActive, uploadedAt: apiSpecsTable.uploadedAt,

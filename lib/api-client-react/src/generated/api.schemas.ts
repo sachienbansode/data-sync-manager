@@ -537,9 +537,12 @@ export interface ApiSpec {
   appId: number;
   version: number;
   /** @nullable */
+  specLabel?: string | null;
+  /** @nullable */
   s3Key?: string | null;
   /** @nullable */
   specUrl?: string | null;
+  hasInlineContent?: boolean;
   isActive: boolean;
   uploadedAt: string;
 }

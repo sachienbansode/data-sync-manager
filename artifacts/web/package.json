@@ -75,9 +75,11 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/swagger-ui-react": "^5.18.0",
     "cron-parser": "^5.5.0",
     "cronstrue": "^3.14.0",
+    "js-yaml": "^4.1.1",
     "swagger-ui-react": "^5.32.5"
   }
 }

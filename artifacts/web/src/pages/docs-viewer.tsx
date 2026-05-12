@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
-import { useParams, useLocation } from "wouter";
+import { useParams } from "wouter";
 import SwaggerUI from "swagger-ui-react";
 import "swagger-ui-react/swagger-ui.css";
+import * as yaml from "js-yaml";
 import {
   useListDocApps,
   useListDocAppSpecs,
@@ -9,23 +10,22 @@ import {
   getListDocAppSpecsQueryKey,
   getGetDocAppSpecQueryKey,
 } from "@workspace/api-client-react";
+import { useAuth } from "@/lib/auth";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, AlertCircle, FileCode } from "lucide-react";
+import { ArrowLeft, AlertCircle, FileCode, Settings2, Calendar, Tag, ExternalLink } from "lucide-react";
 import { Link } from "wouter";
 import { getAccessToken } from "@/lib/auth";
 
 export default function DocsViewer() {
   const params = useParams<{ appId: string }>();
   const appId = Number(params.appId);
-  const [, setLocation] = useLocation();
+  const { user } = useAuth();
+  const isAdmin = user?.roleName === "Admin";
 
   const { data: apps } = useListDocApps();
   const app = apps?.find((a) => a.id === appId);
@@ -49,7 +49,10 @@ export default function DocsViewer() {
     appId,
     version!,
     {
-      query: { queryKey: getGetDocAppSpecQueryKey(appId, version!), enabled: !isNaN(appId) && version != null },
+      query: {
+        queryKey: getGetDocAppSpecQueryKey(appId, version!),
+        enabled: !isNaN(appId) && version != null,
+      },
     }
   );
 
@@ -67,70 +70,118 @@ export default function DocsViewer() {
 
   return (
     <div className="space-y-4 animate-in fade-in duration-500">
+      {/* Header */}
       <div className="flex items-center gap-3 flex-wrap">
         <Link href="/docs">
-          <Button variant="ghost" size="sm" className="gap-2">
+          <Button variant="ghost" size="sm" className="gap-2 shrink-0">
             <ArrowLeft className="h-4 w-4" />
             API Docs
           </Button>
         </Link>
 
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <FileCode className="h-5 w-5 text-primary shrink-0" />
-          <h1 className="text-xl font-bold tracking-tight truncate">
-            {app?.name ?? "Loading…"}
-          </h1>
+          <div className="h-8 w-8 rounded-md bg-primary/10 flex items-center justify-center shrink-0">
+            <FileCode className="h-4 w-4 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold tracking-tight truncate">
+              {app?.name ?? "Loading…"}
+            </h1>
+            {app?.description && (
+              <p className="text-xs text-muted-foreground truncate">{app.description}</p>
+            )}
+          </div>
         </div>
 
-        {specs && specs.length > 0 && (
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Version:</span>
-            <Select
-              value={selectedVersion?.toString() ?? ""}
-              onValueChange={(val) => setSelectedVersion(Number(val))}
-            >
-              <SelectTrigger className="w-32 h-8 text-sm">
-                <SelectValue placeholder="Select version" />
-              </SelectTrigger>
-              <SelectContent>
-                {specs.map((s) => (
-                  <SelectItem key={s.version} value={s.version.toString()}>
-                    v{s.version}
-                    {s.isActive ? " (latest)" : ""}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {specs && specs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground hidden sm:block">Version:</span>
+              <Select
+                value={selectedVersion?.toString() ?? ""}
+                onValueChange={(val) => setSelectedVersion(Number(val))}
+              >
+                <SelectTrigger className="w-32 h-8 text-sm">
+                  <SelectValue placeholder="Select version" />
+                </SelectTrigger>
+                <SelectContent>
+                  {specs.map((s) => (
+                    <SelectItem key={s.version} value={s.version.toString()}>
+                      v{s.version}{s.isActive ? " (active)" : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          {isAdmin && (
+            <Link href="/docs/admin">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Settings2 className="h-4 w-4" />
+                Manage
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
-      {app?.description && (
-        <p className="text-sm text-muted-foreground">{app.description}</p>
+      {/* Meta bar */}
+      {app && (
+        <div className="flex flex-wrap items-center gap-3 px-1">
+          {(app.tags ?? []).map((tag) => (
+            <Badge key={tag} variant="secondary" className="gap-1 text-xs">
+              <Tag className="h-3 w-3" />
+              {tag}
+            </Badge>
+          ))}
+          {activeSpec && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              Last updated {new Date(activeSpec.uploadedAt).toLocaleDateString()}
+            </span>
+          )}
+          {specs && specs.length > 0 && (
+            <Badge variant="outline" className="text-xs">
+              {specs.length} version{specs.length !== 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
       )}
 
-      <div className="border rounded-lg overflow-hidden bg-white">
+      {/* Swagger UI Panel */}
+      <div className="border rounded-lg overflow-hidden bg-white dark:bg-card shadow-sm">
         {isLoadingSpecs || isLoadingContent ? (
           <div className="p-8 space-y-4">
-            <Skeleton className="h-8 w-64" />
+            <Skeleton className="h-10 w-72" />
             <Skeleton className="h-4 w-full" />
             <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-32 w-full" />
+            <div className="space-y-2 mt-4">
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
+            </div>
           </div>
         ) : isError || !specContent ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
             <AlertCircle className="h-12 w-12 text-muted-foreground/40" />
-            <p className="text-muted-foreground font-medium">
-              {specs?.length === 0
-                ? "No spec versions available for this application."
-                : "Failed to load spec content. Please try again."}
-            </p>
-            <Link href="/docs">
-              <Button variant="outline" size="sm">Back to API Docs</Button>
-            </Link>
+            <div>
+              <p className="text-muted-foreground font-medium">
+                {specs?.length === 0
+                  ? "No spec versions have been uploaded for this application."
+                  : "Failed to load the spec. Please try again."}
+              </p>
+              {specs?.length === 0 && isAdmin && (
+                <Link href="/docs/admin">
+                  <Button variant="outline" size="sm" className="mt-3 gap-2">
+                    <ExternalLink className="h-4 w-4" />
+                    Upload a spec
+                  </Button>
+                </Link>
+              )}
+            </div>
           </div>
         ) : (
-          <SwaggerUIWrapper specContent={specContent} />
+          <SwaggerUIWrapper specContent={specContent as SpecContent} />
         )}
       </div>
     </div>
@@ -148,9 +199,7 @@ interface SpecContent {
 function SwaggerUIWrapper({ specContent }: { specContent: SpecContent }) {
   const token = getAccessToken();
   const requestInterceptor = (req: { headers: Record<string, string> }) => {
-    if (token) {
-      req.headers["Authorization"] = `Bearer ${token}`;
-    }
+    if (token) req.headers["Authorization"] = `Bearer ${token}`;
     return req;
   };
 
@@ -161,6 +210,7 @@ function SwaggerUIWrapper({ specContent }: { specContent: SpecContent }) {
         requestInterceptor={requestInterceptor}
         tryItOutEnabled={true}
         docExpansion="list"
+        defaultModelsExpandDepth={1}
       />
     );
   }
@@ -173,6 +223,7 @@ function SwaggerUIWrapper({ specContent }: { specContent: SpecContent }) {
         requestInterceptor={requestInterceptor}
         tryItOutEnabled={true}
         docExpansion="list"
+        defaultModelsExpandDepth={1}
       />
     );
   }
@@ -180,7 +231,7 @@ function SwaggerUIWrapper({ specContent }: { specContent: SpecContent }) {
   return (
     <div className="flex flex-col items-center justify-center py-24 gap-4 text-center">
       <AlertCircle className="h-12 w-12 text-muted-foreground/40" />
-      <p className="text-muted-foreground font-medium">No spec content available.</p>
+      <p className="text-muted-foreground font-medium">No spec content available for this version.</p>
     </div>
   );
 }
@@ -189,6 +240,10 @@ function parseSpec(content: string): object {
   try {
     return JSON.parse(content);
   } catch {
-    return { openapi: "3.0.0", info: { title: "Spec", version: "0.0.0" }, paths: {} };
+    try {
+      return yaml.load(content) as object;
+    } catch {
+      return { openapi: "3.0.0", info: { title: "Parse Error", version: "0.0.0" }, paths: {} };
+    }
   }
 }

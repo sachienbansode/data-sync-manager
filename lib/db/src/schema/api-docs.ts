@@ -24,6 +24,8 @@ export const apiSpecsTable = pgTable("api_specs", {
   version: integer("version").notNull().default(1),
   s3Key: text("s3_key"),
   specUrl: text("spec_url"),
+  /** OpenAPI YAML or JSON stored directly in the database (no S3 required) */
+  inlineContent: text("inline_content"),
   isActive: boolean("is_active").notNull().default(false),
   uploadedAt: timestamp("uploaded_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [

@@ -171,6 +171,55 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
   }
 });
 
+// POST /api/admin/connection-objects/:id/test — validate connectivity + query without fetching rows
+router.post("/admin/connection-objects/:id/test", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+  const id = parseInt(String(req.params.id));
+
+  const [obj] = await db.select().from(connectionObjectsTable).where(eq(connectionObjectsTable.id, id));
+  if (!obj) { res.status(404).json({ error: "Object not found" }); return; }
+
+  const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, obj.connectionId));
+  if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
+  if (!["postgresql", "mysql", "mssql"].includes(conn.dbEngine)) {
+    res.json({ success: true, message: "Test not available for this engine type" });
+    return;
+  }
+
+  const key = loadEncryptionKey();
+  const username = conn.usernameEnc ? decrypt(conn.usernameEnc, key) : "";
+  const password = conn.passwordEnc ? decrypt(conn.passwordEnc, key) : "";
+
+  const query = obj.objectType === "query"
+    ? `SELECT * FROM (${obj.objectValue}) _obj LIMIT 0`
+    : `SELECT * FROM ${conn.schemaName ?? "public"}.${obj.objectValue} LIMIT 0`;
+
+  const useSSL = (conn.extraParams as Record<string, string> | null)?.ssl === "true";
+  const pool = new Pool({
+    host: conn.host ?? undefined,
+    port: conn.port ?? 5432,
+    database: conn.dbName ?? undefined,
+    user: username || undefined,
+    password: password || undefined,
+    connectionTimeoutMillis: 10000,
+    ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
+
+  try {
+    const client = await pool.connect();
+    try {
+      const result = await client.query(query);
+      const columns = result.fields.map((f: { name: string }) => f.name);
+      res.json({ success: true, columns, columnCount: columns.length });
+    } finally {
+      client.release();
+    }
+  } catch (err: unknown) {
+    res.status(400).json({ success: false, error: err instanceof Error ? err.message : "Test failed" });
+  } finally {
+    await pool.end().catch(() => {});
+  }
+});
+
 // GET /api/admin/connection-objects/by-connection/:connectionId — helper for pipeline form
 router.get("/admin/connection-objects/by-connection/:connectionId", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
   const connectionId = parseInt(String(req.params.connectionId));

@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Plus, Pencil, Trash2, Table2, Code2, Database, Eye, Network, RefreshCw, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Table2, Code2, Database, Eye, Network, RefreshCw, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 
@@ -87,6 +87,9 @@ export default function DataObjects() {
   const [previewObj, setPreviewObj] = useState<ConnectionObject | null>(null);
   const [previewData, setPreviewData] = useState<PreviewResult | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  const [testingIds, setTestingIds] = useState<Set<number>>(new Set());
+  const [testStatus, setTestStatus] = useState<Record<number, { ok: boolean; msg: string }>>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -173,6 +176,22 @@ export default function DataObjects() {
       load();
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  async function handleTest(obj: ConnectionObject) {
+    setTestingIds(prev => new Set(prev).add(obj.id));
+    try {
+      const result = await apiFetch(`/admin/connection-objects/${obj.id}/test`, { method: "POST" });
+      const msg = result.columnCount != null ? `${result.columnCount} column${result.columnCount !== 1 ? "s" : ""} found` : "OK";
+      setTestStatus(prev => ({ ...prev, [obj.id]: { ok: true, msg } }));
+      toast.success(`"${obj.name}" is accessible — ${msg}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Test failed";
+      setTestStatus(prev => ({ ...prev, [obj.id]: { ok: false, msg } }));
+      toast.error(`"${obj.name}" test failed: ${msg}`);
+    } finally {
+      setTestingIds(prev => { const s = new Set(prev); s.delete(obj.id); return s; });
     }
   }
 
@@ -293,9 +312,28 @@ export default function DataObjects() {
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {dbOnlyConns.some(c => c.id === obj.connectionId) && (
-                        <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1" onClick={() => openPreview(obj)}>
-                          <Eye className="h-3 w-3" />Preview
-                        </Button>
+                        <>
+                          <Button
+                            variant="ghost" size="sm"
+                            className={`h-8 px-2 text-xs gap-1 ${testStatus[obj.id]?.ok === true ? "text-green-600" : testStatus[obj.id]?.ok === false ? "text-destructive" : ""}`}
+                            onClick={() => handleTest(obj)}
+                            disabled={testingIds.has(obj.id)}
+                            title={testStatus[obj.id]?.msg}
+                          >
+                            {testingIds.has(obj.id)
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : testStatus[obj.id]?.ok === true
+                                ? <CheckCircle2 className="h-3 w-3" />
+                                : testStatus[obj.id]?.ok === false
+                                  ? <XCircle className="h-3 w-3" />
+                                  : <FlaskConical className="h-3 w-3" />
+                            }
+                            Test
+                          </Button>
+                          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1" onClick={() => openPreview(obj)}>
+                            <Eye className="h-3 w-3" />Preview
+                          </Button>
+                        </>
                       )}
                       <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => openEdit(obj)}>
                         <Pencil className="h-3 w-3 mr-1" />Edit

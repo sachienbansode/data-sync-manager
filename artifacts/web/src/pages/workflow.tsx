@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Loader2, Plus, Pencil, Trash2, GitBranch, ArrowRight, Database, Cloud,
   FolderOpen, Server, CheckCircle, Play, PauseCircle, Settings2,
-  CalendarClock, History, XCircle, ChevronDown, ChevronUp, User,
+  CalendarClock, History, XCircle, ChevronDown, ChevronUp, User, Info, Shuffle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
@@ -121,6 +121,7 @@ export default function Workflow() {
   const [historyPipeline, setHistoryPipeline] = useState<Pipeline | null>(null);
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [, setLocation] = useLocation();
 
   const token = getAccessToken();
 
@@ -200,7 +201,16 @@ export default function Workflow() {
         body: JSON.stringify(body),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Save failed"); }
-      toast.success(editId ? "Pipeline updated" : "Pipeline created");
+      const saved = await res.json();
+      if (!editId) {
+        toast.success("Pipeline created — configure field mappings now", {
+          description: "Define which source columns map to destination columns.",
+          action: { label: "Configure Mappings →", onClick: () => setLocation(`/workflow/${saved.id}/mappings`) },
+          duration: 10000,
+        });
+      } else {
+        toast.success("Pipeline updated");
+      }
       setDialogOpen(false);
       load();
     } catch (err: unknown) {
@@ -638,6 +648,15 @@ export default function Workflow() {
               )}
             </div>
           </div>
+
+          {!editId && (
+            <div className="flex items-start gap-2 rounded-lg border bg-blue-50 dark:bg-blue-950/30 px-4 py-3 text-xs text-blue-700 dark:text-blue-300">
+              <Info className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+              <span>
+                After saving, click <strong>Mappings</strong> <Shuffle className="h-3 w-3 inline" /> on the pipeline row to define which source columns map to which destination columns and configure any transforms.
+              </span>
+            </div>
+          )}
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>

@@ -13,7 +13,7 @@ import {
 } from "@workspace/db";
 import { decrypt, loadEncryptionKey } from "./lib/crypto";
 import { logger } from "./lib/logger";
-import { sendMail } from "./lib/mailer";
+import { sendMailTemplate, getAppName } from "./lib/mailer";
 import { spawn } from "child_process";
 import { resolve as pathResolve } from "path";
 
@@ -49,15 +49,36 @@ function toIst(d: Date): string {
   return d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
 }
 
+/** Strip raw SQL, parameter lists and stack traces from error strings. */
+function sanitizeErrMsg(msg: string): string {
+  const lines = msg.split(/\r?\n/).filter(l => {
+    const t = l.trim();
+    if (t.startsWith("[SQL:") || t.startsWith("[parameters:") ||
+        t.startsWith("(Background on this error") || t.startsWith("DETAIL:") ||
+        t.startsWith("HINT:") || t.startsWith("CONTEXT:")) return false;
+    return true;
+  });
+  const joined = lines.join(" ").replace(/\s+/g, " ").trim();
+  return joined.length > 500 ? joined.slice(0, 500) + "…" : joined;
+}
+
 async function sendFailureAlert(
   pipelineName: string, pipelineId: number, failures: number, lastError: string
 ): Promise<void> {
   const emails = await getAdminEmails();
   if (!emails.length) return;
-  const subject = `Alert: Pipeline "${pipelineName}" failed ${failures} times in a row`;
-  const html = buildFailureHtml(pipelineName, pipelineId, failures, lastError, "");
+  const ts = toIst(new Date());
+  const appName = await getAppName().catch(() => "Ashika Platform");
   for (const email of emails) {
-    try { await sendMail(email, subject, html); } catch { /* non-fatal */ }
+    try {
+      await sendMailTemplate(email, "pipeline_failure_admin", {
+        pipelineName, pipelineId: String(pipelineId),
+        failures: String(failures), errorMessage: lastError, timestamp: ts, appName,
+      }, {
+        subject: `Alert: Pipeline "${pipelineName}" failed ${failures} times in a row`,
+        html: buildFailureHtml(pipelineName, pipelineId, failures, lastError, ""),
+      });
+    } catch { /* non-fatal */ }
   }
 }
 
@@ -108,12 +129,6 @@ function buildSuccessHtml(
   `;
 }
 
-async function sendPipelineNotification(emails: string, subject: string, html: string): Promise<void> {
-  const list = emails.split(",").map(e => e.trim()).filter(Boolean);
-  for (const email of list) {
-    try { await sendMail(email, subject, html); } catch { /* non-fatal */ }
-  }
-}
 
 /** Resolve the pipeline_worker.py path at runtime.
  *  The build script copies it to dist/lib/, and the server always runs from
@@ -248,6 +263,8 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
       transformParams: m.transformParams,
     })),
     chunkSize: 5000,
+    preSqlCommand:  pipeline.preSqlCommand?.trim()  || null,
+    postSqlCommand: pipeline.postSqlCommand?.trim() || null,
   };
 
   const workerPath = getWorkerPath();
@@ -292,15 +309,25 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
         // Pipeline-level success notification
         if (pipeline.notifyOnSuccess?.trim()) {
-          const subject = `Pipeline "${pipeline.name}" completed successfully`;
-          const html = buildSuccessHtml(pipeline.name, pipelineId, rc);
-          sendPipelineNotification(pipeline.notifyOnSuccess, subject, html).catch(() => {});
+          const ts = toIst(new Date());
+          const appName = await getAppName().catch(() => "Ashika Platform");
+          const list = pipeline.notifyOnSuccess.split(",").map(e => e.trim()).filter(Boolean);
+          for (const email of list) {
+            sendMailTemplate(email, "pipeline_success", {
+              pipelineName: pipeline.name, pipelineId: String(pipelineId),
+              recordCount: rc.toLocaleString(), completedAt: ts, appName,
+            }, {
+              subject: `Pipeline "${pipeline.name}" completed successfully`,
+              html: buildSuccessHtml(pipeline.name, pipelineId, rc),
+            }).catch(() => {});
+          }
         }
 
         logger.info({ pipelineId, jobId: job.id, recordCount: rc }, "Pipeline run completed");
         resolvePromise({ success: true, recordCount: rc, jobId: job.id });
       } else {
-        const errMsg = result.error ?? "Unknown error";
+        const rawErr  = result.error ?? "Unknown error";
+        const errMsg  = sanitizeErrMsg(rawErr);
         await db.update(dataJobsTable).set({ status: "failed", errorMessage: errMsg, finishedAt: new Date() }).where(eq(dataJobsTable.id, job.id));
 
         const [updated] = await db.update(dataPipelinesTable).set({
@@ -316,11 +343,20 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
           await sendFailureAlert(pipeline.name, pipelineId, failures, errMsg);
         }
 
-        // Pipeline-level failure notification (always, with worker log)
+        // Pipeline-level failure notification
         if (pipeline.notifyOnFailure?.trim()) {
-          const subject = `Pipeline "${pipeline.name}" failed`;
-          const html = buildFailureHtml(pipeline.name, pipelineId, failures, errMsg, stderr);
-          sendPipelineNotification(pipeline.notifyOnFailure, subject, html).catch(() => {});
+          const ts = toIst(new Date());
+          const appName = await getAppName().catch(() => "Ashika Platform");
+          const list = pipeline.notifyOnFailure.split(",").map(e => e.trim()).filter(Boolean);
+          for (const email of list) {
+            sendMailTemplate(email, "pipeline_failure", {
+              pipelineName: pipeline.name, pipelineId: String(pipelineId),
+              failures: String(failures), errorMessage: errMsg, timestamp: ts, appName,
+            }, {
+              subject: `Pipeline "${pipeline.name}" failed`,
+              html: buildFailureHtml(pipeline.name, pipelineId, failures, errMsg, ""),
+            }).catch(() => {});
+          }
         }
 
         logger.error({ pipelineId, jobId: job.id, errMsg }, "Pipeline run failed");

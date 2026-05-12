@@ -16,6 +16,7 @@ import allowedFileTypesRouter from "./allowed-file-types";
 import loginReportRouter from "./login-report";
 import applicationTypesRouter from "./application-types";
 import connectionObjectsRouter from "./connection-objects";
+import emailTemplatesRouter from "./email-templates";
 
 const router: IRouter = Router();
 
@@ -36,5 +37,6 @@ router.use(allowedFileTypesRouter);
 router.use(loginReportRouter);
 router.use(applicationTypesRouter);
 router.use(connectionObjectsRouter);
+router.use(emailTemplatesRouter);
 
 export default router;

@@ -1,6 +1,7 @@
 import nodemailer from "nodemailer";
 import type { Transporter } from "nodemailer";
-import { db, smtpSettingsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, smtpSettingsTable, emailTemplatesTable } from "@workspace/db";
 
 export async function getSmtpConfig() {
   const [cfg] = await db.select().from(smtpSettingsTable).limit(1);
@@ -28,8 +29,6 @@ export async function createTransporter() {
     return { transporter: _transporter, from: _from };
   }
 
-  // Port 465 = implicit SSL (secure: true)
-  // Port 587 / 25 = STARTTLS (secure: false, requireTLS: true)
   const useSSL = cfg.port === 465;
 
   _transporter = nodemailer.createTransport({
@@ -62,4 +61,47 @@ export function invalidateMailerCache() {
 export async function sendMail(to: string, subject: string, html: string) {
   const { transporter, from } = await createTransporter();
   await transporter.sendMail({ from, to, subject, html });
+}
+
+/** Replace {{variable}} placeholders in a template string. */
+export function renderTemplate(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const v = vars[key];
+    return v !== undefined ? String(v) : `{{${key}}}`;
+  });
+}
+
+/**
+ * Look up an email template by slug, render subject + body with the given
+ * variables, then send. Falls back to the provided hardcoded subject/html
+ * if the DB template is missing.
+ */
+export async function sendMailTemplate(
+  to: string,
+  slug: string,
+  vars: Record<string, string | number>,
+  fallback: { subject: string; html: string },
+): Promise<void> {
+  try {
+    const [tmpl] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.slug, slug));
+    if (tmpl) {
+      const subject = renderTemplate(tmpl.subject, vars);
+      const html    = renderTemplate(tmpl.body, vars);
+      await sendMail(to, subject, html);
+      return;
+    }
+  } catch {
+    // fall through to hardcoded fallback
+  }
+  await sendMail(to, fallback.subject, fallback.html);
+}
+
+/** Return the app name from SMTP settings (used as a template variable). */
+export async function getAppName(): Promise<string> {
+  try {
+    const cfg = await getSmtpConfig();
+    return cfg?.fromName || "Ashika Platform";
+  } catch {
+    return "Ashika Platform";
+  }
 }

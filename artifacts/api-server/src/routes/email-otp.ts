@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, and, gt } from "drizzle-orm";
 import bcrypt from "bcrypt";
 import { db, usersTable, rolesTable, emailOtpsTable, pagePermissionsTable, auditLogsTable } from "@workspace/db";
-import { sendMail } from "../lib/mailer";
+import { sendMailTemplate, getAppName } from "../lib/mailer";
 import { signAccessToken, generateRawRefreshToken, hashRefreshToken, getRefreshTokenExpiry } from "../lib/auth";
 import { refreshTokensTable, sessionsTable } from "@workspace/db";
 
@@ -64,14 +64,15 @@ router.post("/auth/email-otp/send", async (req, res): Promise<void> => {
   await db.insert(emailOtpsTable).values({ email: email.toLowerCase(), otpHash, expiresAt, used: false });
 
   try {
-    await sendMail(
+    const appName = await getAppName();
+    await sendMailTemplate(
       email,
-      "Your Ashika Platform Login OTP",
-      `<p>Hello ${user.firstName},</p>
-       <p>Your one-time login code is:</p>
-       <h2 style="letter-spacing: 8px; font-family: monospace; font-size: 36px; color: #1a1a1a;">${otp}</h2>
-       <p>This code expires in <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.</p>
-       <p>If you did not request this, please ignore this email.</p>`,
+      "otp_login",
+      { firstName: user.firstName ?? user.email.split("@")[0], otp, expiryMinutes: OTP_EXPIRY_MINUTES, appName },
+      {
+        subject: `Your ${appName} Login OTP`,
+        html: `<div style="font-family:sans-serif;max-width:540px"><p>Hello ${user.firstName},</p><p>Your one-time login code is:</p><h2 style="letter-spacing:8px;font-family:monospace;font-size:36px;color:#1a1a1a">${otp}</h2><p>This code expires in <strong>${OTP_EXPIRY_MINUTES} minutes</strong>.</p><p style="color:#6b7280;font-size:13px">If you did not request this, please ignore this email.</p></div>`,
+      },
     );
 
     await db.insert(auditLogsTable).values({

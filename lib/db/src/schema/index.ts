@@ -12,3 +12,4 @@ export * from "./api-docs";
 export * from "./allowed_file_types";
 export * from "./api_doc_attachments";
 export * from "./application_types";
+export * from "./email_templates";

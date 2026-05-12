@@ -26,6 +26,7 @@ import FontSettings from "@/pages/admin/font-settings";
 import AllowedFileTypes from "@/pages/admin/allowed-file-types";
 import LoginReport from "@/pages/admin/login-report";
 import ApplicationTypes from "@/pages/admin/application-types";
+import EmailTemplates from "@/pages/admin/email-templates";
 import Workflow from "@/pages/workflow";
 import WorkflowJobs from "@/pages/workflow-jobs";
 import PipelineMappings from "@/pages/pipeline-mappings";
@@ -110,6 +111,9 @@ function Router() {
       </Route>
       <Route path="/admin/application-types">
         <ProtectedRoute component={ApplicationTypes} path="/admin/application-types" requireRole="Admin" />
+      </Route>
+      <Route path="/admin/email-templates">
+        <ProtectedRoute component={EmailTemplates} path="/admin/email-templates" requireRole="Admin" />
       </Route>
       <Route path="/workflow/jobs">
         <ProtectedRoute component={WorkflowJobs} path="/workflow/jobs" />

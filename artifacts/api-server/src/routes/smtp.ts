@@ -64,13 +64,22 @@ router.post("/admin/smtp-settings/test", authenticate, requireRole("Admin"), asy
   }
 
   try {
+    const appName = cfg?.fromName || "Ashika Platform";
     const { transporter, from } = await createTransporter();
-    await transporter.sendMail({
-      from,
-      to: recipient,
-      subject: "Ashika Platform — SMTP Test",
-      html: `<p>This is a test email from <strong>Ashika Platform</strong>.</p><p>Your SMTP configuration is working correctly.</p>`,
-    });
+    // Try to use DB template first, fall back to inline
+    let subject = `${appName} — SMTP Test`;
+    let html = `<div style="font-family:sans-serif;max-width:500px"><p>This is a test email from <strong>${appName}</strong>.</p><p>Your SMTP configuration is working correctly.</p></div>`;
+    try {
+      const { db, emailTemplatesTable } = await import("@workspace/db");
+      const { eq } = await import("drizzle-orm");
+      const [tmpl] = await db.select().from(emailTemplatesTable).where(eq(emailTemplatesTable.slug, "smtp_test"));
+      if (tmpl) {
+        const { renderTemplate } = await import("../lib/mailer");
+        subject = renderTemplate(tmpl.subject, { appName });
+        html    = renderTemplate(tmpl.body,    { appName });
+      }
+    } catch { /* use fallback */ }
+    await transporter.sendMail({ from, to: recipient, subject, html });
     res.json({ success: true, message: `Test email sent to ${recipient}` });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);

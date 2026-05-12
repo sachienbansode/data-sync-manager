@@ -155,17 +155,23 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   // ── Resolve destination connection + target ──────────────────────────────
   let dstConnId: number | null = pipeline.destConnectionId;
   let destTarget = pipeline.destTarget ?? null;
+  let destObjectType: string | null = null;
+  let destObjectValue: string | null = null;
 
   if (pipeline.destObjectId) {
     const [dstObj] = await db.select().from(connectionObjectsTable).where(eq(connectionObjectsTable.id, pipeline.destObjectId));
     if (!dstObj) return { success: false, error: "Destination data object not found" };
+    if (dstObj.objectType === "query") {
+      return { success: false, error: "Destination data object must be a table type, not a SQL query object. Please select a table-type data object as the destination." };
+    }
     dstConnId = dstObj.connectionId;
-    destTarget = dstObj.objectValue;
+    destObjectType = dstObj.objectType;
+    destObjectValue = dstObj.objectValue;
+    // destTarget will be qualified with schema after dstConn is loaded below
   }
 
   if (!srcConnId) return { success: false, error: "No source connection configured" };
   if (!dstConnId) return { success: false, error: "No destination connection configured" };
-  if (!destTarget) return { success: false, error: "Destination table not configured" };
 
   const [[srcConn], [dstConn]] = await Promise.all([
     db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, srcConnId)),
@@ -180,6 +186,19 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
     sourceQuery = `SELECT * FROM "${schema}"."${legacySourceTable}"`;
   }
   if (!sourceQuery) return { success: false, error: "No source table or query configured" };
+
+  // Build schema-qualified destTarget so the Python worker always receives "schema.table"
+  if (destObjectValue !== null) {
+    // Object-based: qualify plain table name with the destination connection's schema
+    const schema = dstConn.schemaName ?? "public";
+    destTarget = `${schema}.${destObjectValue}`;
+  } else if (destTarget && !destTarget.includes(".")) {
+    // Legacy plain table name: qualify with connection schema
+    const schema = dstConn.schemaName ?? "public";
+    destTarget = `${schema}.${destTarget}`;
+  }
+
+  if (!destTarget) return { success: false, error: "Destination table not configured" };
 
   // Create job record
   const [job] = await db.insert(dataJobsTable).values({

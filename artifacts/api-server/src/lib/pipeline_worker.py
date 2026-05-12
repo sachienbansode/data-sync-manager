@@ -5,152 +5,211 @@ Called by the Node.js API server as a child process.
 
 Input:  JSON on stdin
 Output: JSON on stdout  { success, recordCount, error }
+Logs:   human-readable progress on stderr (never logs row values)
 """
 
 import sys
 import json
-import traceback
+from datetime import datetime, timezone
+
+
+def log(msg):
+    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    print(f"[{ts}] {msg}", file=sys.stderr, flush=True)
+
+
+def fail(error_msg):
+    log(f"FATAL: {error_msg}")
+    print(json.dumps({"success": False, "error": error_msg}))
+    sys.exit(1)
+
 
 def main():
+    log("Pipeline worker started")
+
+    # ── Parse config ─────────────────────────────────────────────────────────
     try:
         config = json.load(sys.stdin)
     except Exception as e:
-        print(json.dumps({"success": False, "error": f"Failed to parse config: {e}"}))
-        sys.exit(1)
+        fail(f"Failed to parse config: {e}")
 
     try:
         import pandas as pd
-        from sqlalchemy import create_engine, text
+        from sqlalchemy import create_engine, text, Table, MetaData
     except ImportError as e:
-        print(json.dumps({"success": False, "error": f"Missing dependency: {e}. Run: pip install pandas sqlalchemy psycopg2-binary"}))
-        sys.exit(1)
+        fail(f"Missing dependency: {e}. Run: pip install pandas sqlalchemy psycopg2-binary")
 
-    src = config.get("source", {})
-    dst = config.get("dest", {})
-    source_query = config.get("sourceQuery", "")
-    dest_target = config.get("destTarget", "")
+    src          = config.get("source", {})
+    dst          = config.get("dest", {})
+    source_query = config.get("sourceQuery", "").strip()
+    dest_target  = config.get("destTarget", "").strip()
     field_mappings = config.get("fieldMappings", [])
-    chunk_size = config.get("chunkSize", 5000)
+    chunk_size   = int(config.get("chunkSize", 5000))
 
     if not source_query:
-        print(json.dumps({"success": False, "error": "sourceQuery is required"}))
-        sys.exit(1)
+        fail("sourceQuery is required")
     if not dest_target:
-        print(json.dumps({"success": False, "error": "destTarget is required"}))
-        sys.exit(1)
+        fail("destTarget is required")
 
+    # Guard: destTarget must be a plain table reference, never a SELECT query
+    dest_upper = dest_target.upper().lstrip()
+    if dest_upper.startswith("SELECT") or dest_upper.startswith("WITH ") or dest_upper.startswith("("):
+        fail(
+            f"destTarget must be a table name (e.g. 'public.my_table'), not a SQL query. "
+            f"Received: {dest_target[:120]}"
+        )
+
+    # ── Build connection URLs ─────────────────────────────────────────────────
     def build_url(conn):
         from urllib.parse import quote_plus
-        engine = conn.get("engine", "postgresql")
+        engine   = conn.get("engine", "postgresql")
         raw_host = (conn.get("host") or "localhost").strip()
-        # Sanitise: if someone accidentally stored "user@host" in the host field, strip the prefix
-        host = raw_host.split("@")[-1] if "@" in raw_host else raw_host
-        port = conn.get("port", 5432)
-        db = conn.get("database", "") or ""
-        # URL-encode credentials so special characters (@ # % etc.) don't break the DSN
-        user = quote_plus(conn.get("username", "") or "")
+        host     = raw_host.split("@")[-1] if "@" in raw_host else raw_host
+        port     = conn.get("port", 5432)
+        database = conn.get("database", "") or ""
+        user     = quote_plus(conn.get("username", "") or "")
         password = quote_plus(conn.get("password", "") or "")
 
         if engine in ("postgresql", "postgres"):
-            return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
+            return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
         elif engine == "mysql":
-            return f"mysql+pymysql://{user}:{password}@{host}:{port}/{db}"
+            return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
         elif engine in ("mssql", "sqlserver"):
-            return f"mssql+pyodbc://{user}:{password}@{host}:{port}/{db}?driver=ODBC+Driver+17+for+SQL+Server"
+            return f"mssql+pyodbc://{user}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
         else:
-            return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"
+            return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+
+    log(
+        f"Source: {src.get('engine','postgresql')} "
+        f"{src.get('host')}:{src.get('port')}/{src.get('database')}"
+    )
+    log(
+        f"Destination: {dst.get('engine','postgresql')} "
+        f"{dst.get('host')}:{dst.get('port')}/{dst.get('database')}"
+    )
 
     try:
         src_engine = create_engine(build_url(src), pool_pre_ping=True)
         dst_engine = create_engine(build_url(dst), pool_pre_ping=True)
     except Exception as e:
-        print(json.dumps({"success": False, "error": f"Failed to create DB engines: {e}"}))
-        sys.exit(1)
+        fail(f"Failed to create DB engines: {e}")
 
-    # Step 1: Fetch data from source using chunked reads
+    # ── STEP 1: Fetch from source ─────────────────────────────────────────────
+    log(f"[STEP 1] Reading source data")
+    log(f"  Query: {source_query[:200]}{'...' if len(source_query) > 200 else ''}")
+
     try:
         chunks = []
         with src_engine.connect() as conn:
             for chunk in pd.read_sql_query(text(source_query), conn, chunksize=chunk_size):
                 chunks.append(chunk)
+                running = sum(len(c) for c in chunks)
+                log(f"  Fetched chunk #{len(chunks)}: {len(chunk)} rows (running total: {running})")
         src_engine.dispose()
-
-        if not chunks:
-            df = pd.DataFrame()
-        else:
-            df = pd.concat(chunks, ignore_index=True)
+        df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
     except Exception as e:
-        print(json.dumps({"success": False, "error": f"Source read failed: {e}"}))
-        sys.exit(1)
+        fail(f"Source read failed: {e}")
 
     record_count = len(df)
+    log(f"[STEP 1 DONE] Fetched {record_count} rows, {len(df.columns)} column(s): {list(df.columns)}")
 
     if record_count == 0:
+        log("Source returned 0 rows — nothing to insert.")
         print(json.dumps({"success": True, "recordCount": 0}))
         sys.exit(0)
 
-    # Step 2: Apply field mappings (rename + transform columns)
+    # ── STEP 2: Apply field mappings ──────────────────────────────────────────
     if field_mappings:
-        rename_map = {}
+        log(f"[STEP 2] Applying {len(field_mappings)} field mapping(s)")
+        rename_map   = {}
         transform_map = {}
         for m in field_mappings:
             src_field = m.get("sourceField", "")
             dst_field = m.get("destField", "")
             if src_field and dst_field:
                 rename_map[src_field] = dst_field
-                if m.get("transformType") and m["transformType"] != "passthrough":
+                tt = m.get("transformType", "passthrough")
+                if tt and tt != "passthrough":
                     transform_map[dst_field] = m
 
-        # Keep only mapped source columns
-        keep_cols = [c for c in rename_map.keys() if c in df.columns]
+        keep_cols = [c for c in rename_map if c in df.columns]
+        missing   = [c for c in rename_map if c not in df.columns]
+        if missing:
+            log(f"  WARNING: source columns not found (will be skipped): {missing}")
         df = df[keep_cols].rename(columns=rename_map)
 
-        # Apply transforms
         for col, mapping in transform_map.items():
             if col not in df.columns:
                 continue
-            t = mapping.get("transformType", "passthrough")
-            params = mapping.get("transformParams", "")
+            t      = mapping.get("transformType", "passthrough")
+            params = mapping.get("transformParams", "") or ""
+            log(f"  Applying transform '{t}' on column '{col}'")
             if t == "string":
                 df[col] = df[col].astype(str).where(df[col].notna(), None)
             elif t == "number":
                 df[col] = pd.to_numeric(df[col], errors="coerce")
             elif t == "boolean":
-                df[col] = df[col].map(lambda v: str(v).lower() in ("true", "1", "yes", "y") if v is not None else None)
+                df[col] = df[col].map(
+                    lambda v: str(v).lower() in ("true", "1", "yes", "y") if v is not None else None
+                )
             elif t == "date-format":
                 df[col] = pd.to_datetime(df[col], errors="coerce")
-                if params:
-                    fmt = params.replace("YYYY", "%Y").replace("MM", "%m").replace("DD", "%d").replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
-                    df[col] = df[col].dt.strftime(fmt)
-                else:
-                    df[col] = df[col].dt.strftime("%Y-%m-%d")
+                fmt_str = (
+                    params
+                    .replace("YYYY", "%Y").replace("MM", "%m").replace("DD", "%d")
+                    .replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
+                ) if params else "%Y-%m-%d"
+                df[col] = df[col].dt.strftime(fmt_str)
 
-    # Step 3: Bulk insert into destination using to_sql with multi-row inserts
-    # Parse schema + table from dest_target (e.g. "public.clients" or just "clients")
+        log(f"[STEP 2 DONE] {len(df.columns)} output column(s): {list(df.columns)}")
+    else:
+        log("[STEP 2] No field mappings configured — all source columns passed through")
+
+    # ── STEP 3: INSERT into destination (no DDL) ──────────────────────────────
     if "." in dest_target:
         schema_part, table_part = dest_target.split(".", 1)
     else:
         schema_part = None
-        table_part = dest_target
+        table_part  = dest_target
+
+    log(f"[STEP 3] Inserting {record_count} rows into destination")
+    log(f"  Target: schema={schema_part!r}  table={table_part!r}")
 
     try:
+        metadata  = MetaData()
         with dst_engine.connect() as conn:
-            df.to_sql(
-                table_part,
-                con=conn,
+            log("  Reflecting destination table structure (no DDL will be issued)…")
+            dst_table = Table(
+                table_part, metadata,
                 schema=schema_part,
-                if_exists="append",
-                index=False,
-                chunksize=chunk_size,
-                method="multi",
+                autoload_with=dst_engine,
             )
+            dest_cols = [c.name for c in dst_table.columns]
+            log(f"  Destination table has {len(dest_cols)} column(s): {dest_cols}")
+
+            # Convert NaN → None so SQLAlchemy sends proper NULLs
+            records = df.where(df.notna(), other=None).to_dict(orient="records")
+
+            inserted = 0
+            batch_num = 0
+            for i in range(0, len(records), chunk_size):
+                batch = records[i: i + chunk_size]
+                batch_num += 1
+                conn.execute(dst_table.insert(), batch)
+                inserted += len(batch)
+                log(f"  Batch #{batch_num}: inserted {len(batch)} rows (total so far: {inserted})")
+
             conn.commit()
+            log("  Transaction committed successfully.")
+
         dst_engine.dispose()
     except Exception as e:
-        print(json.dumps({"success": False, "error": f"Destination write failed: {e}"}))
-        sys.exit(1)
+        fail(f"Destination write failed: {e}")
 
+    log(f"[STEP 3 DONE] Inserted {record_count} rows into {dest_target}")
+    log("Worker completed successfully.")
     print(json.dumps({"success": True, "recordCount": record_count}))
+
 
 if __name__ == "__main__":
     main()

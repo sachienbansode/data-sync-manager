@@ -3,7 +3,14 @@ import { useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { ShieldAlert, Activity, KeyRound, Mail, ArrowRight, RefreshCw } from "lucide-react";
+import {
+  ShieldAlert,
+  Activity,
+  KeyRound,
+  Mail,
+  ArrowRight,
+  RefreshCw,
+} from "lucide-react";
 import { useLogin, useVerifyMfa } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -18,7 +25,11 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSlot,
+} from "@/components/ui/input-otp";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const loginSchema = z.object({
@@ -45,7 +56,9 @@ export default function Login() {
   const { login } = useAuth();
 
   const urlError = new URLSearchParams(window.location.search).get("error");
-  const m365ErrorMessage = urlError ? (M365_ERRORS[urlError] ?? `Sign-in error: ${urlError}`) : null;
+  const m365ErrorMessage = urlError
+    ? (M365_ERRORS[urlError] ?? `Sign-in error: ${urlError}`)
+    : null;
 
   const [mode, setMode] = useState<LoginMode>("password");
   const [step, setStep] = useState<Step>("login");
@@ -77,7 +90,11 @@ export default function Login() {
       if (response.requiresMfa && response.tempToken) {
         setTempToken(response.tempToken);
         setStep("mfa");
-      } else if (response.accessToken && response.refreshToken && response.user) {
+      } else if (
+        response.accessToken &&
+        response.refreshToken &&
+        response.user
+      ) {
         login(response.accessToken, response.refreshToken, response.user);
         setLocation("/dashboard");
       }
@@ -90,7 +107,9 @@ export default function Login() {
     if (code.length !== 6) return;
     setMfaError("");
     try {
-      const response = await verifyMfaMutation.mutateAsync({ data: { tempToken, code } });
+      const response = await verifyMfaMutation.mutateAsync({
+        data: { tempToken, code },
+      });
       if (response.accessToken && response.refreshToken && response.user) {
         login(response.accessToken, response.refreshToken, response.user);
         setLocation("/dashboard");
@@ -104,11 +123,14 @@ export default function Login() {
     setOtpSending(true);
     setOtpError("");
     try {
-      const resp = await fetch(`${import.meta.env.BASE_URL}api/auth/email-otp/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: values.email }),
-      });
+      const resp = await fetch(
+        `${import.meta.env.BASE_URL}api/auth/email-otp/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: values.email }),
+        },
+      );
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error ?? "Failed to send OTP");
       setOtpEmail(values.email);
@@ -126,11 +148,14 @@ export default function Login() {
     setOtpVerifying(true);
     setOtpError("");
     try {
-      const resp = await fetch(`${import.meta.env.BASE_URL}api/auth/email-otp/verify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: otpEmail, otp: otpCode }),
-      });
+      const resp = await fetch(
+        `${import.meta.env.BASE_URL}api/auth/email-otp/verify`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: otpEmail, otp: otpCode }),
+        },
+      );
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error ?? "Invalid OTP");
       if (data.accessToken && data.refreshToken && data.user) {
@@ -138,7 +163,9 @@ export default function Login() {
         setLocation("/dashboard");
       }
     } catch (err: unknown) {
-      setOtpError(err instanceof Error ? err.message : "Invalid or expired OTP");
+      setOtpError(
+        err instanceof Error ? err.message : "Invalid or expired OTP",
+      );
       setOtpCode("");
     } finally {
       setOtpVerifying(false);
@@ -178,13 +205,21 @@ export default function Login() {
         <div className="mb-8 flex flex-col items-center">
           <div className="h-16 w-16 rounded-xl flex items-center justify-center mb-4 overflow-hidden bg-primary/10">
             {appCfg?.hasLogo ? (
-              <img src={logoUrl} alt="Logo" className="h-full w-full object-contain p-1" />
+              <img
+                src={logoUrl}
+                alt="Logo"
+                className="h-full w-full object-contain p-1"
+              />
             ) : (
               <Activity className="h-7 w-7 text-primary" />
             )}
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">{appCfg?.appName ?? "Ashika Enterprise"}</h1>
-          <p className="text-sm text-muted-foreground mt-2">Sign in to your account</p>
+          <h1 className="text-2xl font-semibold tracking-tight">
+            {appCfg?.appName ?? "Ashika Enterprise"}
+          </h1>
+          <p className="text-sm text-muted-foreground mt-2">
+            Sign in to your account
+          </p>
         </div>
 
         <div className="bg-card border border-border shadow-xl rounded-xl p-8 relative overflow-hidden">
@@ -194,7 +229,9 @@ export default function Login() {
               <div className="h-12 w-12 bg-primary/10 rounded-full flex items-center justify-center mb-4">
                 <ShieldAlert className="h-6 w-6 text-primary" />
               </div>
-              <h2 className="text-xl font-semibold mb-2">Two-Factor Authentication</h2>
+              <h2 className="text-xl font-semibold mb-2">
+                Two-Factor Authentication
+              </h2>
               <p className="text-sm text-center text-muted-foreground mb-6">
                 Enter the 6-digit code from your authenticator app.
               </p>
@@ -202,16 +239,38 @@ export default function Login() {
                 <InputOTP
                   data-testid="input-mfa-code"
                   maxLength={6}
-                  onChange={(value) => { if (value.length === 6) handleMfaSubmit(value); }}
+                  onChange={(value) => {
+                    if (value.length === 6) handleMfaSubmit(value);
+                  }}
                   disabled={verifyMfaMutation.isPending}
                 >
                   <InputOTPGroup className="w-full justify-center gap-2">
-                    {[0,1,2,3,4,5].map(i => <InputOTPSlot key={i} index={i} className="w-12 h-12 text-lg" />)}
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <InputOTPSlot
+                        key={i}
+                        index={i}
+                        className="w-12 h-12 text-lg"
+                      />
+                    ))}
                   </InputOTPGroup>
                 </InputOTP>
               </div>
-              {mfaError && <div data-testid="text-mfa-error" className="text-sm font-medium text-destructive mb-4">{mfaError}</div>}
-              <Button variant="ghost" size="sm" onClick={resetToLogin} className="mt-4">Back to login</Button>
+              {mfaError && (
+                <div
+                  data-testid="text-mfa-error"
+                  className="text-sm font-medium text-destructive mb-4"
+                >
+                  {mfaError}
+                </div>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={resetToLogin}
+                className="mt-4"
+              >
+                Back to login
+              </Button>
             </div>
           )}
 
@@ -225,28 +284,69 @@ export default function Login() {
               <p className="text-sm text-center text-muted-foreground mb-1">
                 We sent a 6-digit code to
               </p>
-              <p className="text-sm font-medium text-foreground mb-6">{otpEmail}</p>
+              <p className="text-sm font-medium text-foreground mb-6">
+                {otpEmail}
+              </p>
               <div className="w-full max-w-xs mx-auto mb-4">
                 <InputOTP
                   maxLength={6}
                   value={otpCode}
-                  onChange={(value) => { setOtpCode(value); if (value.length === 6) { setOtpCode(value); setTimeout(() => handleVerifyOtp(), 0); } }}
+                  onChange={(value) => {
+                    setOtpCode(value);
+                    if (value.length === 6) {
+                      setOtpCode(value);
+                      setTimeout(() => handleVerifyOtp(), 0);
+                    }
+                  }}
                   disabled={otpVerifying}
                 >
                   <InputOTPGroup className="w-full justify-center gap-2">
-                    {[0,1,2,3,4,5].map(i => <InputOTPSlot key={i} index={i} className="w-12 h-12 text-lg" />)}
+                    {[0, 1, 2, 3, 4, 5].map((i) => (
+                      <InputOTPSlot
+                        key={i}
+                        index={i}
+                        className="w-12 h-12 text-lg"
+                      />
+                    ))}
                   </InputOTPGroup>
                 </InputOTP>
               </div>
-              {otpError && <div className="text-sm font-medium text-destructive mb-4 text-center">{otpError}</div>}
-              <Button className="w-full max-w-xs" onClick={handleVerifyOtp} disabled={otpCode.length !== 6 || otpVerifying}>
+              {otpError && (
+                <div className="text-sm font-medium text-destructive mb-4 text-center">
+                  {otpError}
+                </div>
+              )}
+              <Button
+                className="w-full max-w-xs"
+                onClick={handleVerifyOtp}
+                disabled={otpCode.length !== 6 || otpVerifying}
+              >
                 {otpVerifying ? "Verifying..." : "Verify Code"}
               </Button>
               <div className="flex gap-3 mt-4">
-                <Button variant="ghost" size="sm" onClick={() => { setStep("emailotp-send"); setOtpCode(""); setOtpError(""); setOtpSent(false); }}>
-                  <RefreshCw className="h-3 w-3 mr-1" />Resend
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStep("emailotp-send");
+                    setOtpCode("");
+                    setOtpError("");
+                    setOtpSent(false);
+                  }}
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Resend
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => { resetToLogin(); setMode("password"); }}>Back to login</Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    resetToLogin();
+                    setMode("password");
+                  }}
+                >
+                  Back to login
+                </Button>
               </div>
             </div>
           )}
@@ -254,48 +354,90 @@ export default function Login() {
           {/* Main login steps */}
           {(step === "login" || step === "emailotp-send") && (
             <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-              <Tabs value={mode} onValueChange={handleModeChange} className="mb-6">
+              <Tabs
+                value={mode}
+                onValueChange={handleModeChange}
+                className="mb-6"
+              >
                 <TabsList className="w-full">
-                  <TabsTrigger value="password" className="flex-1">Password</TabsTrigger>
-                  <TabsTrigger value="emailotp" className="flex-1">Email OTP</TabsTrigger>
+                  <TabsTrigger value="password" className="flex-1">
+                    Password
+                  </TabsTrigger>
+                  <TabsTrigger value="emailotp" className="flex-1">
+                    Email OTP
+                  </TabsTrigger>
                 </TabsList>
               </Tabs>
 
               {mode === "password" && (
                 <Form {...passwordForm}>
-                  <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
-                    <FormField control={passwordForm.control} name="email" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input data-testid="input-email" placeholder="name@ashikagroup.com" className="pl-9" autoComplete="email" {...field} />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    <FormField control={passwordForm.control} name="password" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Password</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input data-testid="input-password" type="password" placeholder="••••••••" className="pl-9" autoComplete="current-password" {...field} />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
+                  <form
+                    onSubmit={passwordForm.handleSubmit(onPasswordSubmit)}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={passwordForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                data-testid="input-email"
+                                placeholder="name@domain.com"
+                                className="pl-9"
+                                autoComplete="email"
+                                {...field}
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={passwordForm.control}
+                      name="password"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Password</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <KeyRound className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                data-testid="input-password"
+                                type="password"
+                                placeholder="••••••••"
+                                className="pl-9"
+                                autoComplete="current-password"
+                                {...field}
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
                     {passwordForm.formState.errors.root && (
-                      <div data-testid="text-login-error" className="text-sm font-medium text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
+                      <div
+                        data-testid="text-login-error"
+                        className="text-sm font-medium text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20"
+                      >
                         {passwordForm.formState.errors.root.message}
                       </div>
                     )}
-                    <Button data-testid="button-sign-in" type="submit" className="w-full mt-2" disabled={loginMutation.isPending}>
+                    <Button
+                      data-testid="button-sign-in"
+                      type="submit"
+                      className="w-full mt-2"
+                      disabled={loginMutation.isPending}
+                    >
                       {loginMutation.isPending ? "Signing in..." : "Sign in"}
-                      {!loginMutation.isPending && <ArrowRight className="ml-2 h-4 w-4" />}
+                      {!loginMutation.isPending && (
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      )}
                     </Button>
                   </form>
                 </Form>
@@ -303,34 +445,60 @@ export default function Login() {
 
               {mode === "emailotp" && (
                 <Form {...otpEmailForm}>
-                  <form onSubmit={otpEmailForm.handleSubmit(handleSendOtp)} className="space-y-4">
-                    <FormField control={otpEmailForm.control} name="email" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Email Address</FormLabel>
-                        <FormControl>
-                          <div className="relative">
-                            <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                            <Input placeholder="name@ashikagroup.com" className="pl-9" autoComplete="email" {...field} />
-                          </div>
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )} />
-                    {otpError && <div className="text-sm font-medium text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">{otpError}</div>}
-                    <Button type="submit" className="w-full mt-2" disabled={otpSending}>
+                  <form
+                    onSubmit={otpEmailForm.handleSubmit(handleSendOtp)}
+                    className="space-y-4"
+                  >
+                    <FormField
+                      control={otpEmailForm.control}
+                      name="email"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Email Address</FormLabel>
+                          <FormControl>
+                            <div className="relative">
+                              <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                              <Input
+                                placeholder="name@domain.com"
+                                className="pl-9"
+                                autoComplete="email"
+                                {...field}
+                              />
+                            </div>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    {otpError && (
+                      <div className="text-sm font-medium text-destructive bg-destructive/10 p-3 rounded-md border border-destructive/20">
+                        {otpError}
+                      </div>
+                    )}
+                    <Button
+                      type="submit"
+                      className="w-full mt-2"
+                      disabled={otpSending}
+                    >
                       {otpSending ? "Sending OTP..." : "Send OTP"}
                       {!otpSending && <ArrowRight className="ml-2 h-4 w-4" />}
                     </Button>
-                    <p className="text-xs text-center text-muted-foreground">A one-time code will be sent to your email address.</p>
+                    <p className="text-xs text-center text-muted-foreground">
+                      A one-time code will be sent to your email address.
+                    </p>
                   </form>
                 </Form>
               )}
 
               <div className="mt-6">
                 <div className="relative">
-                  <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
                   <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
+                    <span className="bg-card px-2 text-muted-foreground">
+                      Or continue with
+                    </span>
                   </div>
                 </div>
                 {m365ErrorMessage && (
@@ -343,9 +511,15 @@ export default function Login() {
                   variant="outline"
                   type="button"
                   className="w-full mt-4 bg-transparent"
-                  onClick={() => { window.location.href = `${import.meta.env.BASE_URL}api/auth/m365`; }}
+                  onClick={() => {
+                    window.location.href = `${import.meta.env.BASE_URL}api/auth/m365`;
+                  }}
                 >
-                  <svg className="mr-2 h-4 w-4" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
+                  <svg
+                    className="mr-2 h-4 w-4"
+                    viewBox="0 0 21 21"
+                    xmlns="http://www.w3.org/2000/svg"
+                  >
                     <rect x="1" y="1" width="9" height="9" fill="#f25022" />
                     <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
                     <rect x="11" y="1" width="9" height="9" fill="#7fba00" />

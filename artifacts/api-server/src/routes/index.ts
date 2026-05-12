@@ -14,6 +14,7 @@ import pipelinesRouter from "./pipelines";
 import docsRouter from "./docs";
 import allowedFileTypesRouter from "./allowed-file-types";
 import loginReportRouter from "./login-report";
+import applicationTypesRouter from "./application-types";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(pipelinesRouter);
 router.use(docsRouter);
 router.use(allowedFileTypesRouter);
 router.use(loginReportRouter);
+router.use(applicationTypesRouter);
 
 export default router;

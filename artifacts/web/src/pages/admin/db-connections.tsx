@@ -12,12 +12,13 @@ import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 
 type DbEngine = "postgresql" | "mysql" | "mssql" | "oracle" | "s3" | "sftp" | "csv";
-type ConnectionType = "backoffice" | "trading";
+
+type AppType = { id: number; name: string; slug: string };
 
 interface DbConnection {
   id: number;
   name: string;
-  type: ConnectionType;
+  type: string;
   dbEngine: DbEngine;
   host: string | null;
   port: number | null;
@@ -42,7 +43,7 @@ const ENGINE_META: Record<DbEngine, { label: string; icon: React.ComponentType<{
 };
 
 const EMPTY_FORM = {
-  name: "", type: "backoffice" as ConnectionType,
+  name: "", type: "",
   dbEngine: "postgresql" as DbEngine,
   host: "", port: "5432", dbName: "", schemaName: "public",
   username: "", password: "",
@@ -98,6 +99,7 @@ const apiBase = `${import.meta.env.BASE_URL}api`;
 
 export default function DbConnections() {
   const [connections, setConnections] = useState<DbConnection[]>([]);
+  const [appTypes, setAppTypes] = useState<AppType[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -119,9 +121,13 @@ export default function DbConnections() {
     setLoading(true);
     try {
       const token = getAccessToken();
-      const res = await fetch(`${apiBase}/admin/db-connections`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error("Failed to load connections");
-      setConnections(await res.json());
+      const [cRes, tRes] = await Promise.all([
+        fetch(`${apiBase}/admin/db-connections`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${apiBase}/admin/application-types/active`, { headers: { Authorization: `Bearer ${token}` } }),
+      ]);
+      if (!cRes.ok) throw new Error("Failed to load connections");
+      setConnections(await cRes.json());
+      if (tRes.ok) setAppTypes(await tRes.json());
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load connections");
     } finally {
@@ -133,7 +139,7 @@ export default function DbConnections() {
 
   function openAdd() {
     setEditId(null);
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, type: appTypes[0]?.slug ?? "" });
     setDialogOpen(true);
   }
 
@@ -403,11 +409,12 @@ export default function DbConnections() {
               </div>
               <div className="space-y-1">
                 <Label>Application Type</Label>
-                <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v as ConnectionType }))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select type…" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="backoffice">BackOffice</SelectItem>
-                    <SelectItem value="trading">Trading</SelectItem>
+                    {appTypes.map(t => (
+                      <SelectItem key={t.slug} value={t.slug}>{t.name}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

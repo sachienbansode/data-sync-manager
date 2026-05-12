@@ -27,6 +27,7 @@ export const ALL_PAGES = [
   { path: "/admin/font-settings", name: "Font Settings" },
   { path: "/admin/allowed-file-types", name: "Allowed File Types" },
   { path: "/admin/pii-permissions", name: "PII Permissions" },
+  { path: "/admin/application-types", name: "Application Types" },
   { path: "/docs", name: "API Documentation" },
 ];
 

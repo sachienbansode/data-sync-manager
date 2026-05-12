@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, ShieldAlert, FileText, LogOut, UserCircle, Menu,
   Activity, Mail, Settings, ChevronDown, ChevronRight, Lock, Database,
   GitBranch, Shuffle, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
-  Type, FileType, LogIn, Info,
+  Type, FileType, LogIn, Info, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -68,6 +68,7 @@ const adminGroups: NavGroup[] = [
       { href: "/admin/font-settings", label: "Font Settings", icon: Type },
       { href: "/admin/email-settings", label: "Email Settings", icon: Mail },
       { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
+      { href: "/admin/application-types", label: "Application Types", icon: Layers },
     ],
   },
   {

@@ -119,10 +119,6 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
     res.status(400).json({ error: "name and type are required" });
     return;
   }
-  if (!["backoffice", "trading"].includes(type)) {
-    res.status(400).json({ error: "type must be 'backoffice' or 'trading'" });
-    return;
-  }
   const engine = dbEngine ?? "postgresql";
   if (!isFileEngine(engine) && (!host || !dbName || !username || !password)) {
     res.status(400).json({ error: "host, dbName, username, and password are required for database connections" });
@@ -136,7 +132,7 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
   loadEncryptionKey();
   const [row] = await db.insert(dbConnectionsTable).values({
     name,
-    type: type as "backoffice" | "trading",
+    type,
     dbEngine: engine as typeof dbConnectionsTable.$inferInsert["dbEngine"],
     host: host ?? null,
     port: port ?? (isFileEngine(engine) ? null : 5432),
@@ -175,15 +171,10 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
   const [existing] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Connection not found" }); return; }
 
-  if (type && !["backoffice", "trading"].includes(type)) {
-    res.status(400).json({ error: "type must be 'backoffice' or 'trading'" });
-    return;
-  }
-
   loadEncryptionKey();
   const updates: Partial<typeof dbConnectionsTable.$inferInsert> = { updatedAt: new Date() };
   if (name) updates.name = name;
-  if (type) updates.type = type as "backoffice" | "trading";
+  if (type) updates.type = type;
   if (dbEngine) updates.dbEngine = dbEngine as typeof dbConnectionsTable.$inferInsert["dbEngine"];
   if (host !== undefined) updates.host = host || null;
   if (port) updates.port = port;
@@ -237,10 +228,52 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
 
+  // S3: use AWS SDK for a real connectivity check
+  if (conn.dbEngine === "s3") {
+    const bucket = conn.extraParams?.bucket ?? "";
+    if (!bucket || !conn.usernameEnc || !conn.passwordEnc) {
+      res.status(400).json({ success: false, error: "Bucket, Access Key ID and Secret Access Key are required to test an S3 connection" });
+      return;
+    }
+    loadEncryptionKey();
+    let accessKeyId: string;
+    let secretAccessKey: string;
+    try {
+      accessKeyId = decrypt(conn.usernameEnc);
+      secretAccessKey = decrypt(conn.passwordEnc);
+    } catch {
+      res.status(500).json({ success: false, error: "Failed to decrypt S3 credentials" });
+      return;
+    }
+    const { S3Client, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+    const s3 = new S3Client({
+      region: conn.extraParams?.region ?? "us-east-1",
+      credentials: { accessKeyId, secretAccessKey },
+    });
+    let s3Success = false;
+    let s3Error: string | null = null;
+    try {
+      await s3.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
+      s3Success = true;
+    } catch (err: unknown) {
+      s3Error = err instanceof Error ? err.message : "S3 connection failed";
+    }
+    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: s3Success, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.sub, userEmail: req.user!.email,
+      action: "DB_CONNECTION_TESTED",
+      details: `Tested S3 connection: ${conn.name} — ${s3Success ? "SUCCESS" : `FAILED: ${s3Error}`}`,
+      resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
+    });
+    if (s3Success) res.json({ success: true, message: `S3 bucket "${bucket}" is accessible` });
+    else res.status(400).json({ success: false, error: s3Error });
+    return;
+  }
+
+  // SFTP / CSV: no live connectivity check available
   if (isFileEngine(conn.dbEngine)) {
-    // File/cloud engines: just mark as tested (no live connectivity check here)
     await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: true, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
-    res.json({ success: true, message: "File/cloud connection saved (live connectivity check not available)" });
+    res.json({ success: true, message: "Connection saved (live connectivity check not available for this engine type)" });
     return;
   }
 

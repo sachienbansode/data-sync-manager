@@ -1,19 +1,29 @@
 #!/usr/bin/env python3
 """
-Pipeline Worker — reads data from a source DB and bulk-inserts into a destination DB.
-Called by the Node.js API server as a child process.
+Pipeline Worker — high-performance streaming ETL.
+
+Architecture:
+  Source  → server-side named cursor (PostgreSQL) / chunked SQLAlchemy (others)
+  Insert  → COPY via StringIO for full_load  (fastest, no row-by-row overhead)
+           → execute_values + ON CONFLICT DO UPDATE for incremental upserts
+  Safety  → watermark persisted to /tmp after every committed batch
+  Logging → stderr only, never logs row values
 
 Input:  JSON on stdin
-Output: JSON on stdout  { success, recordCount, error }
-Logs:   human-readable progress on stderr (never logs row values)
+Output: JSON on stdout  { success, recordCount, error?, newWatermark? }
 """
 
 import sys
 import json
+import io
+import os
+import tempfile
 from datetime import datetime, timezone
 
 
-def log(msg):
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def log(msg: str) -> None:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     print(f"[{ts}] {msg}", file=sys.stderr, flush=True)
 
@@ -37,230 +47,466 @@ def sanitize_error(e: Exception) -> str:
     return (result[:500] + "…") if len(result) > 500 else (result or type(e).__name__)
 
 
-def fail(error_msg):
+def fail(error_msg: str) -> None:
     log(f"FATAL: {error_msg}")
     print(json.dumps({"success": False, "error": error_msg}))
     sys.exit(1)
 
 
-def main():
-    log("Pipeline worker started")
+def save_watermark(pipeline_id: int, value: str) -> None:
+    """Persist watermark to /tmp after each committed batch for crash durability."""
+    try:
+        path = os.path.join(tempfile.gettempdir(), f"ashika_wm_{pipeline_id}.json")
+        with open(path, "w") as f:
+            json.dump({"watermark": value, "ts": datetime.now(timezone.utc).isoformat()}, f)
+    except Exception:
+        pass  # non-fatal
 
-    # ── Parse config ─────────────────────────────────────────────────────────
+
+# ── Connection helpers ────────────────────────────────────────────────────────
+
+def build_psycopg2_params(conn: dict) -> dict:
+    """Return kwargs for psycopg2.connect()."""
+    raw_host = (conn.get("host") or "localhost").strip()
+    host = raw_host.split("@")[-1] if "@" in raw_host else raw_host
+    return {
+        "host": host,
+        "port": int(conn.get("port", 5432)),
+        "dbname": conn.get("database", "") or "",
+        "user": conn.get("username", "") or "",
+        "password": conn.get("password", "") or "",
+        "connect_timeout": 15,
+        "application_name": "ashika_etl_worker",
+    }
+
+
+def build_sqlalchemy_url(conn: dict) -> str:
+    """Return a SQLAlchemy URL string (used for non-PostgreSQL and table reflection)."""
+    from urllib.parse import quote_plus
+    engine   = conn.get("engine", "postgresql")
+    raw_host = (conn.get("host") or "localhost").strip()
+    host     = raw_host.split("@")[-1] if "@" in raw_host else raw_host
+    port     = conn.get("port", 5432)
+    database = conn.get("database", "") or ""
+    user     = quote_plus(conn.get("username", "") or "")
+    password = quote_plus(conn.get("password", "") or "")
+    if engine in ("postgresql", "postgres"):
+        return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+    elif engine == "mysql":
+        return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+    elif engine in ("mssql", "sqlserver"):
+        return f"mssql+pyodbc://{user}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
+    return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+
+
+# ── Field mapping ─────────────────────────────────────────────────────────────
+
+def apply_field_mappings(row_dicts: list, field_mappings: list) -> list:
+    """Apply rename + type transforms to a batch of row dicts. Returns new list."""
+    if not field_mappings:
+        return row_dicts
+    import pandas as pd
+
+    df = pd.DataFrame(row_dicts)
+    rename_map, transform_map = {}, {}
+    for m in field_mappings:
+        sf, df_col = m.get("sourceField", ""), m.get("destField", "")
+        if sf and df_col:
+            rename_map[sf] = df_col
+            tt = m.get("transformType", "passthrough")
+            if tt and tt != "passthrough":
+                transform_map[df_col] = m
+
+    keep = [c for c in rename_map if c in df.columns]
+    df = df[keep].rename(columns=rename_map)
+
+    for col, mapping in transform_map.items():
+        if col not in df.columns:
+            continue
+        t = mapping.get("transformType", "passthrough")
+        params = mapping.get("transformParams", "") or ""
+        if t == "string":
+            df[col] = df[col].astype(str).where(df[col].notna(), None)
+        elif t == "number":
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        elif t == "boolean":
+            df[col] = df[col].map(
+                lambda v: str(v).lower() in ("true", "1", "yes", "y") if v is not None else None
+            )
+        elif t == "date-format":
+            df[col] = pd.to_datetime(df[col], errors="coerce")
+            fmt = (
+                params
+                .replace("YYYY", "%Y").replace("MM", "%m").replace("DD", "%d")
+                .replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
+            ) if params else "%Y-%m-%d"
+            df[col] = df[col].dt.strftime(fmt)
+
+    return df.where(df.notna(), other=None).to_dict(orient="records")
+
+
+def update_watermark(rows: list, watermark_col: str, current: str) -> str:
+    """Return the new max watermark value from this batch (as string for storage)."""
+    try:
+        vals = [r[watermark_col] for r in rows if r.get(watermark_col) is not None]
+        if not vals:
+            return current
+        batch_max = str(max(vals))
+        return batch_max if (not current or batch_max > current) else current
+    except Exception:
+        return current
+
+
+# ── COPY buffer builder ───────────────────────────────────────────────────────
+
+def rows_to_copy_buffer(rows: list, columns: list) -> io.StringIO:
+    """
+    Convert row dicts to a tab-delimited StringIO buffer for:
+      COPY table (col1, col2, ...) FROM STDIN WITH (FORMAT TEXT, NULL '\\N')
+    NULL values become \\N; special chars are escaped per PostgreSQL TEXT format.
+    """
+    buf = io.StringIO()
+    for row in rows:
+        parts = []
+        for col in columns:
+            val = row.get(col)
+            if val is None:
+                parts.append("\\N")
+            else:
+                s = (
+                    str(val)
+                    .replace("\\", "\\\\")
+                    .replace("\n", "\\n")
+                    .replace("\r", "\\r")
+                    .replace("\t", "\\t")
+                )
+                parts.append(s)
+        buf.write("\t".join(parts) + "\n")
+    buf.seek(0)
+    return buf
+
+
+# ── Destination batch writer ──────────────────────────────────────────────────
+
+def write_pg_batch(
+    cur,
+    dest_target: str,
+    write_cols: list,
+    rows: list,
+    load_type: str,
+    conflict_col_list: list,
+    chunk_size: int,
+) -> None:
+    """
+    Write one batch to a PostgreSQL destination.
+    • full_load              → COPY via StringIO (fastest pure-insert path)
+    • incremental + conflict → execute_values + ON CONFLICT DO UPDATE (upsert)
+    • incremental            → execute_values plain append
+    """
+    from psycopg2.extras import execute_values
+
+    if load_type == "full_load":
+        buf = rows_to_copy_buffer(rows, write_cols)
+        col_str = ", ".join(f'"{c}"' for c in write_cols)
+        cur.copy_expert(
+            f'COPY {dest_target} ({col_str}) FROM STDIN WITH (FORMAT TEXT, NULL \'\\N\')',
+            buf,
+        )
+
+    elif conflict_col_list:
+        # Upsert: ON CONFLICT (key_cols) DO UPDATE SET non-key cols = EXCLUDED.col
+        update_cols = [c for c in write_cols if c not in conflict_col_list]
+        col_str     = ", ".join(f'"{c}"' for c in write_cols)
+        conflict_str = ", ".join(f'"{c}"' for c in conflict_col_list)
+        if update_cols:
+            set_clause = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in update_cols)
+        else:
+            # All columns are in the conflict key — do nothing on conflict
+            set_clause = None
+
+        if set_clause:
+            sql = (
+                f'INSERT INTO {dest_target} ({col_str}) VALUES %s '
+                f'ON CONFLICT ({conflict_str}) DO UPDATE SET {set_clause}'
+            )
+        else:
+            sql = (
+                f'INSERT INTO {dest_target} ({col_str}) VALUES %s '
+                f'ON CONFLICT ({conflict_str}) DO NOTHING'
+            )
+        data = [[row.get(c) for c in write_cols] for row in rows]
+        execute_values(cur, sql, data, page_size=chunk_size)
+
+    else:
+        # Plain incremental append via execute_values (faster than executemany)
+        col_str = ", ".join(f'"{c}"' for c in write_cols)
+        sql = f'INSERT INTO {dest_target} ({col_str}) VALUES %s'
+        data = [[row.get(c) for c in write_cols] for row in rows]
+        execute_values(cur, sql, data, page_size=chunk_size)
+
+
+def write_sa_batch(sa_engine, sa_table, rows: list) -> None:
+    """Fallback writer for non-PostgreSQL destinations using SQLAlchemy."""
+    with sa_engine.connect() as conn:
+        conn.execute(sa_table.insert(), rows)
+        conn.commit()
+
+
+# ── SQL execution helper (pre/post) ──────────────────────────────────────────
+
+def run_sql_statements(label: str, sql: str, dst_is_pg: bool, dst_params: dict, dst_url: str) -> None:
+    stmts = [s.strip() for s in sql.split(";") if s.strip()]
+    log(f"[{label}] Executing {len(stmts)} statement(s)")
+    if dst_is_pg:
+        import psycopg2
+        conn = psycopg2.connect(**dst_params)
+        try:
+            with conn.cursor() as cur:
+                for stmt in stmts:
+                    log(f"  → {stmt[:120]}{'…' if len(stmt) > 120 else ''}")
+                    cur.execute(stmt)
+            conn.commit()
+        finally:
+            conn.close()
+    else:
+        from sqlalchemy import create_engine, text
+        engine = create_engine(dst_url)
+        with engine.connect() as conn:
+            for stmt in stmts:
+                log(f"  → {stmt[:120]}{'…' if len(stmt) > 120 else ''}")
+                conn.execute(text(stmt))
+            conn.commit()
+        engine.dispose()
+    log(f"[{label} DONE]")
+
+
+# ── Main ─────────────────────────────────────────────────────────────────────
+
+def main() -> None:
+    log("Pipeline worker started (streaming / COPY mode)")
+
+    # ── Parse config ──────────────────────────────────────────────────────────
     try:
         config = json.load(sys.stdin)
     except Exception as e:
         fail(f"Failed to parse config: {e}")
 
-    try:
-        import pandas as pd
-        from sqlalchemy import create_engine, text, Table, MetaData
-    except ImportError as e:
-        fail(f"Missing dependency: {e}. Run: pip install pandas sqlalchemy psycopg2-binary")
-
-    src            = config.get("source", {})
-    dst            = config.get("dest", {})
-    source_query   = config.get("sourceQuery", "").strip()
-    dest_target    = config.get("destTarget", "").strip()
-    field_mappings = config.get("fieldMappings", [])
-    chunk_size     = int(config.get("chunkSize", 5000))
-    pre_sql        = (config.get("preSqlCommand")  or "").strip()
-    post_sql       = (config.get("postSqlCommand") or "").strip()
+    src             = config.get("source", {})
+    dst             = config.get("dest", {})
+    source_query    = config.get("sourceQuery", "").strip()
+    dest_target     = config.get("destTarget", "").strip()
+    field_mappings  = config.get("fieldMappings", [])
+    chunk_size      = int(config.get("chunkSize", 5000))
+    pre_sql         = (config.get("preSqlCommand")    or "").strip()
+    post_sql        = (config.get("postSqlCommand")   or "").strip()
+    load_type       = (config.get("loadType")         or "full_load").strip()
+    conflict_cols   = (config.get("conflictColumns")  or "").strip()
+    watermark_col   = (config.get("watermarkColumn")  or "").strip()
+    current_wm      = (config.get("currentWatermark") or "").strip()
+    pipeline_id     = int(config.get("pipelineId", 0))
 
     if not source_query:
         fail("sourceQuery is required")
     if not dest_target:
         fail("destTarget is required")
 
-    # Guard: destTarget must be a table reference, never a raw SELECT
     dest_upper = dest_target.upper().lstrip()
     if dest_upper.startswith("SELECT") or dest_upper.startswith("WITH ") or dest_upper.startswith("("):
-        fail(
-            f"destTarget must be a table name (e.g. 'public.my_table'), not a SQL query. "
-            f"Received: {dest_target[:80]}"
-        )
+        fail(f"destTarget must be a table name (e.g. public.my_table). Received: {dest_target[:80]}")
 
-    # ── Build connection URLs ─────────────────────────────────────────────────
-    def build_url(conn):
-        from urllib.parse import quote_plus
-        engine   = conn.get("engine", "postgresql")
-        raw_host = (conn.get("host") or "localhost").strip()
-        host     = raw_host.split("@")[-1] if "@" in raw_host else raw_host
-        port     = conn.get("port", 5432)
-        database = conn.get("database", "") or ""
-        user     = quote_plus(conn.get("username", "") or "")
-        password = quote_plus(conn.get("password", "") or "")
+    src_engine_type = (src.get("engine") or "postgresql").strip()
+    dst_engine_type = (dst.get("engine") or "postgresql").strip()
+    src_is_pg = src_engine_type in ("postgresql", "postgres")
+    dst_is_pg = dst_engine_type in ("postgresql", "postgres")
 
-        if engine in ("postgresql", "postgres"):
-            return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
-        elif engine == "mysql":
-            return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
-        elif engine in ("mssql", "sqlserver"):
-            return f"mssql+pyodbc://{user}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
-        else:
-            return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
+    conflict_col_list = [c.strip() for c in conflict_cols.split(",") if c.strip()]
 
-    log(f"Source:      {src.get('engine','postgresql')} @ {src.get('host')}:{src.get('port')}/{src.get('database')}")
-    log(f"Destination: {dst.get('engine','postgresql')} @ {dst.get('host')}:{dst.get('port')}/{dst.get('database')}")
-    log(f"Destination table: {dest_target}")
+    log(f"Source:        {src_engine_type} @ {src.get('host')}:{src.get('port')}/{src.get('database')}")
+    log(f"Destination:   {dst_engine_type} @ {dst.get('host')}:{dst.get('port')}/{dst.get('database')}")
+    log(f"Dest table:    {dest_target}")
+    log(f"Load type:     {load_type}  |  conflict_cols: {conflict_cols or '(none)'}  |  watermark_col: {watermark_col or '(none)'}")
 
+    # Import required libraries
     try:
-        src_engine = create_engine(build_url(src), pool_pre_ping=True)
-        dst_engine = create_engine(build_url(dst), pool_pre_ping=True)
-    except Exception as e:
-        fail(f"Failed to create DB engines: {sanitize_error(e)}")
+        import psycopg2
+        import pandas as pd
+    except ImportError as e:
+        fail(f"Missing dependency: {e}. Run: pip install psycopg2-binary pandas")
 
-    # ── PRE-SQL on destination ───────────────────────────────────────────────
+    dst_pg_params = build_psycopg2_params(dst) if dst_is_pg else {}
+    dst_url       = build_sqlalchemy_url(dst)
+
+    # ── PRE-SQL ───────────────────────────────────────────────────────────────
     if pre_sql:
-        log(f"[PRE-SQL] Executing pre-load SQL on destination")
-        log(f"  Commands: {pre_sql[:200]}{'...' if len(pre_sql) > 200 else ''}")
         try:
-            with dst_engine.connect() as conn:
-                for stmt in [s.strip() for s in pre_sql.split(";") if s.strip()]:
-                    log(f"  Executing: {stmt[:100]}{'...' if len(stmt) > 100 else ''}")
-                    conn.execute(text(stmt))
-                conn.commit()
-            log("[PRE-SQL DONE] Pre-load SQL completed successfully")
+            run_sql_statements("PRE-SQL", pre_sql, dst_is_pg, dst_pg_params, dst_url)
         except Exception as e:
             fail(f"Pre-load SQL failed: {sanitize_error(e)}")
     else:
-        log("[PRE-SQL] No pre-load SQL configured — skipping")
+        log("[PRE-SQL] Skipped (not configured)")
 
-    # ── STEP 1: Fetch from source ─────────────────────────────────────────────
-    log(f"[STEP 1] Reading source data")
-    log(f"  Query: {source_query[:200]}{'...' if len(source_query) > 200 else ''}")
-
-    try:
-        chunks = []
-        with src_engine.connect() as conn:
-            for chunk in pd.read_sql_query(text(source_query), conn, chunksize=chunk_size):
-                chunks.append(chunk)
-                running = sum(len(c) for c in chunks)
-                log(f"  Fetched chunk #{len(chunks)}: {len(chunk)} rows (running total: {running})")
-        src_engine.dispose()
-        df = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
-    except Exception as e:
-        fail(f"Source read failed: {sanitize_error(e)}")
-
-    record_count = len(df)
-    log(f"[STEP 1 DONE] Fetched {record_count} rows, {len(df.columns)} column(s): {list(df.columns)}")
-
-    if record_count == 0:
-        log("Source returned 0 rows — nothing to insert.")
-        # Still run post-SQL if configured
-        if post_sql:
-            log(f"[POST-SQL] Executing post-load SQL (0 rows case)")
-            try:
-                with dst_engine.connect() as conn:
-                    for stmt in [s.strip() for s in post_sql.split(";") if s.strip()]:
-                        conn.execute(text(stmt))
-                    conn.commit()
-                log("[POST-SQL DONE] Post-load SQL completed")
-            except Exception as e:
-                fail(f"Post-load SQL failed: {sanitize_error(e)}")
-        print(json.dumps({"success": True, "recordCount": 0}))
-        sys.exit(0)
-
-    # ── STEP 2: Apply field mappings ──────────────────────────────────────────
-    if field_mappings:
-        log(f"[STEP 2] Applying {len(field_mappings)} field mapping(s)")
-        rename_map    = {}
-        transform_map = {}
-        for m in field_mappings:
-            src_field = m.get("sourceField", "")
-            dst_field = m.get("destField", "")
-            if src_field and dst_field:
-                rename_map[src_field] = dst_field
-                tt = m.get("transformType", "passthrough")
-                if tt and tt != "passthrough":
-                    transform_map[dst_field] = m
-
-        keep_cols = [c for c in rename_map if c in df.columns]
-        missing   = [c for c in rename_map if c not in df.columns]
-        if missing:
-            log(f"  WARNING: source columns not found (skipped): {missing}")
-        df = df[keep_cols].rename(columns=rename_map)
-
-        for col, mapping in transform_map.items():
-            if col not in df.columns:
-                continue
-            t      = mapping.get("transformType", "passthrough")
-            params = mapping.get("transformParams", "") or ""
-            log(f"  Applying transform '{t}' on column '{col}'")
-            if t == "string":
-                df[col] = df[col].astype(str).where(df[col].notna(), None)
-            elif t == "number":
-                df[col] = pd.to_numeric(df[col], errors="coerce")
-            elif t == "boolean":
-                df[col] = df[col].map(
-                    lambda v: str(v).lower() in ("true", "1", "yes", "y") if v is not None else None
-                )
-            elif t == "date-format":
-                df[col] = pd.to_datetime(df[col], errors="coerce")
-                fmt_str = (
-                    params
-                    .replace("YYYY", "%Y").replace("MM", "%m").replace("DD", "%d")
-                    .replace("HH", "%H").replace("mm", "%M").replace("ss", "%S")
-                ) if params else "%Y-%m-%d"
-                df[col] = df[col].dt.strftime(fmt_str)
-
-        log(f"[STEP 2 DONE] {len(df.columns)} output column(s): {list(df.columns)}")
-    else:
-        log("[STEP 2] No field mappings — all source columns passed through")
-
-    # ── STEP 3: INSERT into destination (no DDL) ──────────────────────────────
+    # ── Reflect destination table (get column list) ───────────────────────────
+    log("[REFLECT] Reading destination table structure")
     if "." in dest_target:
-        schema_part, table_part = dest_target.split(".", 1)
+        dst_schema, dst_table_name = dest_target.split(".", 1)
     else:
-        schema_part = None
-        table_part  = dest_target
-
-    log(f"[STEP 3] Inserting {record_count} rows into destination")
-    log(f"  Target: schema={schema_part!r}  table={table_part!r}")
+        dst_schema, dst_table_name = None, dest_target
 
     try:
-        metadata  = MetaData()
-        with dst_engine.connect() as conn:
-            log("  Reflecting destination table structure…")
-            dst_table = Table(table_part, metadata, schema=schema_part, autoload_with=dst_engine)
-            log(f"  Destination columns: {[c.name for c in dst_table.columns]}")
-
-            records  = df.where(df.notna(), other=None).to_dict(orient="records")
-            inserted = 0
-            batch_num = 0
-            for i in range(0, len(records), chunk_size):
-                batch = records[i: i + chunk_size]
-                batch_num += 1
-                conn.execute(dst_table.insert(), batch)
-                inserted += len(batch)
-                log(f"  Batch #{batch_num}: {len(batch)} rows inserted (total: {inserted})")
-
-            conn.commit()
-            log("  Transaction committed.")
-        dst_engine.dispose()
+        from sqlalchemy import create_engine as sa_engine_fn, Table, MetaData
+        reflect_engine = sa_engine_fn(dst_url)
+        metadata       = MetaData()
+        dst_sa_table   = Table(dst_table_name, metadata, schema=dst_schema, autoload_with=reflect_engine)
+        dst_all_cols   = [c.name for c in dst_sa_table.columns]
+        reflect_engine.dispose()
+        log(f"  Destination columns ({len(dst_all_cols)}): {dst_all_cols}")
     except Exception as e:
-        fail(f"Destination write failed: {sanitize_error(e)}")
+        fail(f"Failed to reflect destination table: {sanitize_error(e)}")
 
-    log(f"[STEP 3 DONE] Successfully inserted {record_count} rows into {dest_target}")
+    # ── Open destination connection (reused across all batches) ───────────────
+    log("[DEST] Opening destination connection")
+    dst_conn, dst_cur, dst_sa_engine = None, None, None
+    try:
+        if dst_is_pg:
+            dst_conn = psycopg2.connect(**dst_pg_params)
+            dst_conn.autocommit = False
+            dst_cur  = dst_conn.cursor()
+        else:
+            from sqlalchemy import create_engine as sa_dst_fn
+            dst_sa_engine = sa_dst_fn(dst_url, pool_size=2, max_overflow=0, pool_pre_ping=True)
+    except Exception as e:
+        fail(f"Failed to connect to destination: {sanitize_error(e)}")
 
-    # ── POST-SQL on destination ──────────────────────────────────────────────
-    if post_sql:
-        log(f"[POST-SQL] Executing post-load SQL on destination")
-        log(f"  Commands: {post_sql[:200]}{'...' if len(post_sql) > 200 else ''}")
+    # ── Stream source and write batches ───────────────────────────────────────
+    total_inserted = 0
+    batch_num      = 0
+    new_watermark  = current_wm
+    write_cols     = None  # determined on first batch
+
+    try:
+        if src_is_pg:
+            # ── PostgreSQL source: server-side named cursor for true streaming ──
+            src_pg_params = build_psycopg2_params(src)
+            src_conn = psycopg2.connect(**src_pg_params)
+            src_conn.autocommit = True   # prevent idle transaction wrapping the cursor
+            src_cur  = src_conn.cursor(name="ashika_etl_src")
+            src_cur.arraysize = chunk_size
+            log(f"[SRC] Executing query via server-side cursor (arraysize={chunk_size})")
+            log(f"  Query: {source_query[:200]}{'…' if len(source_query) > 200 else ''}")
+            src_cur.execute(source_query)
+            src_col_names = [desc[0] for desc in src_cur.description]
+            log(f"  Source columns ({len(src_col_names)}): {src_col_names}")
+
+            while True:
+                raw_rows = src_cur.fetchmany(chunk_size)
+                if not raw_rows:
+                    break
+                batch_num += 1
+                row_dicts = [dict(zip(src_col_names, row)) for row in raw_rows]
+
+                if field_mappings:
+                    row_dicts = apply_field_mappings(row_dicts, field_mappings)
+
+                if write_cols is None:
+                    write_cols = [c for c in row_dicts[0].keys() if c in dst_all_cols] if row_dicts else []
+                    if not write_cols:
+                        fail("No matching columns found between source (after mappings) and destination table")
+                    log(f"  Write columns ({len(write_cols)}): {write_cols}")
+
+                if watermark_col:
+                    wm_col_check = watermark_col if watermark_col in (row_dicts[0] if row_dicts else {}) else None
+                    if wm_col_check:
+                        new_watermark = update_watermark(row_dicts, wm_col_check, new_watermark)
+
+                filtered = [{k: v for k, v in r.items() if k in write_cols} for r in row_dicts]
+
+                if dst_is_pg:
+                    write_pg_batch(dst_cur, dest_target, write_cols, filtered, load_type, conflict_col_list, chunk_size)
+                    dst_conn.commit()
+                else:
+                    write_sa_batch(dst_sa_engine, dst_sa_table, filtered)
+
+                total_inserted += len(filtered)
+                log(f"  Batch #{batch_num}: {len(filtered):,} rows written (running total: {total_inserted:,})")
+
+                if pipeline_id and new_watermark:
+                    save_watermark(pipeline_id, new_watermark)
+
+            src_cur.close()
+            src_conn.close()
+            log(f"[SRC] Source cursor closed")
+
+        else:
+            # ── Non-PostgreSQL source: chunked SQLAlchemy reads ────────────────
+            from sqlalchemy import create_engine as sa_src_fn, text as sa_text
+            src_sa_engine = sa_src_fn(build_sqlalchemy_url(src), pool_pre_ping=True)
+            log(f"[SRC] Streaming via SQLAlchemy chunks (chunk_size={chunk_size})")
+            log(f"  Query: {source_query[:200]}{'…' if len(source_query) > 200 else ''}")
+
+            with src_sa_engine.connect() as src_sa_conn:
+                for chunk_df in pd.read_sql_query(sa_text(source_query), src_sa_conn, chunksize=chunk_size):
+                    batch_num += 1
+                    row_dicts = chunk_df.where(chunk_df.notna(), other=None).to_dict(orient="records")
+
+                    if field_mappings:
+                        row_dicts = apply_field_mappings(row_dicts, field_mappings)
+
+                    if write_cols is None:
+                        write_cols = [c for c in row_dicts[0].keys() if c in dst_all_cols] if row_dicts else []
+                        if not write_cols:
+                            fail("No matching columns found between source (after mappings) and destination table")
+                        log(f"  Write columns ({len(write_cols)}): {write_cols}")
+
+                    if watermark_col and row_dicts and watermark_col in row_dicts[0]:
+                        new_watermark = update_watermark(row_dicts, watermark_col, new_watermark)
+
+                    filtered = [{k: v for k, v in r.items() if k in write_cols} for r in row_dicts]
+
+                    if dst_is_pg:
+                        write_pg_batch(dst_cur, dest_target, write_cols, filtered, load_type, conflict_col_list, chunk_size)
+                        dst_conn.commit()
+                    else:
+                        write_sa_batch(dst_sa_engine, dst_sa_table, filtered)
+
+                    total_inserted += len(filtered)
+                    log(f"  Batch #{batch_num}: {len(filtered):,} rows written (running total: {total_inserted:,})")
+
+                    if pipeline_id and new_watermark:
+                        save_watermark(pipeline_id, new_watermark)
+
+            src_sa_engine.dispose()
+
+    except SystemExit:
+        raise
+    except Exception as e:
+        fail(f"ETL failed at batch #{batch_num + 1}: {sanitize_error(e)}")
+    finally:
         try:
-            with dst_engine.connect() as conn:
-                for stmt in [s.strip() for s in post_sql.split(";") if s.strip()]:
-                    log(f"  Executing: {stmt[:100]}{'...' if len(stmt) > 100 else ''}")
-                    conn.execute(text(stmt))
-                conn.commit()
-            log("[POST-SQL DONE] Post-load SQL completed successfully")
+            if dst_cur:  dst_cur.close()
+            if dst_conn: dst_conn.close()
+            if dst_sa_engine: dst_sa_engine.dispose()
+        except Exception:
+            pass
+
+    log(f"[DONE] {total_inserted:,} rows transferred in {batch_num} batch(es)")
+
+    if total_inserted == 0:
+        log("  Source returned 0 rows — nothing inserted.")
+
+    # ── POST-SQL ──────────────────────────────────────────────────────────────
+    if post_sql:
+        try:
+            run_sql_statements("POST-SQL", post_sql, dst_is_pg, dst_pg_params, dst_url)
         except Exception as e:
             fail(f"Post-load SQL failed: {sanitize_error(e)}")
     else:
-        log("[POST-SQL] No post-load SQL configured — skipping")
+        log("[POST-SQL] Skipped (not configured)")
 
     log("Worker completed successfully.")
-    print(json.dumps({"success": True, "recordCount": record_count}))
+    result: dict = {"success": True, "recordCount": total_inserted}
+    if new_watermark and new_watermark != current_wm:
+        result["newWatermark"] = new_watermark
+    print(json.dumps(result))
 
 
 if __name__ == "__main__":

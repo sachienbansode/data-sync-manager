@@ -64,6 +64,7 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     sourceConnectionId, destConnectionId,
     sourceTable, sourceQuery, destTarget, status, scheduleEnabled, scheduleCron,
     notifyOnSuccess, notifyOnFailure, loadType, preSqlCommand, postSqlCommand,
+    conflictColumns, watermarkColumn,
   } = req.body as {
     name: string; description?: string;
     sourceObjectId?: number | null; destObjectId?: number | null;
@@ -73,6 +74,7 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     notifyOnSuccess?: string; notifyOnFailure?: string;
     loadType?: "full_load" | "incremental";
     preSqlCommand?: string; postSqlCommand?: string;
+    conflictColumns?: string; watermarkColumn?: string;
   };
 
   if (!name) { res.status(400).json({ error: "name is required" }); return; }
@@ -99,6 +101,8 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     loadType: loadType ?? "full_load",
     preSqlCommand: preSqlCommand?.trim() || null,
     postSqlCommand: postSqlCommand?.trim() || null,
+    conflictColumns: conflictColumns?.trim() || null,
+    watermarkColumn: watermarkColumn?.trim() || null,
     createdBy: req.user!.sub,
   }).returning();
 
@@ -140,6 +144,8 @@ router.put("/admin/pipelines/:id", authenticate, requireRole("Admin"), async (re
   if (body.loadType !== undefined) updates.loadType = body.loadType as "full_load" | "incremental";
   if (body.preSqlCommand !== undefined) updates.preSqlCommand = (body.preSqlCommand as string)?.trim() || null;
   if (body.postSqlCommand !== undefined) updates.postSqlCommand = (body.postSqlCommand as string)?.trim() || null;
+  if (body.conflictColumns !== undefined) updates.conflictColumns = (body.conflictColumns as string)?.trim() || null;
+  if (body.watermarkColumn !== undefined) updates.watermarkColumn = (body.watermarkColumn as string)?.trim() || null;
 
   const [updated] = await db.update(dataPipelinesTable).set(updates).where(eq(dataPipelinesTable.id, id)).returning();
 

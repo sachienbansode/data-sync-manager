@@ -156,6 +156,12 @@ export const dataPipelinesTable = pgTable("data_pipelines", {
   preSqlCommand: text("pre_sql_command"),
   /** SQL commands to run on destination after the main data transfer (e.g. ANALYZE, UPDATE flags) */
   postSqlCommand: text("post_sql_command"),
+  /** Comma-separated destination column names used as the unique key for ON CONFLICT upserts (incremental only) */
+  conflictColumns: text("conflict_columns"),
+  /** Source/destination column to use as a high-watermark for incremental tracking (e.g. updated_at, id) */
+  watermarkColumn: text("watermark_column"),
+  /** Last committed watermark value — updated after each successful pipeline run */
+  lastWatermarkValue: text("last_watermark_value"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

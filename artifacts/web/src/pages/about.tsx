@@ -1,4 +1,3 @@
-import { useRef } from "react";
 import { useAppSettings, getLogoUrl } from "@/lib/use-app-settings";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -100,7 +99,6 @@ const BADGE_COLORS: Record<string, string> = {
 export default function About() {
   const { data: appCfg } = useAppSettings();
   const logoUrl = appCfg?.hasLogo ? getLogoUrl() : null;
-  const printRef = useRef<HTMLDivElement>(null);
 
   const handlePrint = () => window.print();
 
@@ -108,13 +106,43 @@ export default function About() {
     <>
       <style>{`
         @media print {
+          /* Remove URL / date / page number from browser margin areas */
+          @page {
+            size: A4 landscape;
+            margin: 0;
+          }
+          /* Hide everything except the printable content */
           body * { visibility: hidden; }
           #about-printable, #about-printable * { visibility: visible; }
-          #about-printable { position: absolute; left: 0; top: 0; width: 100%; }
+          /* Full-page positioned block with its own padding instead of @page margins */
+          #about-printable {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            padding: 14mm 16mm;
+            box-sizing: border-box;
+            background: white;
+            color: black;
+            overflow: visible;
+          }
           .no-print { display: none !important; }
+          /* Reset card/background styles for clean B&W print */
+          #about-printable .print-card {
+            border: 1px solid #d1d5db !important;
+            background: white !important;
+            break-inside: avoid;
+          }
+          #about-printable h1 { font-size: 22pt; }
+          #about-printable h2 { font-size: 14pt; }
+          #about-printable p  { font-size: 9pt; }
+          #about-printable .feature-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, 1fr) !important;
+            gap: 6pt !important;
+          }
         }
       `}</style>
-      <div id="about-printable" ref={printRef} className="space-y-10 animate-in fade-in duration-500">
+      <div id="about-printable" className="space-y-10 animate-in fade-in duration-500">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
@@ -137,7 +165,7 @@ export default function About() {
         </div>
 
         {/* Mission statement */}
-        <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+        <Card className="print-card bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
           <CardContent className="pt-6">
             <p className="text-base leading-relaxed text-foreground/80 max-w-4xl">
               <strong>{appCfg?.appName ?? "Ashika Platform"}</strong> is a comprehensive enterprise platform built for
@@ -151,13 +179,13 @@ export default function About() {
         {/* Features */}
         <div>
           <h2 className="text-2xl font-bold tracking-tight mb-2">Key Features</h2>
-          <p className="text-muted-foreground mb-6">A complete suite of enterprise-grade capabilities.</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <p className="text-muted-foreground mb-6 no-print">A complete suite of enterprise-grade capabilities.</p>
+          <div className="feature-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {FEATURES.map((feature) => {
               const Icon = feature.icon;
               const badgeClass = BADGE_COLORS[feature.badge] ?? "bg-muted text-muted-foreground";
               return (
-                <Card key={feature.title} className="hover:shadow-md transition-shadow">
+                <Card key={feature.title} className="print-card hover:shadow-md transition-shadow">
                   <CardContent className="pt-5">
                     <div className="flex items-start gap-3 mb-3">
                       <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">

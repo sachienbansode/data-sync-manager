@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 
 type UserProfile = {
@@ -19,10 +20,6 @@ type UserProfile = {
 // They are short-lived (15 min) and kept only in memory. On every page reload
 // we always exchange the stored refresh token for a fresh access token, so an
 // expired in-memory token can never block session restoration.
-// NOTE on XSS risk: tokens are in JS memory (not httpOnly cookies). This is an
-// acknowledged tradeoff for a same-origin SPA. Mitigations: 15-min access token
-// TTL, strict CSP, no eval/innerHTML in codebase. Future hardening: move to
-// httpOnly SameSite=Strict cookies (requires CORS rework).
 let _accessToken: string | null = null;
 
 export const setAccessToken = (token: string | null): void => {
@@ -31,8 +28,7 @@ export const setAccessToken = (token: string | null): void => {
 
 export const getAccessToken = (): string | null => _accessToken;
 
-// Refresh token is persisted in sessionStorage (survives F5 in same tab, cleared
-// when the browser session ends).
+// Refresh token persisted in sessionStorage (survives F5 in same tab, cleared on browser close).
 const REFRESH_TOKEN_KEY = "ashika_rt";
 
 export const setRefreshToken = (token: string | null): void => {
@@ -47,8 +43,6 @@ export const getRefreshToken = (): string | null =>
   sessionStorage.getItem(REFRESH_TOKEN_KEY);
 
 // Silent refresh: called by the API client on any 401 received during active use.
-// Exchanges the stored refresh token for a fresh pair and updates in-memory state.
-// Returns the new access token on success, null on failure.
 export async function silentRefresh(): Promise<string | null> {
   const rt = getRefreshToken();
   if (!rt) return null;
@@ -74,8 +68,7 @@ export async function silentRefresh(): Promise<string | null> {
   }
 }
 
-// Bootstrap: always called on mount. Exchanges the stored refresh token for a
-// fresh access token so an expired in-memory token never blocks session restore.
+// Bootstrap: always called on mount. Exchanges stored refresh token for a fresh access token.
 async function bootstrapSession(): Promise<boolean> {
   const rt = getRefreshToken();
   if (!rt) return false;
@@ -115,14 +108,10 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [ready, setReady] = useState(false);
-  // hasToken is set to true only AFTER a successful bootstrap or login.
-  // This prevents useGetMe from firing with a stale or absent token.
   const [hasToken, setHasToken] = useState(false);
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
-  // On mount: always bootstrap from stored refresh token (even if an old
-  // access token might have been in memory — it is not persisted, so memory
-  // is clean after a page reload).
   useEffect(() => {
     bootstrapSession().then((ok) => {
       setHasToken(ok);
@@ -145,7 +134,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data) {
       setUser(data as UserProfile);
     } else if (isError) {
-      // /me failed (e.g. access token issued with wrong secret). Clear everything.
       setUser(null);
       setAccessToken(null);
       setRefreshToken(null);
@@ -158,6 +146,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(accessToken);
     setRefreshToken(refreshToken);
     setUser(userData);
+    // Clear any stale /me cache from a previous user so the query re-fetches
+    // with the new token instead of returning the old session's data.
+    queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
     setHasToken(true);
     setReady(true);
   };
@@ -177,6 +168,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setHasToken(false);
     setReady(true);
+    // Clear /me cache so the next login always fetches fresh data
+    queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
     setLocation("/login");
   };
 

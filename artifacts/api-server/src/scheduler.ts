@@ -252,6 +252,7 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
     .orderBy(asc(pipelineFieldMappingsTable.sortOrder));
 
   const workerConfig = {
+    pipelineId: pipelineId,
     source: { engine: srcConn.dbEngine, host: srcConn.host, port: srcConn.port, database: srcConn.dbName, username: srcUser, password: srcPass },
     dest:   { engine: dstConn.dbEngine, host: dstConn.host, port: dstConn.port, database: dstConn.dbName, username: dstUser, password: dstPass },
     sourceQuery,
@@ -263,8 +264,12 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
       transformParams: m.transformParams,
     })),
     chunkSize: 5000,
-    preSqlCommand:  pipeline.preSqlCommand?.trim()  || null,
-    postSqlCommand: pipeline.postSqlCommand?.trim() || null,
+    loadType:         pipeline.loadType         ?? "full_load",
+    preSqlCommand:    pipeline.preSqlCommand?.trim()    || null,
+    postSqlCommand:   pipeline.postSqlCommand?.trim()   || null,
+    conflictColumns:  pipeline.conflictColumns?.trim()  || null,
+    watermarkColumn:  pipeline.watermarkColumn?.trim()  || null,
+    currentWatermark: pipeline.lastWatermarkValue?.trim() || null,
   };
 
   const workerPath = getWorkerPath();
@@ -295,11 +300,16 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
           finishedAt: new Date(),
         }).where(eq(dataJobsTable.id, job.id));
 
-        await db.update(dataPipelinesTable).set({
+        // Update pipeline stats; persist new watermark if worker returned one
+        const pipelineUpdates: Record<string, unknown> = {
           scheduleConsecutiveFailures: 0,
           scheduleLastRunAt: new Date(),
           updatedAt: new Date(),
-        }).where(eq(dataPipelinesTable.id, pipelineId));
+        };
+        if (result.newWatermark) {
+          pipelineUpdates.lastWatermarkValue = String(result.newWatermark);
+        }
+        await db.update(dataPipelinesTable).set(pipelineUpdates).where(eq(dataPipelinesTable.id, pipelineId));
 
         await db.insert(auditLogsTable).values({
           action: "PIPELINE_RUN_COMPLETED",

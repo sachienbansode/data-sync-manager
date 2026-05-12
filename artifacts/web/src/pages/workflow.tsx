@@ -42,6 +42,9 @@ interface Pipeline {
   loadType: string | null;
   preSqlCommand: string | null;
   postSqlCommand: string | null;
+  conflictColumns: string | null;
+  watermarkColumn: string | null;
+  lastWatermarkValue: string | null;
   createdAt: string;
 }
 
@@ -111,6 +114,8 @@ const EMPTY_FORM = {
   loadType: "full_load" as LoadType,
   preSqlCommand: "",
   postSqlCommand: "",
+  conflictColumns: "",
+  watermarkColumn: "",
   scheduleEnabled: false, scheduleCron: "",
   notifyOnSuccess: "",
   notifyOnFailure: "",
@@ -180,6 +185,8 @@ export default function Workflow() {
       loadType: (p.loadType as LoadType) ?? "full_load",
       preSqlCommand: p.preSqlCommand ?? "",
       postSqlCommand: p.postSqlCommand ?? "",
+      conflictColumns: p.conflictColumns ?? "",
+      watermarkColumn: p.watermarkColumn ?? "",
       scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
       notifyOnSuccess: p.notifyOnSuccess ?? "",
       notifyOnFailure: p.notifyOnFailure ?? "",
@@ -211,6 +218,8 @@ export default function Workflow() {
         loadType: form.loadType,
         preSqlCommand: form.preSqlCommand.trim() || undefined,
         postSqlCommand: form.postSqlCommand.trim() || undefined,
+        conflictColumns: form.conflictColumns.trim() || undefined,
+        watermarkColumn: form.watermarkColumn.trim() || undefined,
         scheduleEnabled: form.scheduleEnabled,
         scheduleCron: form.scheduleCron.trim() || undefined,
         notifyOnSuccess: form.notifyOnSuccess.trim() || undefined,
@@ -659,6 +668,31 @@ export default function Workflow() {
                   rows={3}
                 />
               </div>
+
+              {form.loadType === "incremental" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div className="space-y-1">
+                    <Label>Conflict Columns <span className="text-xs text-muted-foreground font-normal">(upsert key)</span></Label>
+                    <Input
+                      value={form.conflictColumns}
+                      onChange={e => setForm(f => ({ ...f, conflictColumns: e.target.value }))}
+                      placeholder="id  or  user_id, date"
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">Comma-separated destination column(s) used for ON CONFLICT DO UPDATE. Leave empty to plain-append.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Watermark Column <span className="text-xs text-muted-foreground font-normal">(incremental tracking)</span></Label>
+                    <Input
+                      value={form.watermarkColumn}
+                      onChange={e => setForm(f => ({ ...f, watermarkColumn: e.target.value }))}
+                      placeholder="updated_at  or  id"
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">Column used to track the last loaded value. Max value is saved after each run.</p>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* NOTIFICATIONS */}

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import pg from "pg";
+import net from "net";
 import { db, dbConnectionsTable, auditLogsTable, dataJobsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
@@ -296,12 +297,39 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     return;
   }
 
+  const host = conn.host ?? "";
+  const port = conn.port ?? 5432;
   const savedSSL = conn.extraParams?.ssl === "true";
 
+  // Step 1: raw TCP check — tells us definitively if the port is reachable
+  const tcpReachable = await new Promise<boolean>(resolve => {
+    const socket = new net.Socket();
+    const done = (ok: boolean) => { socket.destroy(); resolve(ok); };
+    socket.setTimeout(6000);
+    socket.once("connect", () => done(true));
+    socket.once("error",   () => done(false));
+    socket.once("timeout", () => done(false));
+    socket.connect(port, host);
+  });
+
+  if (!tcpReachable) {
+    const err = `TCP connection to ${host}:${port} failed — the port is not reachable from this server. Ensure your database firewall/security-group allows inbound connections on port ${port} from all IPs (0.0.0.0/0) or from Replit's outbound range.`;
+    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: false, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.sub, userEmail: req.user!.email,
+      action: "DB_CONNECTION_TESTED",
+      details: `Tested connection: ${conn.name} — FAILED (TCP unreachable): ${err}`,
+      resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
+    });
+    res.status(400).json({ success: false, error: err });
+    return;
+  }
+
+  // Step 2: Postgres protocol — try plain then SSL (or SSL then plain)
   async function tryConnect(withSSL: boolean): Promise<{ ok: boolean; err: string | null }> {
     const p = new Pool({
-      host: conn.host ?? undefined,
-      port: conn.port ?? undefined,
+      host,
+      port,
       database: conn.dbName ?? undefined,
       user: username,
       password,
@@ -319,14 +347,12 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     }
   }
 
-  // First attempt with saved SSL preference
   let result = await tryConnect(savedSSL);
 
-  // Auto-retry with opposite SSL setting if it failed — catches misconfigured SSL flag
+  // Auto-retry with opposite SSL mode — TCP is fine so it's worth trying
   if (!result.ok) {
     const retry = await tryConnect(!savedSSL);
     if (retry.ok) {
-      // Save the correct SSL setting so future tests/queries work
       const newParams = { ...(conn.extraParams ?? {}), ssl: String(!savedSSL) };
       await db.update(dbConnectionsTable).set({ extraParams: newParams, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
       result = retry;
@@ -337,13 +363,12 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   let error: string | null = null;
   if (!result.ok) {
     const raw = result.err ?? "Connection failed";
-    const isTimeout = raw.toLowerCase().includes("timeout") || raw.toLowerCase().includes("timed out") || raw.toLowerCase().includes("terminated");
-    const isRefused = raw.toLowerCase().includes("refused") || raw.toLowerCase().includes("econnrefused");
-    const isAuth = raw.toLowerCase().includes("password") || raw.toLowerCase().includes("authentication");
-    if (isTimeout || isRefused) {
-      error = `${raw}. Hint: the server could not be reached — ensure the database host (${conn.host}:${conn.port}) allows inbound connections from external IPs. If it is on a private network or behind a firewall, open port ${conn.port ?? 5432} for Replit's outbound addresses.`;
-    } else if (isAuth) {
-      error = `${raw}. Hint: check the username and password are correct.`;
+    const isAuth = /password|authentication|role.*does not exist|pg_hba/i.test(raw);
+    const isSSL  = /ssl|tls|certificate/i.test(raw);
+    if (isAuth) {
+      error = `${raw} — check the username and password are correct.`;
+    } else if (isSSL) {
+      error = `${raw} — try toggling the SSL/TLS option on this connection.`;
     } else {
       error = raw;
     }

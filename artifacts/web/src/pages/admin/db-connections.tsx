@@ -7,11 +7,25 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer, AlertTriangle } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer, AlertTriangle, History } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import cronstrue from "cronstrue";
 import { CronExpressionParser } from "cron-parser";
+
+interface DataJob {
+  id: number;
+  type: string;
+  status: "pending" | "running" | "success" | "failed";
+  triggeredBySchedule: boolean;
+  connectionId: number | null;
+  connectionName: string | null;
+  recordCount: number | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
 
 interface DbConnection {
   id: number;
@@ -131,6 +145,9 @@ export default function DbConnections() {
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [togglingSchedule, setTogglingSchedule] = useState<number | null>(null);
   const [cronPreset, setCronPreset] = useState<string>("");
+  const [historyConnection, setHistoryConnection] = useState<DbConnection | null>(null);
+  const [historyJobs, setHistoryJobs] = useState<DataJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -265,6 +282,24 @@ export default function DbConnections() {
     }
   }
 
+  async function openHistory(c: DbConnection) {
+    setHistoryConnection(c);
+    setHistoryJobs([]);
+    setHistoryLoading(true);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${apiBase}/admin/db-connections/${c.id}/jobs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to load job history");
+      setHistoryJobs(await res.json());
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load job history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   function handleCronPresetChange(value: string) {
     setCronPreset(value);
     if (value && value !== "custom") {
@@ -360,6 +395,12 @@ export default function DbConnections() {
                             />
                           )}
                         </div>
+                      )}
+                      {c.type === "backoffice" && (
+                        <Button variant="outline" size="sm" onClick={() => openHistory(c)} title="View scheduled run history">
+                          <History className="h-4 w-4" />
+                          <span className="ml-1 hidden sm:inline">History</span>
+                        </Button>
                       )}
                       <Button variant="outline" size="sm" onClick={() => testConnection(c.id)} disabled={testing === c.id}>
                         {testing === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
@@ -519,6 +560,92 @@ export default function DbConnections() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="destructive" onClick={deleteConnection}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!historyConnection} onOpenChange={(open) => { if (!open) setHistoryConnection(null); }}>
+        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Scheduled Run History
+            </DialogTitle>
+            <DialogDescription>
+              {historyConnection?.name} — last 50 scheduled runs
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto min-h-0">
+            {historyLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : historyJobs.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <History className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p>No scheduled runs recorded yet.</p>
+                <p className="text-xs mt-1">Runs will appear here once the schedule fires at least once.</p>
+              </div>
+            ) : (
+              <div className="divide-y text-sm">
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-1 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                  <span>Started</span>
+                  <span className="text-right">Status</span>
+                  <span className="text-right">Rows</span>
+                  <span className="text-right">Duration</span>
+                </div>
+                {historyJobs.map((job) => {
+                  const durationMs = job.startedAt && job.finishedAt
+                    ? new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime()
+                    : null;
+                  const durationStr = durationMs !== null
+                    ? durationMs >= 60000
+                      ? `${Math.floor(durationMs / 60000)}m ${Math.round((durationMs % 60000) / 1000)}s`
+                      : `${(durationMs / 1000).toFixed(1)}s`
+                    : "—";
+                  return (
+                    <div key={job.id} className="py-3 px-1 space-y-1">
+                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center">
+                        <span className="text-muted-foreground font-mono text-xs">
+                          {job.startedAt ? formatDate(job.startedAt) : formatDate(job.createdAt)}
+                        </span>
+                        <span>
+                          {job.status === "success" && (
+                            <span className="flex items-center gap-1 text-green-600 font-medium">
+                              <CheckCircle className="h-3.5 w-3.5" /> Success
+                            </span>
+                          )}
+                          {job.status === "failed" && (
+                            <span className="flex items-center gap-1 text-destructive font-medium">
+                              <XCircle className="h-3.5 w-3.5" /> Failed
+                            </span>
+                          )}
+                          {(job.status === "pending" || job.status === "running") && (
+                            <span className="flex items-center gap-1 text-blue-600 font-medium">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> {job.status === "running" ? "Running" : "Pending"}
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-right font-mono text-xs text-muted-foreground">
+                          {job.recordCount !== null ? job.recordCount.toLocaleString() : "—"}
+                        </span>
+                        <span className="text-right font-mono text-xs text-muted-foreground">
+                          {durationStr}
+                        </span>
+                      </div>
+                      {job.errorMessage && (
+                        <p className="text-xs text-destructive bg-destructive/5 rounded px-2 py-1 font-mono break-all">
+                          {job.errorMessage}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="pt-2 border-t">
+            <Button variant="outline" onClick={() => setHistoryConnection(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

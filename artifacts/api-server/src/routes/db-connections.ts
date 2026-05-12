@@ -1,8 +1,8 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import pg from "pg";
 import cron from "node-cron";
-import { db, dbConnectionsTable, auditLogsTable } from "@workspace/db";
+import { db, dbConnectionsTable, auditLogsTable, dataJobsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
 import { registerSchedule, cancelSchedule } from "../scheduler";
@@ -246,6 +246,22 @@ router.delete("/admin/db-connections/:id", authenticate, requireRole("Admin"), a
   });
 
   res.status(204).send();
+});
+
+// GET /api/admin/db-connections/:id/jobs — last 50 scheduled runs for this connection
+router.get("/admin/db-connections/:id/jobs", authenticate, requireRole("Admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
+  if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
+
+  const jobs = await db
+    .select()
+    .from(dataJobsTable)
+    .where(and(eq(dataJobsTable.connectionId, id), eq(dataJobsTable.triggeredBySchedule, true)))
+    .orderBy(desc(dataJobsTable.createdAt))
+    .limit(50);
+
+  res.json(jobs);
 });
 
 // POST /api/admin/db-connections/:id/test

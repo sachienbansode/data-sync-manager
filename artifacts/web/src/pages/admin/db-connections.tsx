@@ -562,12 +562,30 @@ export default function DbConnections() {
             )}
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={save} disabled={saving}>
-              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editId ? "Update" : "Create"}
-            </Button>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <div className="flex gap-2 flex-1">
+              {editId && !meta.isFile && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => testConnection(editId)}
+                  disabled={testing === editId}
+                  className="gap-1.5"
+                >
+                  {testing === editId
+                    ? <Loader2 className="h-4 w-4 animate-spin" />
+                    : <Wifi className="h-4 w-4" />}
+                  Test Connection
+                </Button>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button onClick={save} disabled={saving}>
+                {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                {editId ? "Update" : "Create"}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

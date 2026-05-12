@@ -33,9 +33,19 @@ const otpEmailSchema = z.object({
 type LoginMode = "password" | "emailotp";
 type Step = "login" | "mfa" | "emailotp-send" | "emailotp-verify";
 
+const M365_ERRORS: Record<string, string> = {
+  m365_not_configured: "Microsoft 365 SSO is not configured.",
+  m365_failed: "Microsoft 365 sign-in failed. Please try again.",
+  m365_state_invalid: "SSO session expired. Please try again.",
+  account_disabled: "Your account is disabled. Contact an administrator.",
+};
+
 export default function Login() {
   const [, setLocation] = useLocation();
   const { login } = useAuth();
+
+  const urlError = new URLSearchParams(window.location.search).get("error");
+  const m365ErrorMessage = urlError ? (M365_ERRORS[urlError] ?? `Sign-in error: ${urlError}`) : null;
 
   const [mode, setMode] = useState<LoginMode>("password");
   const [step, setStep] = useState<Step>("login");
@@ -323,12 +333,17 @@ export default function Login() {
                     <span className="bg-card px-2 text-muted-foreground">Or continue with</span>
                   </div>
                 </div>
+                {m365ErrorMessage && (
+                  <div className="mt-4 text-sm text-muted-foreground bg-muted/50 border border-border rounded-md px-3 py-2 text-center">
+                    {m365ErrorMessage}
+                  </div>
+                )}
                 <Button
                   data-testid="button-m365"
                   variant="outline"
                   type="button"
-                  className="w-full mt-6 bg-transparent"
-                  onClick={() => { window.location.href = "/api/auth/m365"; }}
+                  className="w-full mt-4 bg-transparent"
+                  onClick={() => { window.location.href = `${import.meta.env.BASE_URL}api/auth/m365`; }}
                 >
                   <svg className="mr-2 h-4 w-4" viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg">
                     <rect x="1" y="1" width="9" height="9" fill="#f25022" />

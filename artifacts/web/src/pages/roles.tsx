@@ -29,7 +29,7 @@ import {
 import {
   Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
-import { Shield, ShieldAlert, Users, Save, Plus, Pencil, Trash2, Lock, Loader2, CheckSquare, Square } from "lucide-react";
+import { Shield, ShieldAlert, Users, Save, Plus, Pencil, Trash2, Lock, Loader2, CheckSquare, Square, Search } from "lucide-react";
 import { toast } from "sonner";
 
 const BASE = import.meta.env.BASE_URL;
@@ -68,6 +68,24 @@ function useAllPages() {
   });
 }
 
+const PAGE_GROUPS: Record<string, string[]> = {
+  "Core":        ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
+  "Data":        ["/pii-records", "/workflow", "/workflow/jobs", "/admin/db-connections", "/admin/field-mappings"],
+  "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/pii-permissions"],
+  "Other":       ["/docs"],
+};
+function groupPages(pages: PageItem[]): Array<{ group: string; pages: PageItem[] }> {
+  const result: Array<{ group: string; pages: PageItem[] }> = [];
+  for (const [group, paths] of Object.entries(PAGE_GROUPS)) {
+    const matched = paths.flatMap(p => pages.filter(pg => pg.path === p));
+    if (matched.length > 0) result.push({ group, pages: matched });
+  }
+  const allGrouped = Object.values(PAGE_GROUPS).flat();
+  const ungrouped = pages.filter(p => !allGrouped.includes(p.path));
+  if (ungrouped.length > 0) result.push({ group: "Other", pages: ungrouped });
+  return result;
+}
+
 function RoleDialog({
   open, onOpenChange, existing, onSaved,
 }: {
@@ -76,6 +94,7 @@ function RoleDialog({
 }) {
   const { data: allPages = [] } = useAllPages();
   const [pageAccess, setPageAccess] = useState<Record<string, boolean>>({});
+  const [pageSearch, setPageSearch] = useState("");
 
   const form = useForm<RoleForm>({
     resolver: zodResolver(roleFormSchema),
@@ -87,6 +106,11 @@ function RoleDialog({
   const togglePage = (path: string, val: boolean) => setPageAccess(prev => ({ ...prev, [path]: val }));
   const selectAll = () => { const all: Record<string, boolean> = {}; allPages.forEach(p => { all[p.path] = true; }); setPageAccess(all); };
   const selectNone = () => { const none: Record<string, boolean> = {}; allPages.forEach(p => { none[p.path] = false; }); setPageAccess(none); };
+
+  const filteredPages = pageSearch.trim()
+    ? allPages.filter(p => p.name.toLowerCase().includes(pageSearch.toLowerCase()) || p.path.toLowerCase().includes(pageSearch.toLowerCase()))
+    : allPages;
+  const groupedPages = groupPages(filteredPages);
 
   const mutation = useMutation({
     mutationFn: async (data: RoleForm) => {
@@ -180,23 +204,41 @@ function RoleDialog({
                     </Button>
                   </div>
                 </div>
-                <div className="max-h-52 overflow-y-auto space-y-1 rounded-md border p-2">
-                  {allPages.map(page => {
-                    const checked = pageAccess[page.path] ?? false;
-                    return (
-                      <div key={page.path} className={`flex items-center justify-between px-2 py-1.5 rounded transition-colors ${checked ? "bg-primary/5" : ""}`}>
-                        <div>
-                          <p className="text-sm font-medium">{page.name}</p>
-                          <p className="text-[10px] text-muted-foreground font-mono">{page.path}</p>
-                        </div>
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => togglePage(page.path, !!v)}
-                          className="h-4 w-4"
-                        />
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search pages…"
+                    value={pageSearch}
+                    onChange={e => setPageSearch(e.target.value)}
+                    className="pl-8 h-8 text-sm"
+                  />
+                </div>
+                <div className="max-h-52 overflow-y-auto rounded-md border p-2 space-y-3">
+                  {groupedPages.length === 0 ? (
+                    <p className="text-xs text-muted-foreground text-center py-2">No pages match.</p>
+                  ) : groupedPages.map(({ group, pages }) => (
+                    <div key={group}>
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground px-1 mb-1">{group}</p>
+                      <div className="space-y-0.5">
+                        {pages.map(page => {
+                          const checked = pageAccess[page.path] ?? false;
+                          return (
+                            <div key={page.path} className={`flex items-center justify-between px-2 py-1.5 rounded transition-colors ${checked ? "bg-primary/5" : ""}`}>
+                              <div>
+                                <p className="text-sm font-medium">{page.name}</p>
+                                <p className="text-[10px] text-muted-foreground font-mono">{page.path}</p>
+                              </div>
+                              <Checkbox
+                                checked={checked}
+                                onCheckedChange={(v) => togglePage(page.path, !!v)}
+                                className="h-4 w-4"
+                              />
+                            </div>
+                          );
+                        })}
                       </div>
-                    );
-                  })}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

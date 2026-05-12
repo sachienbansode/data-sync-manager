@@ -146,7 +146,7 @@ export const listUsersQueryPageSizeDefault = 20;
 export const ListUsersQueryParams = zod.object({
   search: zod.coerce.string().optional(),
   roleId: zod.coerce.number().nullish(),
-  isActive: zod.coerce.boolean().nullish(),
+  isActive: zod.preprocess(v => (v === "true" ? true : v === "false" ? false : v), zod.boolean().nullish()),
   page: zod.coerce.number().default(listUsersQueryPageDefault),
   pageSize: zod.coerce.number().default(listUsersQueryPageSizeDefault),
 });

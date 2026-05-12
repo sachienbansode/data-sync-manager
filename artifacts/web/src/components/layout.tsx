@@ -228,11 +228,12 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
       <div className="p-4 mt-auto border-t border-border shrink-0">
         <div className="flex items-center mb-3 px-2">
           <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm mr-3 shrink-0">
-            {user?.firstName?.[0]}{user?.lastName?.[0]}
+            {(user?.firstName?.[0] ?? user?.email?.[0] ?? "?").toUpperCase()}
           </div>
           <div className="overflow-hidden">
             <p className="text-sm font-medium text-sidebar-foreground truncate">{user?.firstName} {user?.lastName}</p>
-            <p className="text-xs text-muted-foreground truncate">{user?.roleName}</p>
+            <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+            <p className="text-xs text-muted-foreground/70 truncate">{user?.roleName}</p>
           </div>
         </div>
         <div className="space-y-0.5">

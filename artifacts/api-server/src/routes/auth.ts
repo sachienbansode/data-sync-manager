@@ -416,7 +416,8 @@ router.get("/auth/m365", async (req, res): Promise<void> => {
   const redirectUri = process.env.AZURE_REDIRECT_URI;
 
   if (!clientId || !redirectUri) {
-    res.status(503).json({ error: "Microsoft 365 SSO is not configured" });
+    const frontendBase = process.env.FRONTEND_URL ?? "";
+    res.redirect(`${frontendBase}/login?error=m365_not_configured`);
     return;
   }
 

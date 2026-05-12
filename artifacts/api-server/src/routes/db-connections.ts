@@ -129,7 +129,10 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
     return;
   }
 
-  loadEncryptionKey();
+  try { loadEncryptionKey(); } catch (e) {
+    res.status(503).json({ error: "Encryption key not configured. Set PII_ENCRYPTION_KEY in Secrets and restart." });
+    return;
+  }
   const [row] = await db.insert(dbConnectionsTable).values({
     name,
     type,
@@ -171,7 +174,10 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
   const [existing] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Connection not found" }); return; }
 
-  loadEncryptionKey();
+  try { loadEncryptionKey(); } catch (e) {
+    res.status(503).json({ error: "Encryption key not configured. Set PII_ENCRYPTION_KEY in Secrets and restart." });
+    return;
+  }
   const updates: Partial<typeof dbConnectionsTable.$inferInsert> = { updatedAt: new Date() };
   if (name) updates.name = name;
   if (type) updates.type = type;

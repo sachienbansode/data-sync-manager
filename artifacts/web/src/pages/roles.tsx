@@ -70,8 +70,8 @@ function useAllPages() {
 
 const PAGE_GROUPS: Record<string, string[]> = {
   "Core":        ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
-  "Data":        ["/workflow", "/workflow/jobs", "/admin/db-connections", "/admin/data-objects"],
-  "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/pii-permissions"],
+  "Data Pipeline": ["/admin/db-connections", "/admin/data-objects", "/workflow", "/workflow/jobs"],
+  "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/application-types", "/admin/field-mappings", "/admin/pii-permissions"],
   "Other":       ["/docs"],
 };
 function groupPages(pages: PageItem[]): Array<{ group: string; pages: PageItem[] }> {

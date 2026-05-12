@@ -167,7 +167,7 @@ export default function DbConnections() {
     setForm(f => ({ ...f, dbEngine: engine, port: m.defaultPort !== null ? String(m.defaultPort) : "" }));
   }
 
-  async function save() {
+  async function save(thenTest = false) {
     if (!form.name) { toast.error("Connection name is required"); return; }
     if (isDbEngine) {
       if (!form.host || !form.dbName) { toast.error("Host and database name are required"); return; }
@@ -226,9 +226,17 @@ export default function DbConnections() {
         body: JSON.stringify(body),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Save failed"); }
+      const saved = await res.json();
+      const savedId: number = saved.id;
       toast.success(editId ? "Connection updated" : "Connection created");
-      setDialogOpen(false);
-      load();
+      if (thenTest && !meta.isFile) {
+        setEditId(savedId);
+        load();
+        await testConnection(savedId);
+      } else {
+        setDialogOpen(false);
+        load();
+      }
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -577,7 +585,7 @@ export default function DbConnections() {
                   type="button"
                   variant="outline"
                   onClick={() => testConnection(editId)}
-                  disabled={testing === editId}
+                  disabled={testing === editId || saving}
                   className="gap-1.5"
                 >
                   {testing === editId
@@ -589,7 +597,13 @@ export default function DbConnections() {
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-              <Button onClick={save} disabled={saving}>
+              {!editId && !meta.isFile && (
+                <Button variant="outline" onClick={() => save(true)} disabled={saving} className="gap-1.5">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
+                  Save & Test
+                </Button>
+              )}
+              <Button onClick={() => save(false)} disabled={saving}>
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editId ? "Update" : "Create"}
               </Button>

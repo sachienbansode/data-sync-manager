@@ -15,10 +15,12 @@ function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
     id: r.id,
     name: r.name,
     type: r.type,
+    dbEngine: r.dbEngine,
     host: r.host,
     port: r.port,
     dbName: r.dbName,
     schemaName: r.schemaName,
+    extraParams: r.extraParams,
     outputFilePath: r.outputFilePath,
     fetchQuery: r.fetchQuery,
     scheduleEnabled: r.scheduleEnabled,
@@ -34,6 +36,9 @@ function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
   };
 }
 
+const FILE_ENGINES = ["s3", "sftp", "csv"] as const;
+function isFileEngine(engine: string) { return (FILE_ENGINES as readonly string[]).includes(engine); }
+
 // GET /api/admin/db-connections
 router.get("/admin/db-connections", authenticate, requireRole("Admin"), async (_req, res) => {
   const rows = await db.select().from(dbConnectionsTable).orderBy(desc(dbConnectionsTable.createdAt));
@@ -42,18 +47,27 @@ router.get("/admin/db-connections", authenticate, requireRole("Admin"), async (_
 
 // POST /api/admin/db-connections
 router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (req, res) => {
-  const { name, type, host, port, dbName, schemaName, username, password, outputFilePath, fetchQuery, scheduleCron, scheduleEnabled } = req.body as {
-    name: string; type: string; host: string; port?: number;
-    dbName: string; schemaName?: string; username: string; password: string;
+  const {
+    name, type, dbEngine, host, port, dbName, schemaName, username, password,
+    extraParams, outputFilePath, fetchQuery, scheduleCron, scheduleEnabled,
+  } = req.body as {
+    name: string; type: string; dbEngine?: string; host?: string; port?: number;
+    dbName?: string; schemaName?: string; username?: string; password?: string;
+    extraParams?: Record<string, string>;
     outputFilePath?: string; fetchQuery?: string; scheduleCron?: string; scheduleEnabled?: boolean;
   };
 
-  if (!name || !type || !host || !dbName || !username || !password) {
-    res.status(400).json({ error: "name, type, host, dbName, username, and password are required" });
+  if (!name || !type) {
+    res.status(400).json({ error: "name and type are required" });
     return;
   }
   if (!["backoffice", "trading"].includes(type)) {
     res.status(400).json({ error: "type must be 'backoffice' or 'trading'" });
+    return;
+  }
+  const engine = dbEngine ?? "postgresql";
+  if (!isFileEngine(engine) && (!host || !dbName || !username || !password)) {
+    res.status(400).json({ error: "host, dbName, username, and password are required for database connections" });
     return;
   }
   if (scheduleCron && !cron.validate(scheduleCron)) {
@@ -73,12 +87,14 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
   const [row] = await db.insert(dbConnectionsTable).values({
     name,
     type: type as "backoffice" | "trading",
-    host,
-    port: port ?? 5432,
-    dbName,
+    dbEngine: engine as typeof dbConnectionsTable.$inferInsert["dbEngine"],
+    host: host ?? null,
+    port: port ?? (isFileEngine(engine) ? null : 5432),
+    dbName: dbName ?? null,
     schemaName: schemaName ?? "public",
-    usernameEnc: encrypt(username),
-    passwordEnc: encrypt(password),
+    usernameEnc: username ? encrypt(username) : null,
+    passwordEnc: password ? encrypt(password) : null,
+    extraParams: extraParams ?? null,
     outputFilePath: outputFilePath ?? null,
     fetchQuery: fetchQuery ?? null,
     scheduleCron: scheduleCron ?? null,
@@ -106,9 +122,10 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
 // PUT /api/admin/db-connections/:id
 router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), async (req, res) => {
   const id = parseInt(req.params.id);
-  const { name, type, host, port, dbName, schemaName, username, password, outputFilePath, fetchQuery, scheduleCron, scheduleEnabled } = req.body as {
-    name?: string; type?: string; host?: string; port?: number;
+  const { name, type, dbEngine, host, port, dbName, schemaName, username, password, extraParams, outputFilePath, fetchQuery, scheduleCron, scheduleEnabled } = req.body as {
+    name?: string; type?: string; dbEngine?: string; host?: string; port?: number;
     dbName?: string; schemaName?: string; username?: string; password?: string;
+    extraParams?: Record<string, string>;
     outputFilePath?: string; fetchQuery?: string; scheduleCron?: string; scheduleEnabled?: boolean;
   };
 
@@ -142,12 +159,14 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
   };
   if (name) updates.name = name;
   if (type) updates.type = type as "backoffice" | "trading";
-  if (host) updates.host = host;
+  if (dbEngine) updates.dbEngine = dbEngine as typeof dbConnectionsTable.$inferInsert["dbEngine"];
+  if (host !== undefined) updates.host = host || null;
   if (port) updates.port = port;
-  if (dbName) updates.dbName = dbName;
+  if (dbName !== undefined) updates.dbName = dbName || null;
   if (schemaName !== undefined) updates.schemaName = schemaName;
   if (username) updates.usernameEnc = encrypt(username);
   if (password) updates.passwordEnc = encrypt(password);
+  if (extraParams !== undefined) updates.extraParams = extraParams;
   if (outputFilePath !== undefined) updates.outputFilePath = outputFilePath;
   if (fetchQuery !== undefined) updates.fetchQuery = fetchQuery || null;
   if (scheduleCron !== undefined) updates.scheduleCron = scheduleCron || null;

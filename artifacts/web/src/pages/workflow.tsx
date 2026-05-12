@@ -1,444 +1,458 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Download, Upload, RefreshCw, Database, FileText, ArrowRight, History } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import {
+  Loader2, Plus, Pencil, Trash2, GitBranch, ArrowRight, Database, Cloud,
+  FolderOpen, Server, CheckCircle, Play, PauseCircle, Settings2,
+  CalendarClock,
+} from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
-import { useAuth } from "@/lib/auth";
+import cronstrue from "cronstrue";
+
+type PipelineStatus = "active" | "inactive";
+
+interface Pipeline {
+  id: number;
+  name: string;
+  description: string | null;
+  sourceConnectionId: number | null;
+  destConnectionId: number | null;
+  sourceQuery: string | null;
+  destTarget: string | null;
+  status: PipelineStatus;
+  scheduleEnabled: boolean;
+  scheduleCron: string | null;
+  scheduleLastRunAt: string | null;
+  createdAt: string;
+}
 
 interface DbConnection {
   id: number;
   name: string;
-  type: "backoffice" | "trading";
-  host: string;
-  dbName: string;
-}
-
-interface DataJob {
-  id: number;
   type: string;
-  status: string;
-  connectionName: string | null;
-  recordCount: number | null;
-  errorMessage: string | null;
-  createdAt: string;
+  dbEngine: string;
 }
 
-interface FieldMapping {
-  backofficeField: string;
-  tradingField: string;
-  transformType: "string" | "number" | "date-format";
-  transformParams: string | null;
-  sortOrder: number;
+const ENGINE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
+  postgresql: Database, mysql: Database, mssql: Server, oracle: Server,
+  s3: Cloud, sftp: FolderOpen, csv: FolderOpen,
+};
+
+const ENGINE_LABEL: Record<string, string> = {
+  postgresql: "PostgreSQL", mysql: "MySQL", mssql: "MS SQL",
+  oracle: "Oracle", s3: "S3", sftp: "SFTP", csv: "CSV",
+};
+
+const CRON_PRESETS = [
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Every 6 hours", value: "0 */6 * * *" },
+  { label: "Daily at midnight", value: "0 0 * * *" },
+  { label: "Daily at 2 AM", value: "0 2 * * *" },
+  { label: "Daily at 6 AM", value: "0 6 * * *" },
+  { label: "Weekly (Mon 8 AM)", value: "0 8 * * 1" },
+  { label: "Custom", value: "" },
+];
+
+function formatCron(expr: string): string {
+  try { return cronstrue.toString(expr, { throwExceptionOnParseError: true }); }
+  catch { return expr; }
 }
 
-function applyClientTransform(value: unknown, type: string, params: string | null): string {
-  const str = value == null ? "" : String(value);
-  if (type === "number") {
-    const n = parseFloat(str.replace(/,/g, ""));
-    return isNaN(n) ? str : String(n);
-  }
-  if (type === "date-format" && params) {
-    const d = new Date(str);
-    if (!isNaN(d.getTime())) {
-      if (params === "DD/MM/YYYY") {
-        return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`;
-      }
-      if (params === "YYYY-MM-DD") {
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      }
-    }
-    return str;
-  }
-  return str;
-}
+const EMPTY_FORM = {
+  name: "", description: "",
+  sourceConnectionId: "",
+  destConnectionId: "",
+  sourceQuery: "", destTarget: "",
+  scheduleEnabled: false, scheduleCron: "",
+};
 
 const apiBase = `${import.meta.env.BASE_URL}api`;
 
 export default function Workflow() {
-  const { user } = useAuth();
-  const roleName = user?.roleName ?? "";
-  const canFetch = ["Admin", "Manager", "Analyst"].includes(roleName);
-  const canPush = ["Admin", "Manager"].includes(roleName);
-
+  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [connections, setConnections] = useState<DbConnection[]>([]);
-  const [selectedConnection, setSelectedConnection] = useState<string>("");
-  const [fetching, setFetching] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [downloading, setDownloading] = useState<number | null>(null);
-  const [pushing, setPushing] = useState<number | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [form, setForm] = useState(EMPTY_FORM);
+  const [saving, setSaving] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [cronPreset, setCronPreset] = useState("");
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
-  const [previewHeaders, setPreviewHeaders] = useState<string[]>([]);
-  const [previewRows, setPreviewRows] = useState<Record<string, unknown>[]>([]);
-  const [lastJobId, setLastJobId] = useState<number | null>(null);
-  const [recentJobs, setRecentJobs] = useState<DataJob[]>([]);
-  const [jobsLoading, setJobsLoading] = useState(true);
-  const [fieldMappings, setFieldMappings] = useState<FieldMapping[]>([]);
+  const token = getAccessToken();
 
-  const fileRef = useRef<HTMLInputElement>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const hdrs = { Authorization: `Bearer ${token}` };
+      const [pRes, cRes] = await Promise.all([
+        fetch(`${apiBase}/admin/pipelines`, { headers: hdrs }),
+        fetch(`${apiBase}/admin/db-connections`, { headers: hdrs }),
+      ]);
+      if (!pRes.ok) throw new Error("Failed to load pipelines");
+      if (!cRes.ok) throw new Error("Failed to load connections");
+      setPipelines(await pRes.json());
+      setConnections(await cRes.json());
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
-  // Derived: apply field mappings to raw preview rows to show trading format
-  const transformedHeaders = fieldMappings.length > 0
-    ? [...fieldMappings].sort((a, b) => a.sortOrder - b.sortOrder).map(m => m.tradingField)
-    : [];
-  const transformedRows: Record<string, string>[] = previewRows.map(rawRow => {
-    const out: Record<string, string> = {};
-    [...fieldMappings].sort((a, b) => a.sortOrder - b.sortOrder).forEach(m => {
-      out[m.tradingField] = applyClientTransform(rawRow[m.backofficeField], m.transformType, m.transformParams);
+  useEffect(() => { load(); }, [load]);
+
+  function openAdd() {
+    setEditId(null);
+    setForm(EMPTY_FORM);
+    setCronPreset("");
+    setDialogOpen(true);
+  }
+
+  function openEdit(p: Pipeline) {
+    setEditId(p.id);
+    setForm({
+      name: p.name, description: p.description ?? "",
+      sourceConnectionId: p.sourceConnectionId ? String(p.sourceConnectionId) : "",
+      destConnectionId: p.destConnectionId ? String(p.destConnectionId) : "",
+      sourceQuery: p.sourceQuery ?? "", destTarget: p.destTarget ?? "",
+      scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
     });
-    return out;
-  });
-
-  const loadConnections = useCallback(async () => {
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`${apiBase}/workflow/connections`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) return;
-      const all: DbConnection[] = await res.json();
-      setConnections(all);
-    } catch { /* ignore */ }
-  }, []);
-
-  const loadRecentJobs = useCallback(async () => {
-    setJobsLoading(true);
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`${apiBase}/workflow/jobs?pageSize=5`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) return;
-      const data = await res.json();
-      setRecentJobs(data.jobs);
-    } catch { /* ignore */ } finally {
-      setJobsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadConnections();
-    loadRecentJobs();
-    // Load field mappings for transformation preview
-    (async () => {
-      try {
-        const token = getAccessToken();
-        const res = await fetch(`${apiBase}/workflow/field-mappings`, { headers: { Authorization: `Bearer ${token}` } });
-        if (res.ok) setFieldMappings(await res.json());
-      } catch { /* ignore */ }
-    })();
-  }, [loadConnections, loadRecentJobs]);
-
-  async function fetchFromBackoffice() {
-    if (!selectedConnection) { toast.error("Select a BackOffice connection first"); return; }
-    setFetching(true);
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`${apiBase}/workflow/fetch`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ connectionId: parseInt(selectedConnection) }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Fetch failed");
-      setLastJobId(data.jobId);
-      const rows = data.preview as Record<string, unknown>[];
-      if (rows.length > 0) {
-        setPreviewHeaders(Object.keys(rows[0]));
-        setPreviewRows(rows);
-      }
-      toast.success(`Fetched ${data.recordCount} records (job #${data.jobId})`);
-      loadRecentJobs();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Fetch failed");
-    } finally {
-      setFetching(false);
-    }
+    const preset = CRON_PRESETS.find(pr => pr.value === p.scheduleCron && pr.value !== "");
+    setCronPreset(preset ? preset.value : (p.scheduleCron ? "custom" : ""));
+    setDialogOpen(true);
   }
 
-  async function handleCsvUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const token = getAccessToken();
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch(`${apiBase}/workflow/upload-csv`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: fd,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Upload failed");
-      setLastJobId(data.jobId);
-      setPreviewHeaders(data.headers);
-      setPreviewRows(data.preview);
-      toast.success(`Uploaded ${data.recordCount} records (job #${data.jobId})`);
-      loadRecentJobs();
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Upload failed");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
+  function handleCronPreset(value: string) {
+    setCronPreset(value);
+    if (value && value !== "custom") setForm(f => ({ ...f, scheduleCron: value }));
+    else if (value === "custom") setForm(f => ({ ...f, scheduleCron: "" }));
   }
 
-  async function downloadCsv(jobId: number) {
-    setDownloading(jobId);
-    try {
-      const token = getAccessToken();
-      const res = await fetch(`${apiBase}/workflow/jobs/${jobId}/download`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Download failed"); }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `trading-data-job-${jobId}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Download failed");
-    } finally {
-      setDownloading(null);
-    }
-  }
+  async function save() {
+    if (!form.name.trim()) { toast.error("Pipeline name is required"); return; }
+    if (form.scheduleEnabled && !form.scheduleCron.trim()) { toast.error("Cron expression required when schedule is enabled"); return; }
 
-  async function pushToPath(jobId: number) {
-    setPushing(jobId);
+    setSaving(true);
     try {
-      const token = getAccessToken();
-      // Always include the selected connection so upload-based jobs have a push target.
-      const body: Record<string, unknown> = {};
-      if (selectedConnection) body.connectionId = parseInt(selectedConnection);
-      const res = await fetch(`${apiBase}/workflow/jobs/${jobId}/push`, {
-        method: "POST",
+      const body = {
+        name: form.name.trim(),
+        description: form.description.trim() || undefined,
+        sourceConnectionId: form.sourceConnectionId ? parseInt(form.sourceConnectionId) : null,
+        destConnectionId: form.destConnectionId ? parseInt(form.destConnectionId) : null,
+        sourceQuery: form.sourceQuery.trim() || undefined,
+        destTarget: form.destTarget.trim() || undefined,
+        scheduleEnabled: form.scheduleEnabled,
+        scheduleCron: form.scheduleCron.trim() || undefined,
+      };
+      const url = editId ? `${apiBase}/admin/pipelines/${editId}` : `${apiBase}/admin/pipelines`;
+      const res = await fetch(url, {
+        method: editId ? "PUT" : "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify(body),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Push failed");
-      toast.success(`File written to ${data.path}`);
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Save failed"); }
+      toast.success(editId ? "Pipeline updated" : "Pipeline created");
+      setDialogOpen(false);
+      load();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Push failed");
+      toast.error(err instanceof Error ? err.message : "Save failed");
     } finally {
-      setPushing(null);
+      setSaving(false);
     }
   }
 
-  function statusBadge(status: string) {
-    const variants: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
-      success: "default", running: "secondary", failed: "destructive", pending: "outline",
-    };
-    return <Badge variant={variants[status] ?? "outline"} className="text-xs capitalize">{status}</Badge>;
+  async function deletePipeline() {
+    if (!deleteId) return;
+    try {
+      const res = await fetch(`${apiBase}/admin/pipelines/${deleteId}`, {
+        method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok && res.status !== 204) throw new Error("Delete failed");
+      toast.success("Pipeline deleted");
+      setDeleteId(null);
+      load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Delete failed");
+    }
+  }
+
+  async function toggleStatus(p: Pipeline) {
+    setTogglingId(p.id);
+    try {
+      const res = await fetch(`${apiBase}/admin/pipelines/${p.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: p.status === "active" ? "inactive" : "active" }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error ?? "Failed"); }
+      toast.success(p.status === "active" ? "Pipeline paused" : "Pipeline activated");
+      load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to toggle status");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
+  function connById(id: number | null): DbConnection | undefined {
+    if (!id) return undefined;
+    return connections.find(c => c.id === id);
   }
 
   return (
-    <div className="space-y-6">
+    <>
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Data Workflow</h1>
-            <p className="text-muted-foreground mt-1">Fetch BackOffice data, upload CSV, transform to Trading format, and export</p>
+            <p className="text-muted-foreground mt-1">
+              Build flexible pipelines from any source to any destination with field-level mapping
+            </p>
           </div>
-          <Link href="/workflow/jobs">
-            <Button variant="outline">
-              <History className="h-4 w-4 mr-2" /> Job History
-            </Button>
-          </Link>
+          <Button onClick={openAdd}>
+            <Plus className="h-4 w-4 mr-2" /> New Pipeline
+          </Button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {canFetch && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Database className="h-5 w-5" /> Fetch from BackOffice</CardTitle>
-                <CardDescription>Select a BackOffice DB connection and retrieve the latest records</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Select value={selectedConnection} onValueChange={setSelectedConnection}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={connections.length === 0 ? "No BackOffice connections configured" : "Select a connection…"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {connections.map(c => (
-                        <SelectItem key={c.id} value={String(c.id)}>
-                          {c.name} <span className="text-muted-foreground text-xs ml-1">({c.host}/{c.dbName})</span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button className="w-full" onClick={fetchFromBackoffice} disabled={fetching || !selectedConnection}>
-                  {fetching ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RefreshCw className="h-4 w-4 mr-2" />}
-                  Fetch Data
-                </Button>
-                {connections.length === 0 && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    <Link href="/admin/db-connections" className="underline">Configure a BackOffice connection</Link> first
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {canFetch && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><Upload className="h-5 w-5" /> Upload Pipe-Delimited CSV</CardTitle>
-                <CardDescription>Upload a .csv file with pipe (|) delimiters from BackOffice export</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div
-                  className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <FileText className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Click to select a pipe-delimited CSV file</p>
-                  <p className="text-xs text-muted-foreground mt-1">Max 50 MB · Must use | as delimiter</p>
-                </div>
-                <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleCsvUpload} />
-                <Button className="w-full" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                  {uploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Upload className="h-4 w-4 mr-2" />}
-                  {uploading ? "Uploading…" : "Select & Upload CSV"}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
+        <div className="grid grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Pipelines</p>
+              <p className="text-2xl font-bold mt-0.5">{loading ? "—" : pipelines.length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Active</p>
+              <p className="text-2xl font-bold mt-0.5 text-green-600">{loading ? "—" : pipelines.filter(p => p.status === "active").length}</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-4 pb-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Connections</p>
+              <p className="text-2xl font-bold mt-0.5">{loading ? "—" : connections.length}</p>
+            </CardContent>
+          </Card>
         </div>
-
-        {previewRows.length > 0 && lastJobId && (
-          <>
-            {/* ── Raw (BackOffice) Preview ── */}
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Before — Raw Data (Job #{lastJobId})</CardTitle>
-                    <CardDescription>
-                      Up to 20 rows as received from the BackOffice source before any transformation.
-                    </CardDescription>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => downloadCsv(lastJobId)} disabled={downloading === lastJobId}>
-                      {downloading === lastJobId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}
-                      Download CSV
-                    </Button>
-                    {canPush && (
-                      <Button onClick={() => pushToPath(lastJobId)} disabled={pushing === lastJobId}>
-                        {pushing === lastJobId ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ArrowRight className="h-4 w-4 mr-2" />}
-                        Push to Path
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b bg-muted/40">
-                        {previewHeaders.map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-muted-foreground whitespace-nowrap">{h}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {previewRows.map((row, i) => (
-                        <tr key={i} className="border-b hover:bg-muted/20">
-                          {previewHeaders.map(h => (
-                            <td key={h} className="px-3 py-1.5 whitespace-nowrap font-mono max-w-[200px] truncate">
-                              {String(row[h] ?? "")}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* ── Transformed (Trading) Preview — only when field mappings are configured ── */}
-            {transformedHeaders.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>After — Transformed Data (Trading Format)</CardTitle>
-                  <CardDescription>
-                    Same rows with field mappings and type transforms applied. This is what Download / Push will produce.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-xs border-collapse">
-                      <thead>
-                        <tr className="border-b bg-primary/10">
-                          {transformedHeaders.map(h => <th key={h} className="text-left px-3 py-2 font-semibold text-primary whitespace-nowrap">{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transformedRows.map((row, i) => (
-                          <tr key={i} className="border-b hover:bg-muted/20">
-                            {transformedHeaders.map(h => (
-                              <td key={h} className="px-3 py-1.5 whitespace-nowrap font-mono max-w-[200px] truncate">
-                                {String(row[h] ?? "")}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
 
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Recent Jobs</CardTitle>
-              <Link href="/workflow/jobs">
-                <Button variant="ghost" size="sm">View All <ArrowRight className="h-3 w-3 ml-1" /></Button>
-              </Link>
-            </div>
+            <CardTitle className="flex items-center gap-2"><GitBranch className="h-5 w-5" /> Pipelines</CardTitle>
+            <CardDescription>Each pipeline moves data from a source connection to a destination with configurable field mappings.</CardDescription>
           </CardHeader>
           <CardContent>
-            {jobsLoading ? (
-              <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
-            ) : recentJobs.length === 0 ? (
-              <p className="text-center text-muted-foreground text-sm py-6">No jobs yet. Fetch data or upload a CSV to get started.</p>
+            {loading ? (
+              <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+            ) : pipelines.length === 0 ? (
+              <div className="text-center py-12 text-muted-foreground">
+                <GitBranch className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                <p className="font-medium">No pipelines yet</p>
+                <p className="text-sm mt-1">Create your first pipeline to start moving data between systems.</p>
+                <Button className="mt-4" onClick={openAdd}><Plus className="h-4 w-4 mr-2" />New Pipeline</Button>
+              </div>
             ) : (
               <div className="divide-y">
-                {recentJobs.map(job => (
-                  <div key={job.id} className="flex items-center justify-between py-3">
-                    <div className="space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">Job #{job.id}</span>
-                        {statusBadge(job.status)}
-                        <span className="text-xs text-muted-foreground capitalize">{job.type.replace("_", " ")}</span>
+                {pipelines.map((p) => {
+                  const src = connById(p.sourceConnectionId);
+                  const dst = connById(p.destConnectionId);
+                  const SrcIcon = src ? (ENGINE_ICON[src.dbEngine] ?? Database) : Database;
+                  const DstIcon = dst ? (ENGINE_ICON[dst.dbEngine] ?? Database) : Database;
+
+                  return (
+                    <div key={p.id} className="py-4 flex items-start justify-between gap-4">
+                      <div className="min-w-0 space-y-1.5 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium">{p.name}</span>
+                          <Badge variant={p.status === "active" ? "default" : "secondary"} className="text-xs">
+                            {p.status === "active" ? (
+                              <><CheckCircle className="h-3 w-3 mr-1" />Active</>
+                            ) : (
+                              <><PauseCircle className="h-3 w-3 mr-1" />Inactive</>
+                            )}
+                          </Badge>
+                          {p.scheduleEnabled && p.scheduleCron && (
+                            <span className="flex items-center gap-1 text-xs text-blue-600">
+                              <CalendarClock className="h-3 w-3" /> {formatCron(p.scheduleCron)}
+                            </span>
+                          )}
+                        </div>
+                        {p.description && <p className="text-sm text-muted-foreground">{p.description}</p>}
+
+                        <div className="flex items-center gap-2 text-sm flex-wrap">
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
+                            <SrcIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            {src ? <span className="font-medium">{src.name}</span> : <span className="text-muted-foreground italic">No source</span>}
+                            {src && <span className="text-muted-foreground">({ENGINE_LABEL[src.dbEngine] ?? src.dbEngine})</span>}
+                          </div>
+                          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
+                            <DstIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                            {dst ? <span className="font-medium">{dst.name}</span> : <span className="text-muted-foreground italic">No destination</span>}
+                            {dst && <span className="text-muted-foreground">({ENGINE_LABEL[dst.dbEngine] ?? dst.dbEngine})</span>}
+                          </div>
+                          {p.destTarget && <span className="text-xs text-muted-foreground">→ <span className="font-mono">{p.destTarget}</span></span>}
+                        </div>
+
+                        <p className="text-xs text-muted-foreground">
+                          Created {new Date(p.createdAt).toLocaleDateString()}
+                          {p.scheduleLastRunAt && ` · Last run ${new Date(p.scheduleLastRunAt).toLocaleString()}`}
+                        </p>
                       </div>
-                      <p className="text-xs text-muted-foreground">
-                        {job.connectionName && <span>{job.connectionName} · </span>}
-                        {job.recordCount != null && <span>{job.recordCount} records · </span>}
-                        {new Date(job.createdAt).toLocaleString()}
-                      </p>
-                      {job.errorMessage && <p className="text-xs text-destructive">{job.errorMessage}</p>}
-                    </div>
-                    {job.status === "success" && canFetch && (
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => downloadCsv(job.id)} disabled={downloading === job.id}>
-                          {downloading === job.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Button
+                          variant="outline" size="sm"
+                          onClick={() => toggleStatus(p)}
+                          disabled={togglingId === p.id}
+                          title={p.status === "active" ? "Pause pipeline" : "Activate pipeline"}
+                        >
+                          {togglingId === p.id
+                            ? <Loader2 className="h-4 w-4 animate-spin" />
+                            : p.status === "active"
+                              ? <PauseCircle className="h-4 w-4" />
+                              : <Play className="h-4 w-4" />
+                          }
+                        </Button>
+                        <Link href={`/workflow/${p.id}/mappings`}>
+                          <Button variant="outline" size="sm" title="Configure field mappings">
+                            <Settings2 className="h-4 w-4" />
+                            <span className="ml-1 hidden sm:inline">Mappings</span>
+                          </Button>
+                        </Link>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteId(p.id)}>
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
-                    )}
-                  </div>
-                ))}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editId ? "Edit Pipeline" : "New Pipeline"}</DialogTitle>
+            <DialogDescription>Define the source, destination, and schedule for this data flow.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label>Pipeline Name</Label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. BackOffice → Trading Sync" />
+            </div>
+            <div className="space-y-1">
+              <Label>Description <span className="text-xs text-muted-foreground">(optional)</span></Label>
+              <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What does this pipeline do?" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label>Source Connection</Label>
+                <Select value={form.sourceConnectionId} onValueChange={v => setForm(f => ({ ...f, sourceConnectionId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select source…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {connections.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Destination Connection</Label>
+                <Select value={form.destConnectionId} onValueChange={v => setForm(f => ({ ...f, destConnectionId: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Select destination…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">— None —</SelectItem>
+                    {connections.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name} ({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label>Source Query <span className="text-xs text-muted-foreground">(optional — SELECT only)</span></Label>
+              <textarea
+                className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+                value={form.sourceQuery}
+                onChange={e => setForm(f => ({ ...f, sourceQuery: e.target.value }))}
+                placeholder="SELECT * FROM source_table"
+                spellCheck={false}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Destination Table / Path <span className="text-xs text-muted-foreground">(optional)</span></Label>
+              <Input value={form.destTarget} onChange={e => setForm(f => ({ ...f, destTarget: e.target.value }))} placeholder="schema.table_name or /path/to/file.csv" />
+            </div>
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium text-sm">Schedule</span>
+              </div>
+              <Select value={cronPreset} onValueChange={handleCronPreset}>
+                <SelectTrigger><SelectValue placeholder="Select a schedule…" /></SelectTrigger>
+                <SelectContent>
+                  {CRON_PRESETS.map(p => (
+                    <SelectItem key={p.label} value={p.value || "custom"}>{p.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(cronPreset === "custom" || (cronPreset === "" && form.scheduleCron)) && (
+                <Input value={form.scheduleCron} onChange={e => setForm(f => ({ ...f, scheduleCron: e.target.value }))} placeholder="0 2 * * *" className="font-mono" />
+              )}
+              {form.scheduleCron.trim() && (
+                <>
+                  <p className="text-xs text-muted-foreground italic">
+                    {(() => { try { return cronstrue.toString(form.scheduleCron); } catch { return null; } })()}
+                  </p>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label className="text-sm">Enable Schedule</Label>
+                      <p className="text-xs text-muted-foreground">Automatically run this pipeline on the above schedule</p>
+                    </div>
+                    <Switch checked={form.scheduleEnabled} onCheckedChange={v => setForm(f => ({ ...f, scheduleEnabled: v }))} />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {editId ? "Save Changes" : "Create Pipeline"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Pipeline</DialogTitle>
+            <DialogDescription>This will permanently delete the pipeline and all its field mappings.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={deletePipeline}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

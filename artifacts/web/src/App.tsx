@@ -23,6 +23,7 @@ import DbConnections from "@/pages/admin/db-connections";
 import FieldMappings from "@/pages/admin/field-mappings";
 import Workflow from "@/pages/workflow";
 import WorkflowJobs from "@/pages/workflow-jobs";
+import PipelineMappings from "@/pages/pipeline-mappings";
 import Docs from "@/pages/docs";
 import DocsViewer from "@/pages/docs-viewer";
 import DocsAdmin from "@/pages/docs-admin";
@@ -83,6 +84,9 @@ function Router() {
       </Route>
       <Route path="/workflow/jobs">
         <ProtectedRoute component={WorkflowJobs} path="/workflow/jobs" />
+      </Route>
+      <Route path="/workflow/:id/mappings">
+        <ProtectedRoute component={PipelineMappings} path="/workflow" />
       </Route>
       <Route path="/workflow">
         <ProtectedRoute component={Workflow} path="/workflow" />

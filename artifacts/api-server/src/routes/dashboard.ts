@@ -50,7 +50,7 @@ router.get("/dashboard/summary", authenticate, requirePageAccess("/dashboard"), 
     .groupBy(sql`date_trunc('day', ${auditLogsTable.createdAt})::date`)
     .orderBy(sql`date_trunc('day', ${auditLogsTable.createdAt})::date`);
 
-  // Recent logins (compact — 5 only, for quick glance)
+  // Recent logins — success and failure, last 10
   const recentLogins = await db
     .select({
       id: auditLogsTable.id,
@@ -60,9 +60,9 @@ router.get("/dashboard/summary", authenticate, requirePageAccess("/dashboard"), 
       createdAt: auditLogsTable.createdAt,
     })
     .from(auditLogsTable)
-    .where(eq(auditLogsTable.action, "LOGIN_SUCCESS"))
+    .where(sql`${auditLogsTable.action} IN ('LOGIN_SUCCESS','LOGIN_FAILED','M365_LOGIN','EMAIL_OTP_LOGIN')`)
     .orderBy(desc(auditLogsTable.createdAt))
-    .limit(5);
+    .limit(10);
 
   res.json({
     totalUsers: totals?.total ?? 0,

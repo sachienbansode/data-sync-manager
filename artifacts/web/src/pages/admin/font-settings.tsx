@@ -75,11 +75,11 @@ export default function FontSettings() {
       queryClient.invalidateQueries({ queryKey: ["font-settings"] });
       // Apply immediately
       const root = document.documentElement;
-      root.style.setProperty("--app-font-family", saved.fontFamily);
+      root.style.setProperty("--app-font-sans", `"${saved.fontFamily}", sans-serif`);
+      root.style.setProperty("--app-font-family", `"${saved.fontFamily}", sans-serif`);
       root.style.setProperty("--app-menu-font-size", `${saved.menuFontSize}px`);
       root.style.setProperty("--app-body-font-size", `${saved.bodyFontSize}px`);
       root.style.setProperty("--app-heading-font-size", `${saved.headingFontSize}px`);
-      root.style.fontFamily = `${saved.fontFamily}, sans-serif`;
       root.style.fontSize = `${saved.bodyFontSize}px`;
       toast.success("Font settings saved");
     },

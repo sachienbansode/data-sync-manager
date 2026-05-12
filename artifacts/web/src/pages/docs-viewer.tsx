@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, AlertCircle, FileCode, Settings2, Calendar, Tag, ExternalLink } from "lucide-react";
+import { formatDate } from "@/lib/date";
 import { Link } from "wouter";
 import { getAccessToken } from "@/lib/auth";
 
@@ -137,7 +138,7 @@ export default function DocsViewer() {
           {activeSpec && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Calendar className="h-3 w-3" />
-              Last updated {new Date(activeSpec.uploadedAt).toLocaleDateString()}
+              Last updated {formatDate(activeSpec.uploadedAt)}
             </span>
           )}
           {specs && specs.length > 0 && (

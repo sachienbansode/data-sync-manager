@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Loader2, Download, ArrowRight, ChevronLeft, History, AlertCircle, CalendarClock, User } from "lucide-react";
+import { formatDateTime } from "@/lib/date";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import { useAuth } from "@/lib/auth";
@@ -226,7 +227,7 @@ export default function WorkflowJobs() {
                           {job.connectionName && <span>Connection: {job.connectionName}</span>}
                           {job.triggeredByEmail && <span>By: {job.triggeredByEmail}</span>}
                           {job.recordCount != null && <span>{job.recordCount} records</span>}
-                          <span>{new Date(job.createdAt).toLocaleString()}</span>
+                          <span>{formatDateTime(job.createdAt)}</span>
                         </div>
                         {job.errorMessage && (
                           <div className="flex items-start gap-1 text-xs text-destructive">
@@ -298,10 +299,10 @@ export default function WorkflowJobs() {
                   }
                 </div>
                 {detailJob.job.startedAt && (
-                  <div><span className="text-muted-foreground">Started: </span>{new Date(detailJob.job.startedAt).toLocaleString()}</div>
+                  <div><span className="text-muted-foreground">Started: </span>{formatDateTime(detailJob.job.startedAt)}</div>
                 )}
                 {detailJob.job.finishedAt && (
-                  <div><span className="text-muted-foreground">Finished: </span>{new Date(detailJob.job.finishedAt).toLocaleString()}</div>
+                  <div><span className="text-muted-foreground">Finished: </span>{formatDateTime(detailJob.job.finishedAt)}</div>
                 )}
               </div>
               {detailJob.job.errorMessage && (

@@ -2,12 +2,21 @@ import { useGetDashboardSummary } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, ShieldAlert, Activity, UserX, Network, GitBranch, BookOpen, LogIn } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from "recharts";
+import { formatDateTime, formatDate } from "@/lib/date";
 
 const COLORS = ['hsl(var(--chart-1))', 'hsl(var(--chart-2))', 'hsl(var(--chart-3))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5))'];
+
+const ACTION_META: Record<string, { label: string; variant: "default" | "destructive" | "secondary" | "outline" }> = {
+  LOGIN_SUCCESS:   { label: "Success",  variant: "default" },
+  LOGIN_FAILED:    { label: "Failed",   variant: "destructive" },
+  M365_LOGIN:      { label: "M365 SSO", variant: "secondary" },
+  EMAIL_OTP_LOGIN: { label: "OTP",      variant: "secondary" },
+};
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary();
@@ -40,7 +49,7 @@ export default function Dashboard() {
     d.setDate(d.getDate() - i);
     const key = d.toISOString().slice(0, 10);
     const found = activityMap.get(key);
-    chartData.push({ date: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }), successes: found?.successes ?? 0, failures: found?.failures ?? 0 });
+    chartData.push({ date: formatDate(d.toISOString()), successes: found?.successes ?? 0, failures: found?.failures ?? 0 });
   }
 
   const statCards = [
@@ -48,7 +57,7 @@ export default function Dashboard() {
     { label: "Active Users", value: summary.activeUsers, icon: Activity, sub: null },
     { label: "Inactive Users", value: summary.inactiveUsers, icon: UserX, sub: null },
     {
-      label: "MFA Adoption", 
+      label: "MFA Adoption",
       value: `${summary.totalUsers > 0 ? Math.round((summary.mfaEnabledUsers / summary.totalUsers) * 100) : 0}%`,
       icon: ShieldAlert,
       sub: `${summary.mfaEnabledUsers} users secured`,
@@ -139,19 +148,28 @@ export default function Dashboard() {
       {(summary.recentLogins as unknown[]).length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Recent Successful Logins</CardTitle>
+            <CardTitle className="text-base flex items-center gap-2">
+              <LogIn className="h-4 w-4" />
+              Recent Logins
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(summary.recentLogins as Array<{ id: number; userEmail: string; ipAddress: string; createdAt: string }>).map((log) => (
-                <div key={log.id} className="flex items-center justify-between text-sm">
-                  <span className="font-mono text-xs text-muted-foreground">{log.userEmail}</span>
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span>{log.ipAddress}</span>
-                    <span>{new Date(log.createdAt).toLocaleString()}</span>
+              {(summary.recentLogins as Array<{ id: number; userEmail: string; action: string; ipAddress: string; createdAt: string }>).map((log) => {
+                const meta = ACTION_META[log.action] ?? { label: log.action, variant: "outline" as const };
+                return (
+                  <div key={log.id} className="flex items-center justify-between text-sm gap-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Badge variant={meta.variant} className="text-[10px] px-1.5 shrink-0">{meta.label}</Badge>
+                      <span className="font-mono text-xs text-muted-foreground truncate">{log.userEmail}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+                      <span className="hidden sm:inline">{log.ipAddress}</span>
+                      <span>{formatDateTime(log.createdAt)}</span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>

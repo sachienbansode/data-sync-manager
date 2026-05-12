@@ -112,6 +112,10 @@ export const dataPipelinesTable = pgTable("data_pipelines", {
   scheduleNextRunAt: timestamp("schedule_next_run_at", { withTimezone: true }),
   /** Number of consecutive scheduled run failures (reset on success). */
   scheduleConsecutiveFailures: integer("schedule_consecutive_failures").notNull().default(0),
+  /** Comma-separated email addresses to notify on successful pipeline run */
+  notifyOnSuccess: text("notify_on_success"),
+  /** Comma-separated email addresses to notify on failed pipeline run */
+  notifyOnFailure: text("notify_on_failure"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

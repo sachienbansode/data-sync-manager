@@ -10,7 +10,7 @@ import {
   useDeleteUser,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { formatDateTime } from "@/lib/date";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -55,6 +55,7 @@ const editSchema = z.object({
   firstName: z.string().min(1, "Required"),
   lastName: z.string().min(1, "Required"),
   roleId: z.coerce.number().min(1, "Role is required"),
+  isActive: z.boolean(),
   password: z.string().optional().refine(v => !v || v.length >= 8, "Must be at least 8 characters"),
 });
 
@@ -125,7 +126,7 @@ export default function Users() {
   const editForm = useForm<EditForm>({
     resolver: zodResolver(editSchema),
     values: editUser
-      ? { firstName: editUser.firstName, lastName: editUser.lastName, roleId: editUser.roleId, password: "" }
+      ? { firstName: editUser.firstName, lastName: editUser.lastName, roleId: editUser.roleId, isActive: editUser.isActive, password: "" }
       : undefined,
   });
 
@@ -178,6 +179,9 @@ export default function Users() {
       };
       if (values.password) payload.password = values.password;
       await apiFetch(`/users/${editUser.id}`, { method: "PATCH", body: JSON.stringify(payload) });
+      if (values.isActive !== editUser.isActive) {
+        await updateStatusMutation.mutateAsync({ id: editUser.id, data: { isActive: values.isActive } });
+      }
       invalidate();
       setEditUser(null);
       editForm.reset();
@@ -331,22 +335,16 @@ export default function Users() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Select value={user.roleId.toString()} onValueChange={(v) => handleRoleChange(user.id, Number(v))}>
-                        <SelectTrigger className="w-[140px] h-8 text-xs"><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          {rolesData?.map(r => <SelectItem key={r.id} value={r.id.toString()}>{r.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {user.roleName}
+                      </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Switch checked={user.isActive} onCheckedChange={(v) => handleStatusChange(user.id, v)} />
-                        <span className="text-xs font-medium">
-                          {user.isActive
-                            ? <span className="text-emerald-500">Active</span>
-                            : <span className="text-muted-foreground">Inactive</span>}
-                        </span>
-                      </div>
+                      {user.isActive ? (
+                        <Badge variant="outline" className="bg-emerald-500/10 text-emerald-600 border-emerald-500/20 text-xs">Active</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground text-xs">Inactive</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       {user.mfaEnabled ? (
@@ -360,7 +358,7 @@ export default function Users() {
                       )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
-                      {user.lastLoginAt ? format(new Date(user.lastLoginAt), "MMM d, yyyy HH:mm") : "Never"}
+                      {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -431,6 +429,19 @@ export default function Users() {
                   <FormMessage />
                 </FormItem>
               )} />
+              <FormField control={editForm.control} name="isActive" render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Account Status</FormLabel>
+                    <p className="text-xs text-muted-foreground">
+                      {field.value ? "User can log in to the platform" : "User cannot log in"}
+                    </p>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                </FormItem>
+              )} />
               <FormField control={editForm.control} name="password" render={({ field }) => (
                 <FormItem>
                   <FormLabel>New Password <span className="text-muted-foreground font-normal text-xs">(leave blank to keep current)</span></FormLabel>
@@ -440,9 +451,7 @@ export default function Users() {
               )} />
               <DialogFooter className="pt-4">
                 <Button type="button" variant="outline" onClick={() => setEditUser(null)}>Cancel</Button>
-                <Button type="submit">
-                  Save Changes
-                </Button>
+                <Button type="submit">Save Changes</Button>
               </DialogFooter>
             </form>
           </Form>

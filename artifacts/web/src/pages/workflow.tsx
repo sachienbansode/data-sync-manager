@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import cronstrue from "cronstrue";
+import { formatDate as fmtIsoDate, formatDateTime as fmtIsoDateTime } from "@/lib/date";
 
 type PipelineStatus = "active" | "inactive";
 
@@ -33,6 +34,8 @@ interface Pipeline {
   scheduleCron: string | null;
   scheduleLastRunAt: string | null;
   scheduleNextRunAt: string | null;
+  notifyOnSuccess: string | null;
+  notifyOnFailure: string | null;
   createdAt: string;
 }
 
@@ -79,10 +82,6 @@ function formatCron(expr: string): string {
   try { return cronstrue.toString(expr, { throwExceptionOnParseError: true }); }
   catch { return expr; }
 }
-function formatDate(iso: string | null): string {
-  if (!iso) return "Never";
-  return new Date(iso).toLocaleString();
-}
 
 const EMPTY_FORM = {
   name: "", description: "",
@@ -93,6 +92,8 @@ const EMPTY_FORM = {
   useCustomQuery: false,
   destTarget: "",
   scheduleEnabled: false, scheduleCron: "",
+  notifyOnSuccess: "",
+  notifyOnFailure: "",
 };
 
 const apiBase = `${import.meta.env.BASE_URL}api`;
@@ -178,6 +179,8 @@ export default function Workflow() {
       useCustomQuery: hasCustomQuery,
       destTarget: p.destTarget ?? "",
       scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
+      notifyOnSuccess: p.notifyOnSuccess ?? "",
+      notifyOnFailure: p.notifyOnFailure ?? "",
     });
     const preset = CRON_PRESETS.find(pr => pr.value === p.scheduleCron && pr.value !== "__custom__");
     setCronPreset(preset ? preset.value : (p.scheduleCron ? "__custom__" : ""));
@@ -224,6 +227,8 @@ export default function Workflow() {
         destTarget: form.destTarget.trim() || undefined,
         scheduleEnabled: form.scheduleEnabled,
         scheduleCron: form.scheduleCron.trim() || undefined,
+        notifyOnSuccess: form.notifyOnSuccess.trim() || undefined,
+        notifyOnFailure: form.notifyOnFailure.trim() || undefined,
       };
       const url = editId ? `${apiBase}/admin/pipelines/${editId}` : `${apiBase}/admin/pipelines`;
       const res = await fetch(url, {
@@ -423,8 +428,8 @@ export default function Workflow() {
                         </div>
 
                         <p className="text-xs text-muted-foreground">
-                          Created {new Date(p.createdAt).toLocaleDateString()}
-                          {p.scheduleLastRunAt && ` · Last run ${formatDate(p.scheduleLastRunAt)}`}
+                          Created {fmtIsoDate(p.createdAt)}
+                          {p.scheduleLastRunAt && ` · Last run ${fmtIsoDateTime(p.scheduleLastRunAt)}`}
                         </p>
                       </div>
 
@@ -626,6 +631,33 @@ export default function Workflow() {
               </div>
             </div>
 
+            {/* NOTIFICATIONS */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <History className="h-4 w-4 text-muted-foreground" /> Notifications <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+              </p>
+              <div className="space-y-1">
+                <Label>Notify on Success</Label>
+                <Input
+                  type="email"
+                  value={form.notifyOnSuccess}
+                  onChange={e => setForm(f => ({ ...f, notifyOnSuccess: e.target.value }))}
+                  placeholder="alerts@example.com"
+                />
+                <p className="text-xs text-muted-foreground">Email to receive a confirmation when the pipeline runs successfully.</p>
+              </div>
+              <div className="space-y-1">
+                <Label>Notify on Failure</Label>
+                <Input
+                  type="email"
+                  value={form.notifyOnFailure}
+                  onChange={e => setForm(f => ({ ...f, notifyOnFailure: e.target.value }))}
+                  placeholder="oncall@example.com"
+                />
+                <p className="text-xs text-muted-foreground">Email to receive a detailed error report (including logs) when the pipeline fails.</p>
+              </div>
+            </div>
+
             {/* SCHEDULE */}
             <div className="rounded-lg border p-4 space-y-3">
               <p className="text-sm font-semibold flex items-center gap-2">
@@ -730,7 +762,7 @@ export default function Workflow() {
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground text-right shrink-0">
-                    <p>{formatDate(j.startedAt ?? j.createdAt)}</p>
+                    <p>{fmtIsoDateTime(j.startedAt ?? j.createdAt)}</p>
                     {j.startedAt && j.finishedAt && (
                       <p>{Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000)}s</p>
                     )}

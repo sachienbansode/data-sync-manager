@@ -62,11 +62,13 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
   const {
     name, description, sourceConnectionId, destConnectionId,
     sourceTable, sourceQuery, destTarget, status, scheduleEnabled, scheduleCron,
+    notifyOnSuccess, notifyOnFailure,
   } = req.body as {
     name: string; description?: string;
     sourceConnectionId?: number; destConnectionId?: number;
     sourceTable?: string; sourceQuery?: string; destTarget?: string;
     status?: string; scheduleEnabled?: boolean; scheduleCron?: string;
+    notifyOnSuccess?: string; notifyOnFailure?: string;
   };
 
   if (!name) { res.status(400).json({ error: "name is required" }); return; }
@@ -86,6 +88,8 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     status: (status as "active" | "inactive") ?? "inactive",
     scheduleEnabled: scheduleEnabled ?? false,
     scheduleCron: scheduleCron ?? null,
+    notifyOnSuccess: notifyOnSuccess?.trim() || null,
+    notifyOnFailure: notifyOnFailure?.trim() || null,
     createdBy: req.user!.sub,
   }).returning();
 
@@ -120,6 +124,8 @@ router.put("/admin/pipelines/:id", authenticate, requireRole("Admin"), async (re
   if (body.status !== undefined) updates.status = body.status as "active" | "inactive";
   if (body.scheduleEnabled !== undefined) updates.scheduleEnabled = body.scheduleEnabled as boolean;
   if (body.scheduleCron !== undefined) updates.scheduleCron = (body.scheduleCron as string) || null;
+  if (body.notifyOnSuccess !== undefined) updates.notifyOnSuccess = (body.notifyOnSuccess as string)?.trim() || null;
+  if (body.notifyOnFailure !== undefined) updates.notifyOnFailure = (body.notifyOnFailure as string)?.trim() || null;
 
   const [updated] = await db.update(dataPipelinesTable).set(updates).where(eq(dataPipelinesTable.id, id)).returning();
 

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { formatDate, formatDateTime } from "@/lib/date";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -364,7 +365,7 @@ function SpecVersionList({ appId }: { appId: number }) {
             )}
           </div>
           <span className="text-xs text-muted-foreground">
-            {new Date(spec.uploadedAt).toLocaleString()}
+            {formatDateTime(spec.uploadedAt)}
           </span>
         </div>
       ))}
@@ -1014,7 +1015,7 @@ function AttachmentsDialog({ appId, onClose }: { appId: number; onClose: () => v
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{att.fileName}</p>
-                    <p className="text-xs text-muted-foreground">{formatBytes(att.fileSize)} · {new Date(att.uploadedAt).toLocaleDateString()}</p>
+                    <p className="text-xs text-muted-foreground">{formatBytes(att.fileSize)} · {formatDate(att.uploadedAt)}</p>
                   </div>
                   <div className="flex gap-1 shrink-0">
                     <Button size="icon" variant="ghost" className="h-7 w-7" title="Download" onClick={() => handleDownload(att.id, att.fileName)}>

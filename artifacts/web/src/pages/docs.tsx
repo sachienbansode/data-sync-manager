@@ -11,6 +11,7 @@ import {
   BookOpen, Search, ExternalLink, FileCode, Calendar, Tag, X,
   Plus, Settings2, Layers, ArrowRight, AlertCircle,
 } from "lucide-react";
+import { formatDate } from "@/lib/date";
 
 export default function Docs() {
   const { user } = useAuth();
@@ -233,7 +234,7 @@ export default function Docs() {
                 {app.latestSpecDate && (
                   <div className="flex items-center gap-1 mt-2 ml-10 text-xs text-muted-foreground">
                     <Calendar className="h-3 w-3" />
-                    <span>Updated {new Date(app.latestSpecDate).toLocaleDateString()}</span>
+                    <span>Updated {formatDate(app.latestSpecDate)}</span>
                   </div>
                 )}
               </CardHeader>

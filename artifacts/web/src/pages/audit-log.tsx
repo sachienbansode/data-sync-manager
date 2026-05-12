@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useGetAuditLog } from "@workspace/api-client-react";
 import { format } from "date-fns";
+import { formatDateTimeSec, formatDate as fmtDate } from "@/lib/date";
 import { getAccessToken } from "@/lib/auth";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -99,7 +100,7 @@ export default function AuditLog() {
       const header = "ID,Timestamp,User Email,Action,Resource Type,Resource ID,Field,IP Address,Details\n";
       const rows = entries.map(e => [
         e.id,
-        format(new Date(e.createdAt), "yyyy-MM-dd HH:mm:ss"),
+        formatDateTimeSec(e.createdAt),
         `"${e.userEmail ?? "System"}"`,
         e.action,
         e.resourceType ?? "",
@@ -254,9 +255,9 @@ export default function AuditLog() {
                       <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">
                         <div className="flex items-center gap-1">
                           <CalendarDays className="h-3 w-3 shrink-0" />
-                          {format(new Date(entry.createdAt), "MMM d, yyyy")}
+                          {fmtDate(entry.createdAt)}
                         </div>
-                        <div className="pl-4">{format(new Date(entry.createdAt), "HH:mm:ss")}</div>
+                        <div className="pl-4">{formatDateTimeSec(entry.createdAt).split(" ")[1]}</div>
                       </TableCell>
                       <TableCell className="text-sm font-medium">
                         {entry.userEmail ?? <span className="text-muted-foreground italic">System</span>}

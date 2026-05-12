@@ -11,6 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import { LogIn, AlertTriangle, TrendingUp, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { formatDateTime } from "@/lib/date";
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -214,7 +215,7 @@ export default function LoginReport() {
                             </td>
                             <td className="px-4 py-2.5 text-xs text-muted-foreground hidden md:table-cell font-mono">{entry.ipAddress ?? "–"}</td>
                             <td className="px-4 py-2.5 text-xs text-muted-foreground text-right whitespace-nowrap">
-                              {new Date(entry.createdAt).toLocaleString()}
+                              {formatDateTime(entry.createdAt)}
                             </td>
                           </tr>
                         );

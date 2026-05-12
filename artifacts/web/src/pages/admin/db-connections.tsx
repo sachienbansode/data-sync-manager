@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User } from "lucide-react";
+import { formatDate, formatDateTime } from "@/lib/date";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 
@@ -355,8 +356,8 @@ export default function DbConnections() {
                           </p>
                         )}
                         <p className="text-xs text-muted-foreground">
-                          Added {new Date(c.createdAt).toLocaleDateString()}
-                          {c.lastTestedAt && ` · Last tested ${new Date(c.lastTestedAt).toLocaleString()}`}
+                          Added {formatDate(c.createdAt)}
+                          {c.lastTestedAt && ` · Last tested ${formatDateTime(c.lastTestedAt)}`}
                         </p>
                       </div>
 
@@ -657,7 +658,7 @@ export default function DbConnections() {
                     )}
                   </div>
                   <div className="text-xs text-muted-foreground text-right shrink-0">
-                    <p>{new Date(j.startedAt ?? j.createdAt).toLocaleString()}</p>
+                    <p>{formatDateTime(j.startedAt ?? j.createdAt)}</p>
                     {j.startedAt && j.finishedAt && (
                       <p>{Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000)}s</p>
                     )}

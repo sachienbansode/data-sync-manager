@@ -3,7 +3,7 @@ import { eq, desc, asc } from "drizzle-orm";
 import pg from "pg";
 import {
   db, dataPipelinesTable, pipelineFieldMappingsTable, auditLogsTable,
-  dbConnectionsTable, dataJobsTable,
+  dbConnectionsTable, dataJobsTable, connectionObjectsTable,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { decrypt, loadEncryptionKey } from "../lib/crypto";
@@ -213,43 +213,110 @@ router.put("/admin/pipelines/:id/mappings", authenticate, requireRole("Admin"), 
   res.json(saved);
 });
 
+// ── Shared helper: resolve columns from a connection object or legacy conn+query ──────────────
+async function resolveColumns(connId: number, query: string): Promise<string[]> {
+  const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, connId));
+  if (!conn) throw new Error("Connection not found");
+  loadEncryptionKey();
+  const user = conn.usernameEnc ? decrypt(conn.usernameEnc) : "";
+  const pass = conn.passwordEnc ? decrypt(conn.passwordEnc) : "";
+  const useSSL = (conn.extraParams as Record<string, string> | null)?.ssl === "true";
+  const pool = new Pool({
+    host: conn.host ?? undefined, port: conn.port ?? 5432,
+    database: conn.dbName ?? undefined, user: user || undefined, password: pass || undefined,
+    connectionTimeoutMillis: 8000, max: 1,
+    ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
+  });
+  try {
+    const result = await pool.query(`SELECT * FROM (${query}) _sub LIMIT 0`);
+    return result.fields.map(f => f.name);
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
 // GET /api/admin/pipelines/:id/source-columns — fetch column names from source for mapping UI
 router.get("/admin/pipelines/:id/source-columns", authenticate, requireRole("Admin"), async (req, res) => {
   const id = parseInt(String(req.params.id));
   const [pipeline] = await db.select().from(dataPipelinesTable).where(eq(dataPipelinesTable.id, id));
   if (!pipeline) { res.status(404).json({ error: "Pipeline not found" }); return; }
-  if (!pipeline.sourceConnectionId) { res.status(400).json({ error: "No source connection configured" }); return; }
-
-  const [srcConn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.sourceConnectionId));
-  if (!srcConn) { res.status(400).json({ error: "Source connection not found" }); return; }
-
-  loadEncryptionKey();
-  const srcUser = srcConn.usernameEnc ? decrypt(srcConn.usernameEnc) : "";
-  const srcPass = srcConn.passwordEnc ? decrypt(srcConn.passwordEnc) : "";
-
-  const pool = new Pool({
-    host: srcConn.host ?? undefined, port: srcConn.port ?? 5432,
-    database: srcConn.dbName ?? undefined, user: srcUser, password: srcPass,
-    connectionTimeoutMillis: 8000, max: 1,
-  });
 
   try {
-    // Build source query — use configured table or query, limit to 0 rows to get columns
-    let q = pipeline.sourceQuery?.trim() || "";
-    if (!q && pipeline.sourceTable) {
-      const schema = srcConn.schemaName ?? "public";
-      q = `SELECT * FROM "${schema}"."${pipeline.sourceTable}"`;
-    }
-    if (!q) { res.status(400).json({ error: "No source table or query configured on this pipeline" }); return; }
+    let connId: number | null = null;
+    let q = "";
 
-    const result = await pool.query(`SELECT * FROM (${q}) _sub LIMIT 0`);
-    const columns = result.fields.map(f => f.name);
+    if (pipeline.sourceObjectId) {
+      // Object-based: resolve via connectionObjectsTable
+      const [obj] = await db.select().from(connectionObjectsTable).where(eq(connectionObjectsTable.id, pipeline.sourceObjectId));
+      if (!obj) { res.status(400).json({ error: "Source data object not found" }); return; }
+      const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, obj.connectionId));
+      if (!conn) { res.status(400).json({ error: "Source connection not found" }); return; }
+      connId = conn.id;
+      if (obj.objectType === "query") {
+        q = obj.objectValue;
+      } else {
+        const schema = conn.schemaName ?? "public";
+        q = `SELECT * FROM "${schema}"."${obj.objectValue}"`;
+      }
+    } else if (pipeline.sourceConnectionId) {
+      // Legacy: connection + table/query on pipeline itself
+      const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.sourceConnectionId));
+      if (!conn) { res.status(400).json({ error: "Source connection not found" }); return; }
+      connId = conn.id;
+      q = pipeline.sourceQuery?.trim() || "";
+      if (!q && pipeline.sourceTable) {
+        const schema = conn.schemaName ?? "public";
+        q = `SELECT * FROM "${schema}"."${pipeline.sourceTable}"`;
+      }
+    }
+
+    if (!connId || !q) { res.status(400).json({ error: "No source table or query configured on this pipeline" }); return; }
+
+    const columns = await resolveColumns(connId, q);
     res.json({ columns });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Failed to fetch columns";
     res.status(500).json({ error: msg });
-  } finally {
-    await pool.end().catch(() => {});
+  }
+});
+
+// GET /api/admin/pipelines/:id/dest-columns — fetch column names from destination for mapping UI
+router.get("/admin/pipelines/:id/dest-columns", authenticate, requireRole("Admin"), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  const [pipeline] = await db.select().from(dataPipelinesTable).where(eq(dataPipelinesTable.id, id));
+  if (!pipeline) { res.status(404).json({ error: "Pipeline not found" }); return; }
+
+  try {
+    let connId: number | null = null;
+    let q = "";
+
+    if (pipeline.destObjectId) {
+      const [obj] = await db.select().from(connectionObjectsTable).where(eq(connectionObjectsTable.id, pipeline.destObjectId));
+      if (!obj) { res.status(400).json({ error: "Destination data object not found" }); return; }
+      const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, obj.connectionId));
+      if (!conn) { res.status(400).json({ error: "Destination connection not found" }); return; }
+      connId = conn.id;
+      if (obj.objectType === "query") {
+        q = obj.objectValue;
+      } else {
+        const schema = conn.schemaName ?? "public";
+        q = `SELECT * FROM "${schema}"."${obj.objectValue}"`;
+      }
+    } else if (pipeline.destConnectionId && pipeline.destTarget) {
+      const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.destConnectionId));
+      if (!conn) { res.status(400).json({ error: "Destination connection not found" }); return; }
+      connId = conn.id;
+      const schema = conn.schemaName ?? "public";
+      q = `SELECT * FROM "${schema}"."${pipeline.destTarget}"`;
+    }
+
+    if (!connId || !q) { res.status(400).json({ error: "No destination table or query configured on this pipeline" }); return; }
+
+    const columns = await resolveColumns(connId, q);
+    res.json({ columns });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Failed to fetch columns";
+    res.status(500).json({ error: msg });
   }
 });
 

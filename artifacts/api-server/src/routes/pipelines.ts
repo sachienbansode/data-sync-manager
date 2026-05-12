@@ -63,7 +63,7 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     name, description, sourceObjectId, destObjectId,
     sourceConnectionId, destConnectionId,
     sourceTable, sourceQuery, destTarget, status, scheduleEnabled, scheduleCron,
-    notifyOnSuccess, notifyOnFailure,
+    notifyOnSuccess, notifyOnFailure, loadType, preSqlCommand, postSqlCommand,
   } = req.body as {
     name: string; description?: string;
     sourceObjectId?: number | null; destObjectId?: number | null;
@@ -71,6 +71,8 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     sourceTable?: string; sourceQuery?: string; destTarget?: string;
     status?: string; scheduleEnabled?: boolean; scheduleCron?: string;
     notifyOnSuccess?: string; notifyOnFailure?: string;
+    loadType?: "full_load" | "incremental";
+    preSqlCommand?: string; postSqlCommand?: string;
   };
 
   if (!name) { res.status(400).json({ error: "name is required" }); return; }
@@ -94,6 +96,9 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
     scheduleCron: scheduleCron ?? null,
     notifyOnSuccess: notifyOnSuccess?.trim() || null,
     notifyOnFailure: notifyOnFailure?.trim() || null,
+    loadType: loadType ?? "full_load",
+    preSqlCommand: preSqlCommand?.trim() || null,
+    postSqlCommand: postSqlCommand?.trim() || null,
     createdBy: req.user!.sub,
   }).returning();
 
@@ -132,6 +137,9 @@ router.put("/admin/pipelines/:id", authenticate, requireRole("Admin"), async (re
   if (body.scheduleCron !== undefined) updates.scheduleCron = (body.scheduleCron as string) || null;
   if (body.notifyOnSuccess !== undefined) updates.notifyOnSuccess = (body.notifyOnSuccess as string)?.trim() || null;
   if (body.notifyOnFailure !== undefined) updates.notifyOnFailure = (body.notifyOnFailure as string)?.trim() || null;
+  if (body.loadType !== undefined) updates.loadType = body.loadType as "full_load" | "incremental";
+  if (body.preSqlCommand !== undefined) updates.preSqlCommand = (body.preSqlCommand as string)?.trim() || null;
+  if (body.postSqlCommand !== undefined) updates.postSqlCommand = (body.postSqlCommand as string)?.trim() || null;
 
   const [updated] = await db.update(dataPipelinesTable).set(updates).where(eq(dataPipelinesTable.id, id)).returning();
 

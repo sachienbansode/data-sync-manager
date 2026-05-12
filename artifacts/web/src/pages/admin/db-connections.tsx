@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck, Search, ChevronLeft, ChevronRight } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { toast } from "sonner";
@@ -113,6 +113,25 @@ export default function DbConnections() {
   const [historyConn, setHistoryConn] = useState<DbConnection | null>(null);
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [engineFilter, setEngineFilter] = useState("__all__");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
+  useEffect(() => { setPage(1); }, [search, engineFilter]);
+
+  const filteredConnections = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return connections.filter(c => {
+      if (engineFilter !== "__all__" && c.dbEngine !== engineFilter) return false;
+      if (q && !c.name.toLowerCase().includes(q) && !(c.host ?? "").toLowerCase().includes(q) && !(c.dbName ?? "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [connections, search, engineFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredConnections.length / PAGE_SIZE));
+  const pagedConnections = filteredConnections.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const meta = ENGINE_META[form.dbEngine];
   const isDbEngine = !meta.isFile;
@@ -323,7 +342,33 @@ export default function DbConnections() {
               A single connection can be used as the source or destination for any number of pipelines.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {/* Search + filter bar */}
+            {!loading && connections.length > 0 && (
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    placeholder="Search by name, host, or database…"
+                    className="pl-8"
+                  />
+                </div>
+                <Select value={engineFilter} onValueChange={setEngineFilter}>
+                  <SelectTrigger className="w-full sm:w-44">
+                    <SelectValue placeholder="All engines" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">All engines</SelectItem>
+                    {(Object.keys(ENGINE_META) as (keyof typeof ENGINE_META)[]).map(e => (
+                      <SelectItem key={e} value={e}>{ENGINE_META[e].label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             {loading ? (
               <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
             ) : connections.length === 0 ? (
@@ -333,9 +378,15 @@ export default function DbConnections() {
                 <p className="text-sm mt-1">Add your first connection to start building data pipelines.</p>
                 <Button className="mt-4" onClick={openAdd}><Plus className="h-4 w-4 mr-2" />Add Connection</Button>
               </div>
+            ) : filteredConnections.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground">
+                <Search className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No connections match your search.</p>
+              </div>
             ) : (
+              <>
               <div className="divide-y">
-                {connections.map((c) => {
+                {pagedConnections.map((c) => {
                   const eng = ENGINE_META[c.dbEngine] ?? ENGINE_META.postgresql;
                   const EngIcon = eng.icon;
                   return (
@@ -395,6 +446,25 @@ export default function DbConnections() {
                   );
                 })}
               </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-2 text-sm text-muted-foreground">
+                  <span>
+                    Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredConnections.length)} of {filteredConnections.length}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="px-2 tabular-nums">{page} / {totalPages}</span>
+                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+              </>
             )}
           </CardContent>
         </Card>

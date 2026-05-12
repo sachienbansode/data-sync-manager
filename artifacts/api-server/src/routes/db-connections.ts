@@ -255,17 +255,55 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
       return;
     }
     const { S3Client, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
-    const s3 = new S3Client({
-      region: conn.extraParams?.region ?? "us-east-1",
-      credentials: { accessKeyId, secretAccessKey },
-    });
+
+    function makeS3Client(region: string, endpoint?: string) {
+      return new S3Client({
+        region,
+        credentials: { accessKeyId, secretAccessKey },
+        ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
+      });
+    }
+
+    const savedRegion = conn.extraParams?.region || "us-east-1";
+    const savedEndpoint = conn.extraParams?.endpoint;
+    const s3 = makeS3Client(savedRegion, savedEndpoint);
+
     let s3Success = false;
     let s3Error: string | null = null;
+    let correctedEndpoint: string | null = null;
+
     try {
       await s3.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
       s3Success = true;
     } catch (err: unknown) {
-      s3Error = err instanceof Error ? err.message : "S3 connection failed";
+      // Handle region-redirect: bucket is in a different region than configured
+      const errAny = err as Record<string, unknown>;
+      const isPermanentRedirect =
+        errAny?.name === "PermanentRedirect" ||
+        errAny?.Code === "PermanentRedirect" ||
+        (typeof errAny?.message === "string" && errAny.message.includes("addressed using the specified endpoint"));
+
+      if (isPermanentRedirect && !savedEndpoint) {
+        // Extract the correct endpoint from the error metadata
+        const redirectEndpoint = errAny?.Endpoint as string | undefined;
+        if (redirectEndpoint) {
+          correctedEndpoint = `https://${redirectEndpoint}`;
+          const s3Retry = makeS3Client(savedRegion, correctedEndpoint);
+          try {
+            await s3Retry.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
+            s3Success = true;
+            // Persist the working endpoint so future operations use it automatically
+            const newParams = { ...(conn.extraParams ?? {}), endpoint: correctedEndpoint };
+            await db.update(dbConnectionsTable).set({ extraParams: newParams, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+          } catch (retryErr: unknown) {
+            s3Error = retryErr instanceof Error ? retryErr.message : "S3 retry failed";
+          }
+        } else {
+          s3Error = `${errAny?.message ?? "S3 connection failed"} — the bucket is in a different AWS region than configured. Update the Region field to match your bucket's region (e.g. ap-south-1, eu-west-1).`;
+        }
+      } else {
+        s3Error = err instanceof Error ? err.message : "S3 connection failed";
+      }
     }
     await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: s3Success, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
     await db.insert(auditLogsTable).values({
@@ -274,8 +312,14 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
       details: `Tested S3 connection: ${conn.name} — ${s3Success ? "SUCCESS" : `FAILED: ${s3Error}`}`,
       resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
     });
-    if (s3Success) res.json({ success: true, message: `S3 bucket "${bucket}" is accessible` });
-    else res.status(400).json({ success: false, error: s3Error });
+    if (s3Success) {
+      const note = correctedEndpoint
+        ? ` (auto-corrected endpoint saved: ${correctedEndpoint})`
+        : "";
+      res.json({ success: true, message: `S3 bucket "${bucket}" is accessible${note}` });
+    } else {
+      res.status(400).json({ success: false, error: s3Error });
+    }
     return;
   }
 

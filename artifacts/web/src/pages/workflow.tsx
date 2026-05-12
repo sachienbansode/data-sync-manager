@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -38,6 +39,9 @@ interface Pipeline {
   scheduleNextRunAt: string | null;
   notifyOnSuccess: string | null;
   notifyOnFailure: string | null;
+  loadType: string | null;
+  preSqlCommand: string | null;
+  postSqlCommand: string | null;
   createdAt: string;
 }
 
@@ -94,10 +98,19 @@ function formatCron(expr: string): string {
   catch { return expr; }
 }
 
+const LOAD_TYPE_OPTIONS = [
+  { value: "full_load",    label: "Full Load",    hint: "Truncates / replaces destination before each run" },
+  { value: "incremental",  label: "Incremental",  hint: "Appends or upserts rows — destination is not cleared" },
+] as const;
+type LoadType = "full_load" | "incremental";
+
 const EMPTY_FORM = {
   name: "", description: "",
   sourceObjectId: "__none__",
   destObjectId: "__none__",
+  loadType: "full_load" as LoadType,
+  preSqlCommand: "",
+  postSqlCommand: "",
   scheduleEnabled: false, scheduleCron: "",
   notifyOnSuccess: "",
   notifyOnFailure: "",
@@ -161,6 +174,9 @@ export default function Workflow() {
       name: p.name, description: p.description ?? "",
       sourceObjectId: p.sourceObjectId ? String(p.sourceObjectId) : "__none__",
       destObjectId: p.destObjectId ? String(p.destObjectId) : "__none__",
+      loadType: (p.loadType as LoadType) ?? "full_load",
+      preSqlCommand: p.preSqlCommand ?? "",
+      postSqlCommand: p.postSqlCommand ?? "",
       scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
       notifyOnSuccess: p.notifyOnSuccess ?? "",
       notifyOnFailure: p.notifyOnFailure ?? "",
@@ -189,6 +205,9 @@ export default function Workflow() {
         description: form.description.trim() || undefined,
         sourceObjectId: form.sourceObjectId !== "__none__" ? parseInt(form.sourceObjectId) : null,
         destObjectId: form.destObjectId !== "__none__" ? parseInt(form.destObjectId) : null,
+        loadType: form.loadType,
+        preSqlCommand: form.preSqlCommand.trim() || undefined,
+        postSqlCommand: form.postSqlCommand.trim() || undefined,
         scheduleEnabled: form.scheduleEnabled,
         scheduleCron: form.scheduleCron.trim() || undefined,
         notifyOnSuccess: form.notifyOnSuccess.trim() || undefined,
@@ -575,6 +594,57 @@ export default function Workflow() {
                   })()}
                 </div>
               )}
+            </div>
+
+            {/* LOAD TYPE */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <GitBranch className="h-4 w-4 text-muted-foreground" /> Load Strategy
+              </p>
+              <div className="space-y-1">
+                <Label>Load Type</Label>
+                <Select value={form.loadType} onValueChange={v => setForm(f => ({ ...f, loadType: v as LoadType }))}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LOAD_TYPE_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        <span className="font-medium">{opt.label}</span>
+                        <span className="text-muted-foreground text-xs ml-2 hidden sm:inline">— {opt.hint}</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  {form.loadType === "full_load"
+                    ? "Full Load: destination is truncated (or replaced) before each run. All rows from source are inserted fresh."
+                    : "Incremental: only new or changed rows are added — destination rows are not deleted before the run."}
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Pre-Load SQL <span className="text-xs text-muted-foreground font-normal">(optional — runs on destination before data transfer)</span></Label>
+                <Textarea
+                  value={form.preSqlCommand}
+                  onChange={e => setForm(f => ({ ...f, preSqlCommand: e.target.value }))}
+                  placeholder={form.loadType === "full_load" ? "TRUNCATE TABLE target_table;" : "DELETE FROM target_table WHERE updated_at < NOW() - INTERVAL '90 days';"}
+                  className="font-mono text-xs resize-none"
+                  rows={3}
+                />
+                <p className="text-xs text-muted-foreground">No write operations will be performed on the source connection.</p>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Post-Load SQL <span className="text-xs text-muted-foreground font-normal">(optional — runs on destination after data transfer)</span></Label>
+                <Textarea
+                  value={form.postSqlCommand}
+                  onChange={e => setForm(f => ({ ...f, postSqlCommand: e.target.value }))}
+                  placeholder="ANALYZE target_table; UPDATE load_log SET status = 'done', loaded_at = NOW() WHERE pipeline_id = 1;"
+                  className="font-mono text-xs resize-none"
+                  rows={3}
+                />
+              </div>
             </div>
 
             {/* NOTIFICATIONS */}

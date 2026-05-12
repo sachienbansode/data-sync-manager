@@ -296,27 +296,57 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     return;
   }
 
-  const useSSL = conn.extraParams?.ssl === "true";
-  const testPool = new Pool({
-    host: conn.host ?? undefined,
-    port: conn.port ?? undefined,
-    database: conn.dbName ?? undefined,
-    user: username,
-    password,
-    connectionTimeoutMillis: 15000,
-    max: 1,
-    ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
-  });
+  const savedSSL = conn.extraParams?.ssl === "true";
 
-  let success = false;
+  async function tryConnect(withSSL: boolean): Promise<{ ok: boolean; err: string | null }> {
+    const p = new Pool({
+      host: conn.host ?? undefined,
+      port: conn.port ?? undefined,
+      database: conn.dbName ?? undefined,
+      user: username,
+      password,
+      connectionTimeoutMillis: 10000,
+      max: 1,
+      ...(withSSL ? { ssl: { rejectUnauthorized: false } } : {}),
+    });
+    try {
+      await p.query("SELECT 1");
+      return { ok: true, err: null };
+    } catch (e: unknown) {
+      return { ok: false, err: e instanceof Error ? e.message : "Unknown error" };
+    } finally {
+      await p.end().catch(() => {});
+    }
+  }
+
+  // First attempt with saved SSL preference
+  let result = await tryConnect(savedSSL);
+
+  // Auto-retry with opposite SSL setting if it failed — catches misconfigured SSL flag
+  if (!result.ok) {
+    const retry = await tryConnect(!savedSSL);
+    if (retry.ok) {
+      // Save the correct SSL setting so future tests/queries work
+      const newParams = { ...(conn.extraParams ?? {}), ssl: String(!savedSSL) };
+      await db.update(dbConnectionsTable).set({ extraParams: newParams, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+      result = retry;
+    }
+  }
+
+  const success = result.ok;
   let error: string | null = null;
-  try {
-    await testPool.query("SELECT 1");
-    success = true;
-  } catch (err: unknown) {
-    error = err instanceof Error ? err.message : "Connection failed";
-  } finally {
-    await testPool.end().catch(() => {});
+  if (!result.ok) {
+    const raw = result.err ?? "Connection failed";
+    const isTimeout = raw.toLowerCase().includes("timeout") || raw.toLowerCase().includes("timed out") || raw.toLowerCase().includes("terminated");
+    const isRefused = raw.toLowerCase().includes("refused") || raw.toLowerCase().includes("econnrefused");
+    const isAuth = raw.toLowerCase().includes("password") || raw.toLowerCase().includes("authentication");
+    if (isTimeout || isRefused) {
+      error = `${raw}. Hint: the server could not be reached — ensure the database host (${conn.host}:${conn.port}) allows inbound connections from external IPs. If it is on a private network or behind a firewall, open port ${conn.port ?? 5432} for Replit's outbound addresses.`;
+    } else if (isAuth) {
+      error = `${raw}. Hint: check the username and password are correct.`;
+    } else {
+      error = raw;
+    }
   }
 
   await db.update(dbConnectionsTable).set({

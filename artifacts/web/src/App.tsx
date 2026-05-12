@@ -70,7 +70,7 @@ function Router() {
         <ProtectedRoute component={Roles} path="/roles" />
       </Route>
       <Route path="/profile">
-        <ProtectedRoute component={Profile} path="/profile" />
+        <ProtectedRoute component={Profile} path="/profile" skipPermissionCheck />
       </Route>
       <Route path="/audit-log">
         <ProtectedRoute component={AuditLog} path="/audit-log" />

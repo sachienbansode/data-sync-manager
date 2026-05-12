@@ -100,7 +100,7 @@ router.post("/roles", authenticate, requirePageAccess("/roles"), requireRole("Ad
 
 // PUT /roles/:id — update role name / description / mfaRequired
 router.put("/roles/:id", authenticate, requirePageAccess("/roles"), requireRole("Admin"), async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const body = UpdateRoleBody.safeParse(req.body);
@@ -142,7 +142,7 @@ router.put("/roles/:id", authenticate, requirePageAccess("/roles"), requireRole(
 
 // DELETE /roles/:id
 router.delete("/roles/:id", authenticate, requirePageAccess("/roles"), requireRole("Admin"), async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id, 10);
+  const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid id" }); return; }
 
   const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(usersTable).where(eq(usersTable.roleId, id));

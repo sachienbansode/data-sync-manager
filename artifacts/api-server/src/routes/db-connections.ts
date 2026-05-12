@@ -10,6 +10,10 @@ import { registerSchedule, cancelSchedule, runScheduledFetch, type FetchResult }
 const { Pool } = pg;
 const router: IRouter = Router();
 
+function getIp(req: import("express").Request): string | null {
+  return Array.isArray(req.ip) ? (req.ip[0] ?? null) : (req.ip ?? null);
+}
+
 function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
   return {
     id: r.id,
@@ -113,7 +117,7 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
     details: `Created DB connection: ${name} (${type}) → ${host}/${dbName}`,
     resourceType: "db_connection",
     resourceId: String(row.id),
-    ipAddress: req.ip ?? null,
+    ipAddress: getIp(req),
   });
 
   res.status(201).json(safeRow(row));
@@ -121,7 +125,7 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
 
 // PUT /api/admin/db-connections/:id
 router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { name, type, dbEngine, host, port, dbName, schemaName, username, password, extraParams, outputFilePath, fetchQuery, scheduleCron, scheduleEnabled } = req.body as {
     name?: string; type?: string; dbEngine?: string; host?: string; port?: number;
     dbName?: string; schemaName?: string; username?: string; password?: string;
@@ -187,7 +191,7 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
     details: `Updated DB connection: ${updated.name} (id=${id})`,
     resourceType: "db_connection",
     resourceId: String(id),
-    ipAddress: req.ip ?? null,
+    ipAddress: getIp(req),
   });
 
   res.json(safeRow(updated));
@@ -195,7 +199,7 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
 
 // PUT /api/admin/db-connections/:id/schedule — Enable or disable schedule without editing the whole connection
 router.put("/admin/db-connections/:id/schedule", authenticate, requireRole("Admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const { enabled } = req.body as { enabled: boolean };
 
   if (typeof enabled !== "boolean") {
@@ -239,7 +243,7 @@ router.put("/admin/db-connections/:id/schedule", authenticate, requireRole("Admi
     details: `${enabled ? "Enabled" : "Disabled"} schedule for connection: ${updated.name} (id=${id})`,
     resourceType: "db_connection",
     resourceId: String(id),
-    ipAddress: req.ip ?? null,
+    ipAddress: getIp(req),
   });
 
   res.json(safeRow(updated));
@@ -247,7 +251,7 @@ router.put("/admin/db-connections/:id/schedule", authenticate, requireRole("Admi
 
 // DELETE /api/admin/db-connections/:id
 router.delete("/admin/db-connections/:id", authenticate, requireRole("Admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [existing] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!existing) { res.status(404).json({ error: "Connection not found" }); return; }
 
@@ -261,7 +265,7 @@ router.delete("/admin/db-connections/:id", authenticate, requireRole("Admin"), a
     details: `Deleted DB connection: ${existing.name} (id=${id})`,
     resourceType: "db_connection",
     resourceId: String(id),
-    ipAddress: req.ip ?? null,
+    ipAddress: getIp(req),
   });
 
   res.status(204).send();
@@ -269,7 +273,7 @@ router.delete("/admin/db-connections/:id", authenticate, requireRole("Admin"), a
 
 // GET /api/admin/db-connections/:id/jobs — last 50 scheduled runs for this connection
 router.get("/admin/db-connections/:id/jobs", authenticate, requireRole("Admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
 
@@ -285,7 +289,7 @@ router.get("/admin/db-connections/:id/jobs", authenticate, requireRole("Admin"),
 
 // POST /api/admin/db-connections/:id/run — trigger a scheduled fetch immediately
 router.post("/admin/db-connections/:id/run", authenticate, requireRole("Admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
 
@@ -306,7 +310,7 @@ router.post("/admin/db-connections/:id/run", authenticate, requireRole("Admin"),
     details: `Manually triggered scheduled fetch for connection: ${conn.name} (id=${id})`,
     resourceType: "db_connection",
     resourceId: String(id),
-    ipAddress: req.ip ?? null,
+    ipAddress: getIp(req),
   });
 
   let fetchResult: FetchResult;
@@ -324,7 +328,7 @@ router.post("/admin/db-connections/:id/run", authenticate, requireRole("Admin"),
 
 // POST /api/admin/db-connections/:id/test
 router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin"), async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
 
@@ -332,17 +336,17 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   let username: string;
   let password: string;
   try {
-    username = decrypt(conn.usernameEnc);
-    password = decrypt(conn.passwordEnc);
+    username = decrypt(conn.usernameEnc ?? "");
+    password = decrypt(conn.passwordEnc ?? "");
   } catch {
     res.status(500).json({ success: false, error: "Failed to decrypt credentials" });
     return;
   }
 
   const testPool = new Pool({
-    host: conn.host,
-    port: conn.port,
-    database: conn.dbName,
+    host: conn.host ?? undefined,
+    port: conn.port ?? undefined,
+    database: conn.dbName ?? undefined,
     user: username,
     password,
     connectionTimeoutMillis: 5000,
@@ -374,7 +378,7 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     details: `Tested DB connection: ${conn.name} — ${success ? "SUCCESS" : `FAILED: ${error}`}`,
     resourceType: "db_connection",
     resourceId: String(id),
-    ipAddress: req.ip ?? null,
+    ipAddress: getIp(req),
   });
 
   if (success) {

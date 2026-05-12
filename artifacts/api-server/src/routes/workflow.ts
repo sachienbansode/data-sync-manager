@@ -77,9 +77,11 @@ function applyTransform(value: unknown, type: string, params: string | null): st
   return str;
 }
 
+type MappingRow = { backofficeField: string; tradingField: string; transformType: string; transformParams: string | null; sortOrder: number };
+
 async function transformRows(
   jobId: number,
-  mappings: Awaited<ReturnType<typeof db.select>>
+  mappings: MappingRow[]
 ): Promise<{ tradingField: string; value: string }[][]> {
   if (mappings.length === 0) return [];
   const rows = await db
@@ -90,7 +92,7 @@ async function transformRows(
 
   return rows.map((r) => {
     const raw = r.rawData as Record<string, unknown>;
-    return (mappings as Array<{ backofficeField: string; tradingField: string; transformType: string; transformParams: string | null; sortOrder: number }>)
+    return mappings
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((m) => ({
         tradingField: m.tradingField,
@@ -185,7 +187,7 @@ router.put("/workflow/field-mappings", authenticate, requireRole("Admin"), async
     action: "FIELD_MAPPINGS_UPDATED",
     details: `Updated ${mappings.length} field mapping(s)`,
     resourceType: "field_mappings",
-    ipAddress: req.ip ?? null,
+    ipAddress: Array.isArray(req.ip) ? (req.ip[0] ?? null) : (req.ip ?? null),
   });
 
   const updated = await db.select().from(fieldMappingsTable).orderBy(fieldMappingsTable.sortOrder, fieldMappingsTable.id);
@@ -208,7 +210,7 @@ router.get("/workflow/jobs", authenticate, async (req, res) => {
 // Viewer role receives job metadata only (no raw data preview).
 // Admin, Manager, Analyst receive full preview rows.
 router.get("/workflow/jobs/:id", authenticate, async (req, res) => {
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [job] = await db.select().from(dataJobsTable).where(eq(dataJobsTable.id, id));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
 
@@ -246,8 +248,8 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
   if (!conn) { res.status(404).json({ error: "BackOffice connection not found" }); return; }
 
   loadEncryptionKey();
-  const username = decrypt(conn.usernameEnc);
-  const password = decrypt(conn.passwordEnc);
+  const username = decrypt(conn.usernameEnc ?? "");
+  const password = decrypt(conn.passwordEnc ?? "");
 
   const [job] = await db.insert(dataJobsTable).values({
     type: "fetch",
@@ -261,9 +263,9 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
   }).returning();
 
   const fetchPool = new Pool({
-    host: conn.host,
-    port: conn.port,
-    database: conn.dbName,
+    host: conn.host ?? undefined,
+    port: conn.port ?? undefined,
+    database: conn.dbName ?? undefined,
     user: username,
     password,
     connectionTimeoutMillis: 10000,
@@ -309,7 +311,7 @@ router.post("/workflow/fetch", authenticate, async (req, res) => {
       details: `Fetched ${rows.length} rows from ${conn.name}`,
       resourceType: "data_job",
       resourceId: String(job.id),
-      ipAddress: req.ip ?? null,
+      ipAddress: Array.isArray(req.ip) ? (req.ip[0] ?? null) : (req.ip ?? null),
     });
 
     const preview = rows.slice(0, 20);
@@ -400,7 +402,7 @@ router.post("/workflow/upload-csv", authenticate, upload.single("file"), async (
     details: `Uploaded CSV: ${parsedRows.length} rows, headers: ${headers.join(", ")}`,
     resourceType: "data_job",
     resourceId: String(job.id),
-    ipAddress: req.ip ?? null,
+    ipAddress: Array.isArray(req.ip) ? (req.ip[0] ?? null) : (req.ip ?? null),
   });
 
   res.json({
@@ -420,7 +422,7 @@ router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
     return;
   }
 
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [job] = await db.select().from(dataJobsTable).where(eq(dataJobsTable.id, id));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (job.status !== "success") { res.status(400).json({ error: "Job has not completed successfully" }); return; }
@@ -447,7 +449,7 @@ router.post("/workflow/jobs/:id/download", authenticate, async (req, res) => {
     details: `Downloaded transformed CSV for job id=${id}`,
     resourceType: "data_job",
     resourceId: String(id),
-    ipAddress: req.ip ?? null,
+    ipAddress: Array.isArray(req.ip) ? (req.ip[0] ?? null) : (req.ip ?? null),
   });
 
   res.setHeader("Content-Type", "text/csv");
@@ -467,7 +469,7 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
     return;
   }
 
-  const id = parseInt(req.params.id);
+  const id = parseInt(String(req.params.id));
   const [job] = await db.select().from(dataJobsTable).where(eq(dataJobsTable.id, id));
   if (!job) { res.status(404).json({ error: "Job not found" }); return; }
   if (job.status !== "success") { res.status(400).json({ error: "Job has not completed successfully" }); return; }
@@ -549,7 +551,7 @@ router.post("/workflow/jobs/:id/push", authenticate, async (req, res) => {
     details: `Pushed transformed CSV for source job id=${id} to ${outputPath} (push job id=${pushJob.id})`,
     resourceType: "data_job",
     resourceId: String(pushJob.id),
-    ipAddress: req.ip ?? null,
+    ipAddress: Array.isArray(req.ip) ? (req.ip[0] ?? null) : (req.ip ?? null),
   });
 
   res.json({ success: true, path: outputPath, pushJobId: pushJob.id });

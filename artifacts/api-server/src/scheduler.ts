@@ -128,8 +128,8 @@ export async function runScheduledFetch(connectionId: number): Promise<FetchResu
   let username: string;
   let password: string;
   try {
-    username = decrypt(conn.usernameEnc);
-    password = decrypt(conn.passwordEnc);
+    username = decrypt(conn.usernameEnc ?? "");
+    password = decrypt(conn.passwordEnc ?? "");
   } catch (err) {
     logger.error({ connectionId, err }, "Scheduled fetch: failed to decrypt credentials");
     return { success: false, error: "Failed to decrypt credentials" };
@@ -158,9 +158,9 @@ export async function runScheduledFetch(connectionId: number): Promise<FetchResu
     .where(eq(dbConnectionsTable.id, connectionId));
 
   const fetchPool = new Pool({
-    host: conn.host,
-    port: conn.port,
-    database: conn.dbName,
+    host: conn.host ?? undefined,
+    port: conn.port ?? undefined,
+    database: conn.dbName ?? undefined,
     user: username,
     password,
     connectionTimeoutMillis: 10000,

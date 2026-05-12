@@ -6,6 +6,7 @@ export const rolesTable = pgTable("roles", {
   id: serial("id").primaryKey(),
   name: text("name").notNull().unique(),
   description: text("description").notNull().default(""),
+  mfaRequired: boolean("mfa_required").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 

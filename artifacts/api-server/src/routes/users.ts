@@ -169,6 +169,12 @@ router.patch("/users/:id", authenticate, requirePageAccess("/users"), requireRol
   if (body.data.lastName != null) updateData.lastName = body.data.lastName;
   if (body.data.roleId != null) updateData.roleId = body.data.roleId;
 
+  // Accept optional password field outside of generated Zod schema
+  const rawPassword = (req.body as Record<string, unknown>).password;
+  if (typeof rawPassword === "string" && rawPassword.length >= 8) {
+    updateData.passwordHash = await hashPassword(rawPassword);
+  }
+
   await db.update(usersTable).set(updateData).where(eq(usersTable.id, params.data.id));
 
   const [user] = await buildUserSelect().where(eq(usersTable.id, params.data.id));

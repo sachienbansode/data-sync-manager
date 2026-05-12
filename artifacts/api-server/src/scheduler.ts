@@ -86,10 +86,11 @@ export interface PipelineRunResult {
   recordCount?: number;
   error?: string;
   jobId?: number;
+  conflict?: boolean;
 }
 
-/** Run a pipeline by ID. Used by both the scheduler and the /run endpoint. */
-export async function runPipelineById(pipelineId: number, triggeredBySchedule = false): Promise<PipelineRunResult> {
+/** Inner implementation — called only when the lock is already held. */
+async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean): Promise<PipelineRunResult> {
   const [pipeline] = await db.select().from(dataPipelinesTable).where(eq(dataPipelinesTable.id, pipelineId));
   if (!pipeline) return { success: false, error: "Pipeline not found" };
   if (!pipeline.sourceConnectionId) return { success: false, error: "No source connection configured" };
@@ -228,6 +229,28 @@ export async function runPipelineById(pipelineId: number, triggeredBySchedule = 
       resolvePromise({ success: false, error: msg, jobId: job.id });
     });
   });
+}
+
+/** Run a pipeline by ID. Used by both the scheduler and the /run endpoint. */
+export async function runPipelineById(pipelineId: number, triggeredBySchedule = false): Promise<PipelineRunResult> {
+  if (runningPipelineIds.has(pipelineId)) {
+    return { success: false, conflict: true, error: "A run is already in progress for this pipeline" };
+  }
+  runningPipelineIds.add(pipelineId);
+  try {
+    return await _executePipeline(pipelineId, triggeredBySchedule);
+  } finally {
+    runningPipelineIds.delete(pipelineId);
+  }
+}
+
+// ─── In-memory concurrency lock ────────────────────────────────────────────
+
+const runningPipelineIds = new Set<number>();
+
+/** Returns true if a run is already in progress for this pipeline. */
+export function isPipelineRunning(pipelineId: number): boolean {
+  return runningPipelineIds.has(pipelineId);
 }
 
 // ─── Cron task registry ────────────────────────────────────────────────────

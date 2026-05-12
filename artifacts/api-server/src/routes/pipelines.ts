@@ -7,7 +7,7 @@ import {
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { decrypt, loadEncryptionKey } from "../lib/crypto";
-import { registerPipelineSchedule, cancelPipelineSchedule, runPipelineById } from "../scheduler";
+import { registerPipelineSchedule, cancelPipelineSchedule, runPipelineById, isPipelineRunning } from "../scheduler";
 
 const { Pool } = pg;
 const router: IRouter = Router();
@@ -245,6 +245,11 @@ router.get("/admin/pipelines/:id/source-columns", authenticate, requireRole("Adm
 router.post("/admin/pipelines/:id/run", authenticate, requireRole("Admin"), async (req, res) => {
   const id = parseInt(String(req.params.id));
 
+  if (isPipelineRunning(id)) {
+    res.status(409).json({ error: "A run is already in progress for this pipeline" });
+    return;
+  }
+
   const [pipeline] = await db.select().from(dataPipelinesTable).where(eq(dataPipelinesTable.id, id));
   if (!pipeline) { res.status(404).json({ error: "Pipeline not found" }); return; }
   if (!pipeline.sourceConnectionId) { res.status(400).json({ error: "Configure a source connection before running" }); return; }
@@ -265,6 +270,8 @@ router.post("/admin/pipelines/:id/run", authenticate, requireRole("Admin"), asyn
   const result = await runPipelineById(id, false);
   if (result.success) {
     res.json({ success: true, recordCount: result.recordCount, jobId: result.jobId });
+  } else if (result.conflict) {
+    res.status(409).json({ success: false, error: result.error });
   } else {
     res.status(500).json({ success: false, error: result.error, jobId: result.jobId });
   }

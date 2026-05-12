@@ -107,7 +107,13 @@ async function sendFailureAlertEmail(
   }
 }
 
-export async function runScheduledFetch(connectionId: number): Promise<void> {
+export interface FetchResult {
+  success: boolean;
+  recordCount?: number;
+  error?: string;
+}
+
+export async function runScheduledFetch(connectionId: number): Promise<FetchResult> {
   const [conn] = await db
     .select()
     .from(dbConnectionsTable)
@@ -115,7 +121,7 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
 
   if (!conn) {
     logger.warn({ connectionId }, "Scheduled fetch: connection not found");
-    return;
+    return { success: false, error: "Connection not found" };
   }
 
   loadEncryptionKey();
@@ -126,7 +132,7 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
     password = decrypt(conn.passwordEnc);
   } catch (err) {
     logger.error({ connectionId, err }, "Scheduled fetch: failed to decrypt credentials");
-    return;
+    return { success: false, error: "Failed to decrypt credentials" };
   }
 
   const [job] = await db
@@ -184,7 +190,7 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
       if (newFailures % CONSECUTIVE_FAILURE_THRESHOLD === 0) {
         await sendFailureAlertEmail(conn.name, connectionId, newFailures, queryError);
       }
-      return;
+      return { success: false, error: queryError };
     }
 
     const result = await fetchPool.query(selectQuery);
@@ -214,6 +220,7 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
     });
 
     logger.info({ connectionId, jobId: job.id, rowCount: rows.length }, "Scheduled fetch completed");
+    return { success: true, recordCount: rows.length };
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Fetch failed";
     await db
@@ -233,6 +240,7 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
     }
 
     logger.error({ connectionId, jobId: job.id, err }, "Scheduled fetch failed");
+    return { success: false, error: msg };
   } finally {
     await fetchPool.end().catch(() => {});
   }

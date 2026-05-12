@@ -5,7 +5,7 @@ import cron from "node-cron";
 import { db, dbConnectionsTable, auditLogsTable, dataJobsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
-import { registerSchedule, cancelSchedule } from "../scheduler";
+import { registerSchedule, cancelSchedule, runScheduledFetch, type FetchResult } from "../scheduler";
 
 const { Pool } = pg;
 const router: IRouter = Router();
@@ -262,6 +262,45 @@ router.get("/admin/db-connections/:id/jobs", authenticate, requireRole("Admin"),
     .limit(50);
 
   res.json(jobs);
+});
+
+// POST /api/admin/db-connections/:id/run — trigger a scheduled fetch immediately
+router.post("/admin/db-connections/:id/run", authenticate, requireRole("Admin"), async (req, res) => {
+  const id = parseInt(req.params.id);
+  const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
+  if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
+
+  if (conn.type !== "backoffice") {
+    res.status(400).json({ error: "Manual run is only supported for BackOffice connections" });
+    return;
+  }
+
+  if (!conn.scheduleCron) {
+    res.status(400).json({ error: "Connection has no schedule configured" });
+    return;
+  }
+
+  await db.insert(auditLogsTable).values({
+    userId: req.user!.sub,
+    userEmail: req.user!.email,
+    action: "DB_CONNECTION_RUN_NOW",
+    details: `Manually triggered scheduled fetch for connection: ${conn.name} (id=${id})`,
+    resourceType: "db_connection",
+    resourceId: String(id),
+    ipAddress: req.ip ?? null,
+  });
+
+  let fetchResult: FetchResult;
+  try {
+    fetchResult = await runScheduledFetch(id);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Fetch failed";
+    res.status(500).json({ error: msg });
+    return;
+  }
+
+  const [updated] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
+  res.json({ ...safeRow(updated), fetchResult });
 });
 
 // POST /api/admin/db-connections/:id/test

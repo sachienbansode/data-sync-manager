@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer, AlertTriangle, History } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer, AlertTriangle, History, Play } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import cronstrue from "cronstrue";
@@ -144,6 +144,7 @@ export default function DbConnections() {
   const [testing, setTesting] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [togglingSchedule, setTogglingSchedule] = useState<number | null>(null);
+  const [runningNow, setRunningNow] = useState<number | null>(null);
   const [cronPreset, setCronPreset] = useState<string>("");
   const [historyConnection, setHistoryConnection] = useState<DbConnection | null>(null);
   const [historyJobs, setHistoryJobs] = useState<DataJob[]>([]);
@@ -282,6 +283,30 @@ export default function DbConnections() {
     }
   }
 
+  async function runNow(c: DbConnection) {
+    setRunningNow(c.id);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${apiBase}/admin/db-connections/${c.id}/run`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Run failed");
+      const result = data.fetchResult as { success: boolean; recordCount?: number; error?: string } | undefined;
+      if (result?.success) {
+        const rows = result.recordCount ?? 0;
+        toast.success(`Fetch completed for "${c.name}" — ${rows.toLocaleString()} row${rows !== 1 ? "s" : ""} fetched`);
+      } else {
+        toast.error(`Fetch failed for "${c.name}": ${result?.error ?? "Unknown error"}`);
+      }
+      load();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Run failed");
+    } finally {
+      setRunningNow(null);
+    }
+  }
+
   async function openHistory(c: DbConnection) {
     setHistoryConnection(c);
     setHistoryJobs([]);
@@ -395,6 +420,18 @@ export default function DbConnections() {
                             />
                           )}
                         </div>
+                      )}
+                      {c.type === "backoffice" && c.scheduleCron && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => runNow(c)}
+                          disabled={runningNow === c.id}
+                          title="Run scheduled fetch now"
+                        >
+                          {runningNow === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
+                          <span className="ml-1 hidden sm:inline">Run now</span>
+                        </Button>
                       )}
                       {c.type === "backoffice" && (
                         <Button variant="outline" size="sm" onClick={() => openHistory(c)} title="View scheduled run history">

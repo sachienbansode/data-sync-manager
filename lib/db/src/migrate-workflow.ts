@@ -71,6 +71,9 @@ async function main() {
     ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_next_run_at TIMESTAMPTZ;
 
     ALTER TABLE data_jobs ADD COLUMN IF NOT EXISTS triggered_by_schedule BOOLEAN NOT NULL DEFAULT false;
+
+    -- Consecutive failure tracking for scheduled fetches (Task #18)
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_consecutive_failures INTEGER NOT NULL DEFAULT 0;
   `);
 
   console.log("Workflow tables created successfully");

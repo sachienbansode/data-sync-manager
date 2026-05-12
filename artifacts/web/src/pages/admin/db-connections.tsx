@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import cronstrue from "cronstrue";
@@ -27,6 +27,7 @@ interface DbConnection {
   scheduleCron: string | null;
   scheduleLastRunAt: string | null;
   scheduleNextRunAt: string | null;
+  scheduleConsecutiveFailures: number;
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
@@ -318,6 +319,12 @@ export default function DbConnections() {
                           <span className={`flex items-center gap-1 text-xs ${c.scheduleEnabled ? "text-blue-600" : "text-muted-foreground"}`}>
                             <CalendarClock className="h-3 w-3" />
                             {c.scheduleEnabled ? "Scheduled" : "Schedule off"} · {formatCronHuman(c.scheduleCron)}
+                          </span>
+                        )}
+                        {c.type === "backoffice" && c.scheduleConsecutiveFailures > 0 && (
+                          <span className="flex items-center gap-1 text-xs text-destructive font-medium" title={`${c.scheduleConsecutiveFailures} consecutive scheduled fetch failure${c.scheduleConsecutiveFailures !== 1 ? "s" : ""}`}>
+                            <AlertTriangle className="h-3 w-3" />
+                            {c.scheduleConsecutiveFailures} failure{c.scheduleConsecutiveFailures !== 1 ? "s" : ""}
                           </span>
                         )}
                       </div>

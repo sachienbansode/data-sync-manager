@@ -25,6 +25,8 @@ export const dbConnectionsTable = pgTable("db_connections", {
   scheduleLastRunAt: timestamp("schedule_last_run_at", { withTimezone: true }),
   /** Timestamp when the next scheduled run is expected. */
   scheduleNextRunAt: timestamp("schedule_next_run_at", { withTimezone: true }),
+  /** Number of consecutive scheduled fetch failures (reset to 0 on success). */
+  scheduleConsecutiveFailures: integer("schedule_consecutive_failures").notNull().default(0),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   lastTestSuccess: boolean("last_test_success"),

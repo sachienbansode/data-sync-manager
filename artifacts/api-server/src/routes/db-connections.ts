@@ -25,6 +25,7 @@ function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
     scheduleCron: r.scheduleCron,
     scheduleLastRunAt: r.scheduleLastRunAt,
     scheduleNextRunAt: r.scheduleNextRunAt,
+    scheduleConsecutiveFailures: r.scheduleConsecutiveFailures,
     createdBy: r.createdBy,
     lastTestedAt: r.lastTestedAt,
     lastTestSuccess: r.lastTestSuccess,

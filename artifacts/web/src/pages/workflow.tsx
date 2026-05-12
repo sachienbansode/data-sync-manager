@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Loader2, Plus, Pencil, Trash2, GitBranch, ArrowRight, Database, Cloud,
   FolderOpen, Server, CheckCircle, Play, PauseCircle, Settings2,
-  CalendarClock, History, XCircle, Table2, ChevronDown, ChevronUp,
+  CalendarClock, History, XCircle, Table2, ChevronDown, ChevronUp, User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
@@ -718,8 +718,8 @@ export default function Workflow() {
                       {j.status === "pending" && <History   className="h-4 w-4 text-muted-foreground shrink-0" />}
                       <span className="font-medium capitalize">{j.status}</span>
                       {j.triggeredBySchedule
-                        ? <Badge variant="outline" className="text-xs">Scheduled</Badge>
-                        : <Badge variant="outline" className="text-xs">Manual</Badge>
+                        ? <span className="flex items-center gap-1 text-xs font-medium text-blue-600"><CalendarClock className="h-3 w-3" /> Scheduled</span>
+                        : <span className="flex items-center gap-1 text-xs text-muted-foreground"><User className="h-3 w-3" /> Manual</span>
                       }
                     </div>
                     {j.recordCount !== null && (

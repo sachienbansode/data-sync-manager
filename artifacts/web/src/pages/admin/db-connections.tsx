@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 
@@ -81,6 +81,19 @@ function connectionSummary(c: DbConnection): string {
   return `${c.host ?? "?"}:${c.port ?? "?"}/${c.dbName ?? "?"}`;
 }
 
+interface RunJob {
+  id: number;
+  type: string;
+  status: "pending" | "running" | "success" | "failed";
+  triggeredByEmail: string | null;
+  triggeredBySchedule: boolean;
+  recordCount: number | null;
+  errorMessage: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
 const apiBase = `${import.meta.env.BASE_URL}api`;
 
 export default function DbConnections() {
@@ -92,6 +105,9 @@ export default function DbConnections() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
+  const [historyConn, setHistoryConn] = useState<DbConnection | null>(null);
+  const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const meta = ENGINE_META[form.dbEngine];
   const isDbEngine = !meta.isFile;
@@ -231,6 +247,24 @@ export default function DbConnections() {
     }
   }
 
+  async function openHistory(c: DbConnection) {
+    setHistoryConn(c);
+    setHistoryJobs([]);
+    setHistoryLoading(true);
+    try {
+      const token = getAccessToken();
+      const res = await fetch(`${apiBase}/admin/db-connections/${c.id}/runs`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to load run history");
+      setHistoryJobs(await res.json());
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Failed to load history");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
   async function deleteConnection() {
     if (!deleteId) return;
     try {
@@ -327,6 +361,10 @@ export default function DbConnections() {
                             <span className="ml-1 hidden sm:inline">Test</span>
                           </Button>
                         )}
+                        <Button variant="outline" size="sm" onClick={() => openHistory(c)}>
+                          <History className="h-4 w-4" />
+                          <span className="ml-1 hidden sm:inline">History</span>
+                        </Button>
                         <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -548,6 +586,61 @@ export default function DbConnections() {
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="destructive" onClick={deleteConnection}>Delete</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Run history dialog */}
+      <Dialog open={!!historyConn} onOpenChange={() => setHistoryConn(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-4 w-4" /> Run History — {historyConn?.name}
+            </DialogTitle>
+            <DialogDescription>Last 50 data jobs for this connection.</DialogDescription>
+          </DialogHeader>
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : historyJobs.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No runs yet for this connection.</p>
+          ) : (
+            <div className="divide-y text-sm">
+              {historyJobs.map(j => (
+                <div key={j.id} className="py-3 flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {j.status === "success" && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
+                      {j.status === "failed"  && <XCircle    className="h-4 w-4 text-destructive shrink-0" />}
+                      {j.status === "running" && <Loader2    className="h-4 w-4 animate-spin text-blue-600 shrink-0" />}
+                      {j.status === "pending" && <History    className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      <span className="font-medium capitalize">{j.status}</span>
+                      <span className="text-xs text-muted-foreground capitalize">{j.type.replace("_", " ")}</span>
+                      {j.triggeredBySchedule
+                        ? <span className="flex items-center gap-1 text-xs font-medium text-blue-600"><CalendarClock className="h-3 w-3" /> Scheduled</span>
+                        : <span className="flex items-center gap-1 text-xs text-muted-foreground"><User className="h-3 w-3" /> Manual</span>
+                      }
+                    </div>
+                    {j.recordCount !== null && (
+                      <p className="text-muted-foreground text-xs">{j.recordCount.toLocaleString()} row{j.recordCount !== 1 ? "s" : ""}</p>
+                    )}
+                    {j.triggeredByEmail && (
+                      <p className="text-xs text-muted-foreground">By: {j.triggeredByEmail}</p>
+                    )}
+                    {j.errorMessage && (
+                      <p className="text-destructive text-xs font-mono line-clamp-2">{j.errorMessage}</p>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground text-right shrink-0">
+                    <p>{new Date(j.startedAt ?? j.createdAt).toLocaleString()}</p>
+                    {j.startedAt && j.finishedAt && (
+                      <p>{Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000)}s</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

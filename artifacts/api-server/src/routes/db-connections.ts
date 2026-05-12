@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import pg from "pg";
-import { db, dbConnectionsTable, auditLogsTable } from "@workspace/db";
+import { db, dbConnectionsTable, auditLogsTable, dataJobsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
 
@@ -297,6 +297,22 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   } else {
     res.status(400).json({ success: false, error });
   }
+});
+
+// GET /api/admin/db-connections/:id/runs — last 50 data jobs for this connection
+router.get("/admin/db-connections/:id/runs", authenticate, requireRole("Admin"), async (req, res) => {
+  const id = parseInt(String(req.params.id));
+  const [conn] = await db.select({ id: dbConnectionsTable.id }).from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
+  if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
+
+  const runs = await db
+    .select()
+    .from(dataJobsTable)
+    .where(eq(dataJobsTable.connectionId, id))
+    .orderBy(desc(dataJobsTable.createdAt))
+    .limit(50);
+
+  res.json(runs);
 });
 
 export default router;

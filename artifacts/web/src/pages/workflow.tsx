@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Loader2, Plus, Pencil, Trash2, GitBranch, ArrowRight, Database, Cloud,
   FolderOpen, Server, CheckCircle, Play, PauseCircle, Settings2,
-  CalendarClock, History, XCircle,
+  CalendarClock, History, XCircle, Table2, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
@@ -25,12 +25,14 @@ interface Pipeline {
   description: string | null;
   sourceConnectionId: number | null;
   destConnectionId: number | null;
+  sourceTable: string | null;
   sourceQuery: string | null;
   destTarget: string | null;
   status: PipelineStatus;
   scheduleEnabled: boolean;
   scheduleCron: string | null;
   scheduleLastRunAt: string | null;
+  scheduleNextRunAt: string | null;
   createdAt: string;
 }
 
@@ -39,12 +41,14 @@ interface DbConnection {
   name: string;
   type: string;
   dbEngine: string;
+  schemaName: string | null;
 }
 
 interface RunJob {
   id: number;
   status: "pending" | "running" | "success" | "failed";
   triggeredByEmail: string | null;
+  triggeredBySchedule: boolean;
   recordCount: number | null;
   errorMessage: string | null;
   startedAt: string | null;
@@ -56,27 +60,25 @@ const ENGINE_ICON: Record<string, React.ComponentType<{ className?: string }>> =
   postgresql: Database, mysql: Database, mssql: Server, oracle: Server,
   s3: Cloud, sftp: FolderOpen, csv: FolderOpen,
 };
-
 const ENGINE_LABEL: Record<string, string> = {
   postgresql: "PostgreSQL", mysql: "MySQL", mssql: "MS SQL",
   oracle: "Oracle", s3: "S3", sftp: "SFTP", csv: "CSV",
 };
 
 const CRON_PRESETS = [
-  { label: "Every hour",      value: "0 * * * *" },
-  { label: "Every 6 hours",   value: "0 */6 * * *" },
-  { label: "Daily at midnight", value: "0 0 * * *" },
-  { label: "Daily at 2 AM",   value: "0 2 * * *" },
-  { label: "Daily at 6 AM",   value: "0 6 * * *" },
-  { label: "Weekly (Mon 8 AM)", value: "0 8 * * 1" },
-  { label: "Custom",          value: "__custom__" },
+  { label: "Every hour",           value: "0 * * * *"   },
+  { label: "Every 6 hours",        value: "0 */6 * * *" },
+  { label: "Daily at midnight",    value: "0 0 * * *"   },
+  { label: "Daily at 2 AM",        value: "0 2 * * *"   },
+  { label: "Daily at 6 AM",        value: "0 6 * * *"   },
+  { label: "Weekly (Mon 8 AM)",    value: "0 8 * * 1"   },
+  { label: "Custom",               value: "__custom__"  },
 ];
 
 function formatCron(expr: string): string {
   try { return cronstrue.toString(expr, { throwExceptionOnParseError: true }); }
   catch { return expr; }
 }
-
 function formatDate(iso: string | null): string {
   if (!iso) return "Never";
   return new Date(iso).toLocaleString();
@@ -86,7 +88,10 @@ const EMPTY_FORM = {
   name: "", description: "",
   sourceConnectionId: "__none__",
   destConnectionId: "__none__",
-  sourceQuery: "", destTarget: "",
+  sourceTable: "__none__",
+  sourceQuery: "",
+  useCustomQuery: false,
+  destTarget: "",
   scheduleEnabled: false, scheduleCron: "",
 };
 
@@ -107,6 +112,10 @@ export default function Workflow() {
   const [historyPipeline, setHistoryPipeline] = useState<Pipeline | null>(null);
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+
+  // Table listing
+  const [srcTables, setSrcTables] = useState<string[]>([]);
+  const [srcTablesLoading, setSrcTablesLoading] = useState(false);
 
   const token = getAccessToken();
 
@@ -131,25 +140,58 @@ export default function Workflow() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Fetch table list when source connection changes
+  async function loadSourceTables(connectionId: string) {
+    if (connectionId === "__none__") { setSrcTables([]); return; }
+    setSrcTablesLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/admin/db-connections/${connectionId}/tables`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to load tables");
+      const data = await res.json();
+      setSrcTables(data.tables ?? []);
+    } catch {
+      setSrcTables([]);
+    } finally {
+      setSrcTablesLoading(false);
+    }
+  }
+
   function openAdd() {
     setEditId(null);
     setForm(EMPTY_FORM);
     setCronPreset("");
+    setSrcTables([]);
     setDialogOpen(true);
   }
 
   function openEdit(p: Pipeline) {
     setEditId(p.id);
+    const hasCustomQuery = !!p.sourceQuery && !p.sourceTable;
     setForm({
       name: p.name, description: p.description ?? "",
       sourceConnectionId: p.sourceConnectionId ? String(p.sourceConnectionId) : "__none__",
       destConnectionId: p.destConnectionId ? String(p.destConnectionId) : "__none__",
-      sourceQuery: p.sourceQuery ?? "", destTarget: p.destTarget ?? "",
+      sourceTable: p.sourceTable ?? "__none__",
+      sourceQuery: p.sourceQuery ?? "",
+      useCustomQuery: hasCustomQuery,
+      destTarget: p.destTarget ?? "",
       scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
     });
     const preset = CRON_PRESETS.find(pr => pr.value === p.scheduleCron && pr.value !== "__custom__");
     setCronPreset(preset ? preset.value : (p.scheduleCron ? "__custom__" : ""));
+    setSrcTables([]);
+    if (p.sourceConnectionId) {
+      loadSourceTables(String(p.sourceConnectionId));
+    }
     setDialogOpen(true);
+  }
+
+  function handleSourceConnectionChange(value: string) {
+    setForm(f => ({ ...f, sourceConnectionId: value, sourceTable: "__none__", sourceQuery: "" }));
+    setSrcTables([]);
+    loadSourceTables(value);
   }
 
   function handleCronPreset(value: string) {
@@ -160,16 +202,25 @@ export default function Workflow() {
 
   async function save() {
     if (!form.name.trim()) { toast.error("Pipeline name is required"); return; }
-    if (form.scheduleEnabled && !form.scheduleCron.trim()) { toast.error("Cron expression required when schedule is enabled"); return; }
+    if (form.scheduleEnabled && !form.scheduleCron.trim()) {
+      toast.error("Cron expression required when schedule is enabled"); return;
+    }
+    if (!form.useCustomQuery && form.sourceTable === "__none__" && form.sourceConnectionId !== "__none__") {
+      toast.error("Select a source table or write a custom query"); return;
+    }
 
     setSaving(true);
     try {
+      const effectiveSourceTable = !form.useCustomQuery && form.sourceTable !== "__none__" ? form.sourceTable : null;
+      const effectiveSourceQuery = form.useCustomQuery ? form.sourceQuery.trim() || null : null;
+
       const body = {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
         sourceConnectionId: form.sourceConnectionId !== "__none__" ? parseInt(form.sourceConnectionId) : null,
         destConnectionId: form.destConnectionId !== "__none__" ? parseInt(form.destConnectionId) : null,
-        sourceQuery: form.sourceQuery.trim() || undefined,
+        sourceTable: effectiveSourceTable || undefined,
+        sourceQuery: effectiveSourceQuery || undefined,
         destTarget: form.destTarget.trim() || undefined,
         scheduleEnabled: form.scheduleEnabled,
         scheduleCron: form.scheduleCron.trim() || undefined,
@@ -225,10 +276,6 @@ export default function Workflow() {
   }
 
   async function runPipeline(p: Pipeline) {
-    if (!p.sourceConnectionId || !p.destConnectionId) {
-      toast.error("Configure a source and destination connection before running");
-      return;
-    }
     setRunningId(p.id);
     try {
       const res = await fetch(`${apiBase}/admin/pipelines/${p.id}/run`, {
@@ -272,6 +319,11 @@ export default function Workflow() {
     return connections.find(c => c.id === id);
   }
 
+  const srcConn = form.sourceConnectionId !== "__none__"
+    ? connections.find(c => c.id === parseInt(form.sourceConnectionId))
+    : undefined;
+  const isFileSource = srcConn && ["s3", "sftp", "csv"].includes(srcConn.dbEngine);
+
   return (
     <>
       <div className="space-y-6">
@@ -279,7 +331,7 @@ export default function Workflow() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Data Workflow</h1>
             <p className="text-muted-foreground mt-1">
-              Build flexible pipelines from any source to any destination with field-level mapping
+              Build pipelines: pick a source app → table, destination app → table, then run or schedule.
             </p>
           </div>
           <Button onClick={openAdd}>
@@ -288,30 +340,26 @@ export default function Workflow() {
         </div>
 
         <div className="grid grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Pipelines</p>
-              <p className="text-2xl font-bold mt-0.5">{loading ? "—" : pipelines.length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Active</p>
-              <p className="text-2xl font-bold mt-0.5 text-green-600">{loading ? "—" : pipelines.filter(p => p.status === "active").length}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-4 pb-4">
-              <p className="text-xs text-muted-foreground uppercase tracking-wide">Connections</p>
-              <p className="text-2xl font-bold mt-0.5">{loading ? "—" : connections.length}</p>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Pipelines</p>
+            <p className="text-2xl font-bold mt-0.5">{loading ? "—" : pipelines.length}</p>
+          </CardContent></Card>
+          <Card><CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Active</p>
+            <p className="text-2xl font-bold mt-0.5 text-green-600">{loading ? "—" : pipelines.filter(p => p.status === "active").length}</p>
+          </CardContent></Card>
+          <Card><CardContent className="pt-4 pb-4">
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Connections</p>
+            <p className="text-2xl font-bold mt-0.5">{loading ? "—" : connections.length}</p>
+          </CardContent></Card>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><GitBranch className="h-5 w-5" /> Pipelines</CardTitle>
-            <CardDescription>Each pipeline fetches from a source, applies field mappings, and inserts into a destination. Click Run to execute immediately.</CardDescription>
+            <CardDescription>
+              Each pipeline moves data from a source table to a destination table, with optional field-level mapping.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -350,19 +398,28 @@ export default function Workflow() {
                         </div>
                         {p.description && <p className="text-sm text-muted-foreground">{p.description}</p>}
 
+                        {/* Source → Dest flow */}
                         <div className="flex items-center gap-2 text-sm flex-wrap">
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
                             <SrcIcon className="h-3.5 w-3.5 text-muted-foreground" />
                             {src ? <span className="font-medium">{src.name}</span> : <span className="text-muted-foreground italic">No source</span>}
-                            {src && <span className="text-muted-foreground">({ENGINE_LABEL[src.dbEngine] ?? src.dbEngine})</span>}
+                            {(p.sourceTable || p.sourceQuery) && (
+                              <span className="text-muted-foreground">
+                                {p.sourceTable
+                                  ? <>· <Table2 className="h-3 w-3 inline" /> <span className="font-mono">{p.sourceTable}</span></>
+                                  : <span className="italic">custom query</span>
+                                }
+                              </span>
+                            )}
                           </div>
                           <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
                             <DstIcon className="h-3.5 w-3.5 text-muted-foreground" />
                             {dst ? <span className="font-medium">{dst.name}</span> : <span className="text-muted-foreground italic">No destination</span>}
-                            {dst && <span className="text-muted-foreground">({ENGINE_LABEL[dst.dbEngine] ?? dst.dbEngine})</span>}
+                            {p.destTarget && (
+                              <span className="text-muted-foreground">· <span className="font-mono">{p.destTarget}</span></span>
+                            )}
                           </div>
-                          {p.destTarget && <span className="text-xs text-muted-foreground">→ <span className="font-mono">{p.destTarget}</span></span>}
                         </div>
 
                         <p className="text-xs text-muted-foreground">
@@ -372,31 +429,24 @@ export default function Workflow() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                        {/* Run Now */}
                         <Button
                           variant="default" size="sm"
                           onClick={() => runPipeline(p)}
                           disabled={runningId === p.id}
-                          title="Run pipeline now"
                         >
                           {runningId === p.id
                             ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Running…</>
                             : <><Play className="h-4 w-4 mr-1" />Run</>
                           }
                         </Button>
-
-                        {/* History */}
-                        <Button variant="outline" size="sm" onClick={() => openHistory(p)} title="Run history">
+                        <Button variant="outline" size="sm" onClick={() => openHistory(p)}>
                           <History className="h-4 w-4" />
                           <span className="ml-1 hidden sm:inline">History</span>
                         </Button>
-
-                        {/* Active / Pause toggle */}
                         <Button
                           variant="outline" size="sm"
                           onClick={() => toggleStatus(p)}
                           disabled={togglingId === p.id}
-                          title={p.status === "active" ? "Pause pipeline" : "Activate pipeline"}
                         >
                           {togglingId === p.id
                             ? <Loader2 className="h-4 w-4 animate-spin" />
@@ -405,15 +455,12 @@ export default function Workflow() {
                               : <CheckCircle className="h-4 w-4" />
                           }
                         </Button>
-
-                        {/* Mappings */}
                         <Link href={`/workflow/${p.id}/mappings`}>
                           <Button variant="outline" size="sm" title="Configure field mappings">
                             <Settings2 className="h-4 w-4" />
                             <span className="ml-1 hidden sm:inline">Mappings</span>
                           </Button>
                         </Link>
-
                         <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
                           <Pencil className="h-4 w-4" />
                         </Button>
@@ -435,77 +482,156 @@ export default function Workflow() {
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Pipeline" : "New Pipeline"}</DialogTitle>
-            <DialogDescription>Configure the source, destination, query, and schedule for this data flow.</DialogDescription>
+            <DialogDescription>
+              Choose a source application and table, then a destination application and table.
+            </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+
+          <div className="space-y-5 py-2">
+            {/* Basic info */}
             <div className="space-y-1">
               <Label>Pipeline Name *</Label>
-              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. BackOffice → Trading Sync" />
+              <Input
+                value={form.name}
+                onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. BackOffice → Trading Sync"
+              />
             </div>
             <div className="space-y-1">
               <Label>Description <span className="text-xs text-muted-foreground">(optional)</span></Label>
-              <Input value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="What does this pipeline do?" />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <Label>Source Connection</Label>
-                <Select value={form.sourceConnectionId} onValueChange={v => setForm(f => ({ ...f, sourceConnectionId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select source…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {connections.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} ({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <Label>Destination Connection</Label>
-                <Select value={form.destConnectionId} onValueChange={v => setForm(f => ({ ...f, destConnectionId: v }))}>
-                  <SelectTrigger><SelectValue placeholder="Select destination…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {connections.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} ({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="space-y-1">
-              <Label>Source Query <span className="text-xs text-muted-foreground">(SELECT only)</span></Label>
-              <textarea
-                className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
-                value={form.sourceQuery}
-                onChange={e => setForm(f => ({ ...f, sourceQuery: e.target.value }))}
-                placeholder="SELECT col1, col2, col3 FROM source_table WHERE active = true"
-                spellCheck={false}
-              />
-              <p className="text-xs text-muted-foreground">If blank, defaults to SELECT * FROM the source schema. Only SELECT is allowed.</p>
-            </div>
-
-            <div className="space-y-1">
-              <Label>Destination Table *</Label>
               <Input
-                value={form.destTarget}
-                onChange={e => setForm(f => ({ ...f, destTarget: e.target.value }))}
-                placeholder="public.target_table or schema.table_name"
-                className="font-mono"
+                value={form.description}
+                onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="What does this pipeline do?"
               />
-              <p className="text-xs text-muted-foreground">The table to INSERT rows into on the destination. Required to run the pipeline.</p>
             </div>
 
-            <div className="border-t pt-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium text-sm">Schedule <span className="text-xs text-muted-foreground font-normal">(optional)</span></span>
+            {/* SOURCE */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <Database className="h-4 w-4 text-muted-foreground" /> Source
+              </p>
+
+              <div className="space-y-1">
+                <Label>Source Application (Connection)</Label>
+                <Select
+                  value={form.sourceConnectionId}
+                  onValueChange={handleSourceConnectionChange}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select source application…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {connections.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name} <span className="text-muted-foreground text-xs">({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
+
+              {form.sourceConnectionId !== "__none__" && !isFileSource && (
+                <>
+                  {/* Toggle custom query */}
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={form.useCustomQuery}
+                      onCheckedChange={v => setForm(f => ({ ...f, useCustomQuery: v, sourceTable: "__none__", sourceQuery: "" }))}
+                    />
+                    <Label className="cursor-pointer text-sm font-normal">Use custom SQL query instead of selecting a table</Label>
+                  </div>
+
+                  {!form.useCustomQuery ? (
+                    <div className="space-y-1">
+                      <Label className="flex items-center gap-1.5">
+                        <Table2 className="h-3.5 w-3.5" /> Source Table
+                        {srcTablesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
+                      </Label>
+                      <Select
+                        value={form.sourceTable}
+                        onValueChange={v => setForm(f => ({ ...f, sourceTable: v }))}
+                        disabled={srcTablesLoading}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder={srcTablesLoading ? "Loading tables…" : "Select a table…"} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">— Select table —</SelectItem>
+                          {srcTables.map(t => (
+                            <SelectItem key={t} value={t}>{t}</SelectItem>
+                          ))}
+                          {!srcTablesLoading && srcTables.length === 0 && (
+                            <SelectItem value="__none__" disabled>No tables found — check connection</SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">Fetches all rows: SELECT * FROM [schema].[table]</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <Label>Custom SELECT Query</Label>
+                      <textarea
+                        className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
+                        value={form.sourceQuery}
+                        onChange={e => setForm(f => ({ ...f, sourceQuery: e.target.value }))}
+                        placeholder={`SELECT col1, col2 FROM "${srcConn?.schemaName ?? "public"}".table_name WHERE condition`}
+                        spellCheck={false}
+                      />
+                      <p className="text-xs text-muted-foreground">Only SELECT statements are permitted.</p>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {isFileSource && (
+                <p className="text-xs text-muted-foreground italic">File/cloud sources are fetched as-is using the configured path.</p>
+              )}
+            </div>
+
+            {/* DESTINATION */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <Database className="h-4 w-4 text-muted-foreground" /> Destination
+              </p>
+
+              <div className="space-y-1">
+                <Label>Destination Application (Connection)</Label>
+                <Select
+                  value={form.destConnectionId}
+                  onValueChange={v => setForm(f => ({ ...f, destConnectionId: v }))}
+                >
+                  <SelectTrigger><SelectValue placeholder="Select destination application…" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">— None —</SelectItem>
+                    {connections.map(c => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.name} <span className="text-muted-foreground text-xs">({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})</span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1">
+                <Label>Destination Table *</Label>
+                <Input
+                  value={form.destTarget}
+                  onChange={e => setForm(f => ({ ...f, destTarget: e.target.value }))}
+                  placeholder="public.target_table"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  The table to INSERT rows into. Format: <span className="font-mono">schema.table</span> or just <span className="font-mono">table</span>.
+                </p>
+              </div>
+            </div>
+
+            {/* SCHEDULE */}
+            <div className="rounded-lg border p-4 space-y-3">
+              <p className="text-sm font-semibold flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" /> Schedule <span className="text-xs text-muted-foreground font-normal">(optional)</span>
+              </p>
+
               <Select value={cronPreset} onValueChange={handleCronPreset}>
                 <SelectTrigger><SelectValue placeholder="No schedule — run manually" /></SelectTrigger>
                 <SelectContent>
@@ -514,41 +640,53 @@ export default function Workflow() {
                   ))}
                 </SelectContent>
               </Select>
+
               {(cronPreset === "__custom__" || (cronPreset === "" && form.scheduleCron)) && (
-                <Input value={form.scheduleCron} onChange={e => setForm(f => ({ ...f, scheduleCron: e.target.value }))} placeholder="0 2 * * *" className="font-mono" />
+                <div className="space-y-1">
+                  <Label>Custom Cron Expression</Label>
+                  <Input
+                    value={form.scheduleCron}
+                    onChange={e => setForm(f => ({ ...f, scheduleCron: e.target.value }))}
+                    placeholder="0 2 * * *"
+                    className="font-mono"
+                  />
+                  {form.scheduleCron && (() => {
+                    try { return <p className="text-xs text-muted-foreground">{cronstrue.toString(form.scheduleCron)}</p>; }
+                    catch { return <p className="text-xs text-destructive">Invalid cron expression</p>; }
+                  })()}
+                </div>
               )}
-              {form.scheduleCron.trim() && (
-                <>
-                  <p className="text-xs text-muted-foreground italic">
-                    {(() => { try { return cronstrue.toString(form.scheduleCron); } catch { return null; } })()}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-sm">Enable Schedule</Label>
-                      <p className="text-xs text-muted-foreground">Automatically run on the above schedule</p>
-                    </div>
-                    <Switch checked={form.scheduleEnabled} onCheckedChange={v => setForm(f => ({ ...f, scheduleEnabled: v }))} />
-                  </div>
-                </>
+
+              {cronPreset && cronPreset !== "__custom__" && (
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={form.scheduleEnabled}
+                    onCheckedChange={v => setForm(f => ({ ...f, scheduleEnabled: v }))}
+                  />
+                  <Label className="cursor-pointer text-sm font-normal">
+                    {form.scheduleEnabled ? "Schedule enabled — will run automatically" : "Schedule configured but disabled"}
+                  </Label>
+                </div>
               )}
             </div>
           </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
             <Button onClick={save} disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-              {editId ? "Save Changes" : "Create Pipeline"}
+              {editId ? "Update Pipeline" : "Create Pipeline"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Dialog */}
+      {/* Delete confirm */}
       <Dialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Pipeline</DialogTitle>
-            <DialogDescription>This will permanently delete the pipeline and all its field mappings. Cannot be undone.</DialogDescription>
+            <DialogDescription>This will permanently delete the pipeline and all its run history. Cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
@@ -557,66 +695,50 @@ export default function Workflow() {
         </DialogContent>
       </Dialog>
 
-      {/* Run History Dialog */}
-      <Dialog open={!!historyPipeline} onOpenChange={open => { if (!open) setHistoryPipeline(null); }}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      {/* Run history dialog */}
+      <Dialog open={!!historyPipeline} onOpenChange={() => setHistoryPipeline(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><History className="h-5 w-5" /> Run History</DialogTitle>
-            <DialogDescription>{historyPipeline?.name} — last 50 runs</DialogDescription>
+            <DialogTitle>Run History — {historyPipeline?.name}</DialogTitle>
+            <DialogDescription>Last 50 pipeline executions.</DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-y-auto min-h-0">
-            {historyLoading ? (
-              <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
-            ) : historyJobs.length === 0 ? (
-              <div className="text-center py-12 text-muted-foreground">
-                <History className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                <p>No runs yet. Click Run on the pipeline to execute it.</p>
-              </div>
-            ) : (
-              <div className="divide-y text-sm">
-                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-1 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  <span>Started</span>
-                  <span className="text-right">Status</span>
-                  <span className="text-right">Rows</span>
-                  <span className="text-right">Duration</span>
-                </div>
-                {historyJobs.map(job => {
-                  const durationMs = job.startedAt && job.finishedAt
-                    ? new Date(job.finishedAt).getTime() - new Date(job.startedAt).getTime() : null;
-                  const durationStr = durationMs !== null
-                    ? durationMs >= 60000 ? `${Math.floor(durationMs / 60000)}m ${Math.round((durationMs % 60000) / 1000)}s` : `${(durationMs / 1000).toFixed(1)}s`
-                    : "—";
-                  return (
-                    <div key={job.id} className="py-3 px-1 space-y-1">
-                      <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 items-center">
-                        <span className="text-muted-foreground font-mono text-xs">
-                          {job.startedAt ? formatDate(job.startedAt) : formatDate(job.createdAt)}
-                          {job.triggeredByEmail && <span className="ml-2 font-sans">by {job.triggeredByEmail}</span>}
-                        </span>
-                        <span>
-                          {job.status === "success" && <span className="flex items-center gap-1 text-green-600 font-medium"><CheckCircle className="h-3.5 w-3.5" /> Success</span>}
-                          {job.status === "failed" && <span className="flex items-center gap-1 text-destructive font-medium"><XCircle className="h-3.5 w-3.5" /> Failed</span>}
-                          {(job.status === "pending" || job.status === "running") && <span className="flex items-center gap-1 text-blue-600 font-medium"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {job.status}</span>}
-                        </span>
-                        <span className="text-right font-mono text-xs text-muted-foreground">
-                          {job.recordCount !== null ? job.recordCount.toLocaleString() : "—"}
-                        </span>
-                        <span className="text-right font-mono text-xs text-muted-foreground">{durationStr}</span>
-                      </div>
-                      {job.errorMessage && (
-                        <p className="text-xs text-destructive bg-destructive/5 rounded px-2 py-1 font-mono break-all">
-                          {job.errorMessage}
-                        </p>
-                      )}
+          {historyLoading ? (
+            <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : historyJobs.length === 0 ? (
+            <p className="text-center text-muted-foreground py-8">No runs yet.</p>
+          ) : (
+            <div className="divide-y text-sm">
+              {historyJobs.map(j => (
+                <div key={j.id} className="py-3 flex items-start justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      {j.status === "success" && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
+                      {j.status === "failed"  && <XCircle   className="h-4 w-4 text-destructive shrink-0" />}
+                      {j.status === "running" && <Loader2   className="h-4 w-4 animate-spin text-blue-600 shrink-0" />}
+                      {j.status === "pending" && <History   className="h-4 w-4 text-muted-foreground shrink-0" />}
+                      <span className="font-medium capitalize">{j.status}</span>
+                      {j.triggeredBySchedule
+                        ? <Badge variant="outline" className="text-xs">Scheduled</Badge>
+                        : <Badge variant="outline" className="text-xs">Manual</Badge>
+                      }
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <DialogFooter className="pt-2 border-t">
-            <Button variant="outline" onClick={() => setHistoryPipeline(null)}>Close</Button>
-          </DialogFooter>
+                    {j.recordCount !== null && (
+                      <p className="text-muted-foreground text-xs">{j.recordCount.toLocaleString()} row{j.recordCount !== 1 ? "s" : ""} transferred</p>
+                    )}
+                    {j.errorMessage && (
+                      <p className="text-destructive text-xs font-mono">{j.errorMessage}</p>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground text-right shrink-0">
+                    <p>{formatDate(j.startedAt ?? j.createdAt)}</p>
+                    {j.startedAt && j.finishedAt && (
+                      <p>{Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000)}s</p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

@@ -7,11 +7,12 @@ export type DbConnectionType = typeof DB_CONNECTION_TYPES[number];
 export const DB_ENGINES = ["postgresql", "mysql", "mssql", "oracle", "s3", "sftp", "csv"] as const;
 export type DbEngine = typeof DB_ENGINES[number];
 
+/** A DB connection is purely a credential store — one connection = one application/database.
+ *  The same connection can be reused across many pipelines targeting different tables. */
 export const dbConnectionsTable = pgTable("db_connections", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   type: text("type").$type<DbConnectionType>().notNull(),
-  /** Which technology this connection uses */
   dbEngine: text("db_engine").$type<DbEngine>().notNull().default("postgresql"),
   host: text("host"),
   port: integer("port").default(5432),
@@ -21,19 +22,6 @@ export const dbConnectionsTable = pgTable("db_connections", {
   passwordEnc: text("password_enc"),
   /** Extra engine-specific params (bucket, region, remotePath, etc.) stored as JSON */
   extraParams: jsonb("extra_params").$type<Record<string, string>>(),
-  outputFilePath: text("output_file_path"),
-  /** Admin-configurable SELECT query executed during workflow fetch. Must be read-only. */
-  fetchQuery: text("fetch_query"),
-  /** Whether the automatic schedule is active for this connection. */
-  scheduleEnabled: boolean("schedule_enabled").notNull().default(false),
-  /** Cron expression defining the fetch schedule (e.g. "0 2 * * *" = daily at 2am). */
-  scheduleCron: text("schedule_cron"),
-  /** Timestamp of the last scheduled run. */
-  scheduleLastRunAt: timestamp("schedule_last_run_at", { withTimezone: true }),
-  /** Timestamp when the next scheduled run is expected. */
-  scheduleNextRunAt: timestamp("schedule_next_run_at", { withTimezone: true }),
-  /** Number of consecutive scheduled fetch failures (reset to 0 on success). */
-  scheduleConsecutiveFailures: integer("schedule_consecutive_failures").notNull().default(0),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   lastTestSuccess: boolean("last_test_success"),
@@ -52,7 +40,6 @@ export const dataJobsTable = pgTable("data_jobs", {
   status: text("status").$type<typeof DATA_JOB_STATUSES[number]>().notNull().default("pending"),
   triggeredBy: integer("triggered_by").references(() => usersTable.id, { onDelete: "set null" }),
   triggeredByEmail: text("triggered_by_email"),
-  /** True when this job was triggered by the automatic scheduler rather than a user action. */
   triggeredBySchedule: boolean("triggered_by_schedule").notNull().default(false),
   connectionId: integer("connection_id").references(() => dbConnectionsTable.id, { onDelete: "set null" }),
   connectionName: text("connection_name"),
@@ -96,22 +83,31 @@ export type FieldMapping = typeof fieldMappingsTable.$inferSelect;
 
 export const PIPELINE_STATUSES = ["active", "inactive"] as const;
 
-/** A data pipeline defines a source → destination flow with field-level mapping. */
+/** A data pipeline defines a source → destination flow with field-level mapping.
+ *  Source: pick a DB connection + specify sourceTable (or write a custom sourceQuery).
+ *  Destination: pick a DB connection + specify destTarget table.
+ *  Scheduling lives on the pipeline, not the connection. */
 export const dataPipelinesTable = pgTable("data_pipelines", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
+  /** The source DB connection (credentials). */
   sourceConnectionId: integer("source_connection_id").references(() => dbConnectionsTable.id, { onDelete: "set null" }),
+  /** The destination DB connection (credentials). */
   destConnectionId: integer("dest_connection_id").references(() => dbConnectionsTable.id, { onDelete: "set null" }),
-  /** SELECT query to run on the source. For file sources, used as a filter expression. */
+  /** Simple table name on the source (e.g. "clients"). Used to build SELECT * FROM <table>. */
+  sourceTable: text("source_table"),
+  /** Custom SELECT query overriding sourceTable. Takes precedence over sourceTable. */
   sourceQuery: text("source_query"),
-  /** Target table/file/path on the destination. */
+  /** Target table on the destination (e.g. "public.clients_sync"). Required to run. */
   destTarget: text("dest_target"),
   status: text("status").$type<typeof PIPELINE_STATUSES[number]>().notNull().default("inactive"),
   scheduleEnabled: boolean("schedule_enabled").notNull().default(false),
   scheduleCron: text("schedule_cron"),
   scheduleLastRunAt: timestamp("schedule_last_run_at", { withTimezone: true }),
   scheduleNextRunAt: timestamp("schedule_next_run_at", { withTimezone: true }),
+  /** Number of consecutive scheduled run failures (reset on success). */
+  scheduleConsecutiveFailures: integer("schedule_consecutive_failures").notNull().default(0),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

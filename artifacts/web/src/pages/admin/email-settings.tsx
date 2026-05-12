@@ -204,8 +204,9 @@ export default function EmailSettings() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <FormField control={form.control} name="fromName" render={({ field }) => (
                   <FormItem>
-                    <FormLabel>From Name</FormLabel>
+                    <FormLabel>Sender Name</FormLabel>
                     <FormControl><Input placeholder="Ashika Platform" {...field} /></FormControl>
+                    <FormDescription>Display name shown to email recipients.</FormDescription>
                     <FormMessage />
                   </FormItem>
                 )} />

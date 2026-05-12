@@ -64,14 +64,16 @@ router.get("/admin/db-connections/:id/tables", authenticate, requireRole("Admin"
     return;
   }
 
+  const useSSL = conn.extraParams?.ssl === "true";
   const pool = new Pool({
     host: conn.host ?? undefined,
     port: conn.port ?? 5432,
     database: conn.dbName ?? undefined,
     user: username,
     password,
-    connectionTimeoutMillis: 8000,
+    connectionTimeoutMillis: 12000,
     max: 1,
+    ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 
   try {
@@ -294,14 +296,16 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     return;
   }
 
+  const useSSL = conn.extraParams?.ssl === "true";
   const testPool = new Pool({
     host: conn.host ?? undefined,
     port: conn.port ?? undefined,
     database: conn.dbName ?? undefined,
     user: username,
     password,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 15000,
     max: 1,
+    ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
   });
 
   let success = false;

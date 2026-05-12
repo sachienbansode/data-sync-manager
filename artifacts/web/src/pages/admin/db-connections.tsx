@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
@@ -48,6 +49,7 @@ const EMPTY_FORM = {
   dbEngine: "postgresql" as DbEngine,
   host: "", port: "5432", dbName: "", schemaName: "public",
   username: "", password: "",
+  ssl: false,
   // S3
   bucket: "", region: "", s3Prefix: "", accessKeyId: "", secretAccessKey: "",
   // SFTP
@@ -152,6 +154,7 @@ export default function DbConnections() {
       host: c.host ?? "", port: String(c.port ?? ""),
       dbName: c.dbName ?? "", schemaName: c.schemaName ?? "public",
       username: "", password: "",
+      ssl: ep.ssl === "true",
       bucket: ep.bucket ?? "", region: ep.region ?? "", s3Prefix: ep.s3Prefix ?? "",
       accessKeyId: "", secretAccessKey: "",
       remotePath: ep.remotePath ?? "", privateKey: "",
@@ -183,6 +186,7 @@ export default function DbConnections() {
     try {
       const token = getAccessToken();
       const extraParams: Record<string, string> = {};
+      if (isDbEngine && form.ssl) extraParams.ssl = "true";
       if (isS3) {
         if (form.bucket)   extraParams.bucket   = form.bucket;
         if (form.region)   extraParams.region   = form.region;
@@ -343,8 +347,8 @@ export default function DbConnections() {
                           <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${engineBadgeColor(c.dbEngine)}`}>
                             {eng.label}
                           </span>
-                          <Badge variant={c.type === "backoffice" ? "default" : "secondary"} className="text-xs">
-                            {c.type === "backoffice" ? "BackOffice" : "Trading"}
+                          <Badge variant="outline" className="text-xs">
+                            {appTypes.find(t => t.slug === c.type)?.name ?? c.type}
                           </Badge>
                           {c.lastTestedAt && (
                             c.lastTestSuccess
@@ -473,6 +477,16 @@ export default function DbConnections() {
                     <Label>Password {editId && <span className="text-xs text-muted-foreground font-normal">(leave blank to keep)</span>}</Label>
                     <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} placeholder={editId ? "••••••••" : "••••••••"} autoComplete="off" />
                   </div>
+                </div>
+                <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">Use SSL / TLS</p>
+                      <p className="text-xs text-muted-foreground">Enable for cloud databases (AWS RDS, Azure, Neon, Supabase, etc.)</p>
+                    </div>
+                  </div>
+                  <Switch checked={form.ssl} onCheckedChange={v => setForm(f => ({ ...f, ssl: v }))} />
                 </div>
               </>
             )}

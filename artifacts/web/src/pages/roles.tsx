@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   useListRoles,
   useGetRolePagePermissions,
@@ -96,6 +96,22 @@ function RoleDialog({
   const [pageAccess, setPageAccess] = useState<Record<string, boolean>>({});
   const [pageSearch, setPageSearch] = useState("");
 
+  const { data: existingPerms } = useQuery<{ pagePath: string; canAccess: boolean }[]>({
+    queryKey: ["role-perms-dialog", existing?.id],
+    queryFn: () => apiFetch(`/roles/${existing!.id}/page-permissions`),
+    enabled: open && !!existing,
+    staleTime: 0,
+  });
+
+  useEffect(() => {
+    if (existingPerms && existing) {
+      const map: Record<string, boolean> = {};
+      existingPerms.forEach(p => { map[p.pagePath] = p.canAccess; });
+      allPages.forEach(p => { if (!(p.path in map)) map[p.path] = false; });
+      setPageAccess(map);
+    }
+  }, [existingPerms, existing, allPages]);
+
   const form = useForm<RoleForm>({
     resolver: zodResolver(roleFormSchema),
     values: existing
@@ -114,16 +130,21 @@ function RoleDialog({
 
   const mutation = useMutation({
     mutationFn: async (data: RoleForm) => {
-      if (existing) {
-        return apiFetch(`/roles/${existing.id}`, { method: "PUT", body: JSON.stringify(data) });
-      }
-      // Create role
-      const role = await apiFetch("/roles", { method: "POST", body: JSON.stringify(data) });
-      // Set page permissions
       const permissions = allPages.map(p => ({
         pagePath: p.path,
         canAccess: pageAccess[p.path] ?? false,
       }));
+      if (existing) {
+        await apiFetch(`/roles/${existing.id}`, { method: "PUT", body: JSON.stringify(data) });
+        if (permissions.length > 0) {
+          await apiFetch(`/roles/${existing.id}/page-permissions`, {
+            method: "PUT",
+            body: JSON.stringify({ permissions }),
+          });
+        }
+        return;
+      }
+      const role = await apiFetch("/roles", { method: "POST", body: JSON.stringify(data) });
       if (permissions.length > 0) {
         await apiFetch(`/roles/${role.id}/page-permissions`, {
           method: "PUT",
@@ -133,7 +154,7 @@ function RoleDialog({
       return role;
     },
     onSuccess: () => {
-      toast.success(existing ? "Role updated" : "Role created with page permissions");
+      toast.success(existing ? "Role updated with page permissions" : "Role created with page permissions");
       onSaved();
       onOpenChange(false);
       form.reset();
@@ -186,14 +207,16 @@ function RoleDialog({
               </FormItem>
             )} />
 
-            {/* Page access section (only for new roles) */}
-            {isCreate && allPages.length > 0 && (
+            {/* Page access section */}
+            {allPages.length > 0 && (
               <div className="space-y-3">
                 <Separator />
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-semibold">Page Access</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Select which pages this role can access.</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {existing ? "Update which pages this role can access." : "Select which pages this role can access."}
+                    </p>
                   </div>
                   <div className="flex gap-1">
                     <Button type="button" size="sm" variant="ghost" className="h-7 text-xs gap-1" onClick={selectAll}>

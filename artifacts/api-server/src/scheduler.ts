@@ -82,23 +82,39 @@ async function sendFailureAlert(
   }
 }
 
+function formatDuration(startedAt: Date, finishedAt: Date): string {
+  const secs = Math.round((finishedAt.getTime() - startedAt.getTime()) / 1000);
+  if (secs < 60) return `${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return s > 0 ? `${m}m ${s}s` : `${m}m`;
+}
+
 function buildFailureHtml(
-  pipelineName: string, pipelineId: number, failures: number, lastError: string, workerLog: string
+  pipelineName: string, pipelineId: number, failures: number, lastError: string, workerLog: string,
+  startedAt?: Date
 ): string {
   const safe = (s: string) => escapeHtml(s);
-  const ts = toIst(new Date());
+  const finishedAt = new Date();
+  const ts = toIst(finishedAt);
+  const timingRows = startedAt ? `
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Started (IST)</td>
+            <td style="padding:8px;border:1px solid #e5e7eb">${toIst(startedAt)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Duration</td>
+            <td style="padding:8px;border:1px solid #e5e7eb">${formatDuration(startedAt, finishedAt)}</td></tr>` : "";
   return `
     <div style="font-family:sans-serif;max-width:700px">
       <h2 style="color:#dc2626">Pipeline Failure Alert</h2>
       <p>Pipeline <strong>${safe(pipelineName)}</strong> (ID: ${pipelineId}) has failed
          <strong>${failures} consecutive time${failures !== 1 ? "s" : ""}</strong>.</p>
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
-        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold;width:140px">Pipeline</td>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold;width:180px">Pipeline</td>
             <td style="padding:8px;border:1px solid #e5e7eb">${safe(pipelineName)} (ID: ${pipelineId})</td></tr>
         <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Failures</td>
             <td style="padding:8px;border:1px solid #e5e7eb;color:#dc2626">${failures}</td></tr>
-        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Time (IST)</td>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Failed At (IST)</td>
             <td style="padding:8px;border:1px solid #e5e7eb">${ts}</td></tr>
+        ${timingRows}
         <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Technical Error</td>
             <td style="padding:8px;border:1px solid #e5e7eb;font-family:monospace;font-size:13px;color:#dc2626">${safe(lastError)}</td></tr>
       </table>
@@ -109,21 +125,28 @@ function buildFailureHtml(
 }
 
 function buildSuccessHtml(
-  pipelineName: string, pipelineId: number, recordCount: number
+  pipelineName: string, pipelineId: number,
+  sourceRecordCount: number, recordCount: number,
+  startedAt: Date, finishedAt: Date
 ): string {
   const safe = (s: string) => escapeHtml(s);
-  const ts = toIst(new Date());
   return `
-    <div style="font-family:sans-serif;max-width:600px">
+    <div style="font-family:sans-serif;max-width:650px">
       <h2 style="color:#16a34a">Pipeline Run Successful</h2>
       <p>Pipeline <strong>${safe(pipelineName)}</strong> completed successfully.</p>
       <table style="border-collapse:collapse;width:100%;margin:16px 0">
-        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold;width:140px">Pipeline</td>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold;width:180px">Pipeline</td>
             <td style="padding:8px;border:1px solid #e5e7eb">${safe(pipelineName)} (ID: ${pipelineId})</td></tr>
-        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Records</td>
-            <td style="padding:8px;border:1px solid #e5e7eb;color:#16a34a">${recordCount.toLocaleString()} row${recordCount !== 1 ? "s" : ""} transferred</td></tr>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Source Records</td>
+            <td style="padding:8px;border:1px solid #e5e7eb">${sourceRecordCount.toLocaleString()} row${sourceRecordCount !== 1 ? "s" : ""} read</td></tr>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Records Transferred</td>
+            <td style="padding:8px;border:1px solid #e5e7eb;color:#16a34a">${recordCount.toLocaleString()} row${recordCount !== 1 ? "s" : ""} written</td></tr>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Started (IST)</td>
+            <td style="padding:8px;border:1px solid #e5e7eb">${toIst(startedAt)}</td></tr>
         <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Completed (IST)</td>
-            <td style="padding:8px;border:1px solid #e5e7eb">${ts}</td></tr>
+            <td style="padding:8px;border:1px solid #e5e7eb">${toIst(finishedAt)}</td></tr>
+        <tr><td style="padding:8px;border:1px solid #e5e7eb;background:#f9fafb;font-weight:bold">Duration</td>
+            <td style="padding:8px;border:1px solid #e5e7eb">${formatDuration(startedAt, finishedAt)}</td></tr>
       </table>
     </div>
   `;
@@ -140,6 +163,7 @@ function getWorkerPath(): string {
 export interface PipelineRunResult {
   success: boolean;
   recordCount?: number;
+  sourceRecordCount?: number;
   error?: string;
   jobId?: number;
   conflict?: boolean;
@@ -285,7 +309,7 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
     child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
 
     child.on("close", async (code) => {
-      let result: { success: boolean; recordCount?: number; error?: string };
+      let result: { success: boolean; recordCount?: number; sourceRecordCount?: number; error?: string };
       try {
         result = JSON.parse(stdout.trim());
       } catch {
@@ -294,10 +318,13 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
       if (result.success) {
         const rc = result.recordCount ?? 0;
+        const srcRc = result.sourceRecordCount ?? rc;
+        const finishedAt = new Date();
         await db.update(dataJobsTable).set({
           status: "success",
           recordCount: rc,
-          finishedAt: new Date(),
+          sourceRecordCount: srcRc,
+          finishedAt,
         }).where(eq(dataJobsTable.id, job.id));
 
         // Update pipeline stats; persist new watermark if worker returned one
@@ -319,26 +346,27 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
         // Pipeline-level success notification
         if (pipeline.notifyOnSuccess?.trim()) {
-          const ts = toIst(new Date());
           const appName = await getAppName().catch(() => "Ashika Platform");
           const list = pipeline.notifyOnSuccess.split(",").map(e => e.trim()).filter(Boolean);
           for (const email of list) {
             sendMailTemplate(email, "pipeline_success", {
               pipelineName: pipeline.name, pipelineId: String(pipelineId),
-              recordCount: rc.toLocaleString(), completedAt: ts, appName,
+              sourceRecordCount: srcRc.toLocaleString(), recordCount: rc.toLocaleString(),
+              completedAt: toIst(finishedAt), appName,
             }, {
               subject: `Pipeline "${pipeline.name}" completed successfully`,
-              html: buildSuccessHtml(pipeline.name, pipelineId, rc),
+              html: buildSuccessHtml(pipeline.name, pipelineId, srcRc, rc, job.startedAt!, finishedAt),
             }).catch(() => {});
           }
         }
 
-        logger.info({ pipelineId, jobId: job.id, recordCount: rc }, "Pipeline run completed");
-        resolvePromise({ success: true, recordCount: rc, jobId: job.id });
+        logger.info({ pipelineId, jobId: job.id, recordCount: rc, sourceRecordCount: srcRc }, "Pipeline run completed");
+        resolvePromise({ success: true, recordCount: rc, sourceRecordCount: srcRc, jobId: job.id });
       } else {
         const rawErr  = result.error ?? "Unknown error";
         const errMsg  = sanitizeErrMsg(rawErr);
         await db.update(dataJobsTable).set({ status: "failed", errorMessage: errMsg, finishedAt: new Date() }).where(eq(dataJobsTable.id, job.id));
+        const jobStartedAt = job.startedAt ?? undefined;
 
         const [updated] = await db.update(dataPipelinesTable).set({
           scheduleConsecutiveFailures: sql`${dataPipelinesTable.scheduleConsecutiveFailures} + 1`,
@@ -364,7 +392,7 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
               failures: String(failures), errorMessage: errMsg, timestamp: ts, appName,
             }, {
               subject: `Pipeline "${pipeline.name}" failed`,
-              html: buildFailureHtml(pipeline.name, pipelineId, failures, errMsg, ""),
+              html: buildFailureHtml(pipeline.name, pipelineId, failures, errMsg, "", jobStartedAt),
             }).catch(() => {});
           }
         }

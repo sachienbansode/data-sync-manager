@@ -315,7 +315,7 @@ export default function Roles() {
     try {
       await updatePermissionsMutation.mutateAsync({ id: selectedRoleId, data: { permissions: updatedPermissions } });
       queryClient.invalidateQueries({ queryKey: getGetRolePagePermissionsQueryKey(selectedRoleId) });
-      queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
+      queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
       setPendingChanges({});
       toast.success("Permissions updated");
     } catch {

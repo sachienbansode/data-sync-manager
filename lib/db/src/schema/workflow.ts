@@ -80,6 +80,7 @@ export const dataJobsTable = pgTable("data_jobs", {
   connectionName: text("connection_name"),
   pipelineId: integer("pipeline_id"),
   recordCount: integer("record_count"),
+  sourceRecordCount: integer("source_record_count"),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at", { withTimezone: true }),
   finishedAt: timestamp("finished_at", { withTimezone: true }),

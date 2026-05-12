@@ -22,6 +22,8 @@ export const apiSpecsTable = pgTable("api_specs", {
   id: serial("id").primaryKey(),
   appId: integer("app_id").notNull().references(() => apiApplicationsTable.id, { onDelete: "cascade" }),
   version: integer("version").notNull().default(1),
+  /** Human-friendly label for this spec, e.g. "REST API v1", "GraphQL API" */
+  specLabel: text("spec_label"),
   s3Key: text("s3_key"),
   specUrl: text("spec_url"),
   /** OpenAPI YAML or JSON stored directly in the database (no S3 required) */

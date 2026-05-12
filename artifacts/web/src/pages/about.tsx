@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Activity, Shield, GitBranch, BookOpen, Lock, Database,
-  Mail, Settings, Users, FileText, Network, Eye, Printer,
+  Mail, Settings, Users, FileText, Network, Eye, Printer, Cpu,
 } from "lucide-react";
 
 const FEATURES = [
@@ -80,6 +80,12 @@ const FEATURES = [
     description: "Platform health overview with user metrics, MFA adoption, login activity charts, pipeline and API documentation counts.",
     badge: "Analytics",
   },
+  {
+    icon: Cpu,
+    title: "Python ETL Engine",
+    description: "High-performance streaming ETL worker using server-side named cursors (PostgreSQL), bulk COPY via StringIO for full-load, and execute_values with ON CONFLICT DO UPDATE for incremental upserts. Per-batch watermark persistence ensures crash durability. Supports PostgreSQL, MySQL, MSSQL, Oracle, S3, SFTP, and CSV sources and destinations, with pre/post SQL command hooks and field-level transformation rules.",
+    badge: "Data",
+  },
 ];
 
 const BADGE_COLORS: Record<string, string> = {
@@ -111,6 +117,8 @@ export default function About() {
             size: A4 landscape;
             margin: 0;
           }
+          /* Unlock all ancestor overflow/height constraints so content can paginate */
+          * { overflow: visible !important; max-height: none !important; }
           /* Hide everything except the printable content */
           body * { visibility: hidden; }
           #about-printable, #about-printable * { visibility: visible; }

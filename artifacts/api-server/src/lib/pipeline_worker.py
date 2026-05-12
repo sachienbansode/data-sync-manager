@@ -378,7 +378,8 @@ def main() -> None:
         fail(f"Failed to connect to destination: {sanitize_error(e)}")
 
     # ── Stream source and write batches ───────────────────────────────────────
-    total_inserted = 0
+    total_source   = 0   # rows read from source
+    total_inserted = 0   # rows written to destination
     batch_num      = 0
     new_watermark  = current_wm
     write_cols     = None  # determined on first batch
@@ -418,6 +419,7 @@ def main() -> None:
                     if wm_col_check:
                         new_watermark = update_watermark(row_dicts, wm_col_check, new_watermark)
 
+                total_source += len(row_dicts)
                 filtered = [{k: v for k, v in r.items() if k in write_cols} for r in row_dicts]
 
                 if dst_is_pg:
@@ -427,7 +429,7 @@ def main() -> None:
                     write_sa_batch(dst_sa_engine, dst_sa_table, filtered)
 
                 total_inserted += len(filtered)
-                log(f"  Batch #{batch_num}: {len(filtered):,} rows written (running total: {total_inserted:,})")
+                log(f"  Batch #{batch_num}: src={len(row_dicts):,} dst={len(filtered):,} (totals src={total_source:,} dst={total_inserted:,})")
 
                 if pipeline_id and new_watermark:
                     save_watermark(pipeline_id, new_watermark)
@@ -460,6 +462,7 @@ def main() -> None:
                     if watermark_col and row_dicts and watermark_col in row_dicts[0]:
                         new_watermark = update_watermark(row_dicts, watermark_col, new_watermark)
 
+                    total_source += len(row_dicts)
                     filtered = [{k: v for k, v in r.items() if k in write_cols} for r in row_dicts]
 
                     if dst_is_pg:
@@ -469,7 +472,7 @@ def main() -> None:
                         write_sa_batch(dst_sa_engine, dst_sa_table, filtered)
 
                     total_inserted += len(filtered)
-                    log(f"  Batch #{batch_num}: {len(filtered):,} rows written (running total: {total_inserted:,})")
+                    log(f"  Batch #{batch_num}: src={len(row_dicts):,} dst={len(filtered):,} (totals src={total_source:,} dst={total_inserted:,})")
 
                     if pipeline_id and new_watermark:
                         save_watermark(pipeline_id, new_watermark)
@@ -488,9 +491,9 @@ def main() -> None:
         except Exception:
             pass
 
-    log(f"[DONE] {total_inserted:,} rows transferred in {batch_num} batch(es)")
+    log(f"[DONE] src={total_source:,} rows read, dst={total_inserted:,} rows written, {batch_num} batch(es)")
 
-    if total_inserted == 0:
+    if total_source == 0:
         log("  Source returned 0 rows — nothing inserted.")
 
     # ── POST-SQL ──────────────────────────────────────────────────────────────
@@ -503,7 +506,7 @@ def main() -> None:
         log("[POST-SQL] Skipped (not configured)")
 
     log("Worker completed successfully.")
-    result: dict = {"success": True, "recordCount": total_inserted}
+    result: dict = {"success": True, "recordCount": total_inserted, "sourceRecordCount": total_source}
     if new_watermark and new_watermark != current_wm:
         result["newWatermark"] = new_watermark
     print(json.dumps(result))

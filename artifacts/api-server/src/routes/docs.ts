@@ -167,8 +167,7 @@ router.post(
       .from(apiSpecsTable).where(eq(apiSpecsTable.appId, appId));
     const nextVersion = (versionRow?.maxVersion ?? 0) + 1;
 
-    // Mark all existing specs inactive
-    await db.update(apiSpecsTable).set({ isActive: false }).where(eq(apiSpecsTable.appId, appId));
+    const specLabel: string | undefined = req.body?.specLabel?.trim() || undefined;
 
     if (req.file) {
       // File upload → store inline if small enough, or S3 if configured
@@ -176,18 +175,17 @@ router.post(
       if (isS3Configured()) {
         const s3Key = buildS3Key(appId, nextVersion);
         await uploadSpecToS3(s3Key, req.file.buffer, req.file.mimetype || "application/yaml");
-        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, s3Key, isActive: true }).returning();
+        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, specLabel, s3Key, isActive: true }).returning();
         res.status(201).json(spec);
       } else {
-        // Store inline
-        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, inlineContent: text, isActive: true }).returning();
+        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, specLabel, inlineContent: text, isActive: true }).returning();
         res.status(201).json(spec);
       }
     } else if (req.body?.content) {
       // Inline content posted as JSON
       const content: string = req.body.content;
       if (!content.trim()) { res.status(400).json({ error: "content cannot be empty" }); return; }
-      const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, inlineContent: content, isActive: true }).returning();
+      const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, specLabel, inlineContent: content, isActive: true }).returning();
       res.status(201).json(spec);
     } else if (req.body?.specUrl) {
       const specUrl: string = req.body.specUrl;
@@ -196,10 +194,10 @@ router.post(
       if (isS3Configured()) {
         const s3Key = buildS3Key(appId, nextVersion);
         await fetchUrlAndUploadToS3(specUrl, s3Key);
-        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, s3Key, specUrl, isActive: true }).returning();
+        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, specLabel, s3Key, specUrl, isActive: true }).returning();
         res.status(201).json(spec);
       } else {
-        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, specUrl, isActive: true }).returning();
+        const [spec] = await db.insert(apiSpecsTable).values({ appId, version: nextVersion, specLabel, specUrl, isActive: true }).returning();
         res.status(201).json(spec);
       }
     } else {

@@ -9,7 +9,7 @@ import { CronExpressionParser } from "cron-parser";
 import { eq, and, asc, sql } from "drizzle-orm";
 import {
   db, dataPipelinesTable, pipelineFieldMappingsTable, dbConnectionsTable,
-  dataJobsTable, auditLogsTable, usersTable, rolesTable,
+  dataJobsTable, auditLogsTable, usersTable, rolesTable, connectionObjectsTable,
 } from "@workspace/db";
 import { decrypt, loadEncryptionKey } from "./lib/crypto";
 import { logger } from "./lib/logger";
@@ -134,22 +134,50 @@ export interface PipelineRunResult {
 async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean): Promise<PipelineRunResult> {
   const [pipeline] = await db.select().from(dataPipelinesTable).where(eq(dataPipelinesTable.id, pipelineId));
   if (!pipeline) return { success: false, error: "Pipeline not found" };
-  if (!pipeline.sourceConnectionId) return { success: false, error: "No source connection configured" };
-  if (!pipeline.destConnectionId)   return { success: false, error: "No destination connection configured" };
-  if (!pipeline.destTarget)         return { success: false, error: "Destination table not configured" };
+
+  // ── Resolve source connection + query ───────────────────────────────────
+  let srcConnId: number | null = pipeline.sourceConnectionId;
+  let sourceQuery = pipeline.sourceQuery?.trim() || "";
+  let legacySourceTable = pipeline.sourceTable;
+
+  if (pipeline.sourceObjectId) {
+    const [srcObj] = await db.select().from(connectionObjectsTable).where(eq(connectionObjectsTable.id, pipeline.sourceObjectId));
+    if (!srcObj) return { success: false, error: "Source data object not found" };
+    srcConnId = srcObj.connectionId;
+    if (srcObj.objectType === "query") {
+      sourceQuery = srcObj.objectValue;
+    } else {
+      legacySourceTable = srcObj.objectValue;
+      sourceQuery = "";
+    }
+  }
+
+  // ── Resolve destination connection + target ──────────────────────────────
+  let dstConnId: number | null = pipeline.destConnectionId;
+  let destTarget = pipeline.destTarget ?? null;
+
+  if (pipeline.destObjectId) {
+    const [dstObj] = await db.select().from(connectionObjectsTable).where(eq(connectionObjectsTable.id, pipeline.destObjectId));
+    if (!dstObj) return { success: false, error: "Destination data object not found" };
+    dstConnId = dstObj.connectionId;
+    destTarget = dstObj.objectValue;
+  }
+
+  if (!srcConnId) return { success: false, error: "No source connection configured" };
+  if (!dstConnId) return { success: false, error: "No destination connection configured" };
+  if (!destTarget) return { success: false, error: "Destination table not configured" };
 
   const [[srcConn], [dstConn]] = await Promise.all([
-    db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.sourceConnectionId)),
-    db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.destConnectionId)),
+    db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, srcConnId)),
+    db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, dstConnId)),
   ]);
   if (!srcConn) return { success: false, error: "Source connection not found" };
   if (!dstConn) return { success: false, error: "Destination connection not found" };
 
-  // Build effective source query
-  let sourceQuery = pipeline.sourceQuery?.trim() || "";
-  if (!sourceQuery && pipeline.sourceTable) {
+  // Build effective source query (object-resolved or legacy)
+  if (!sourceQuery && legacySourceTable) {
     const schema = srcConn.schemaName ?? "public";
-    sourceQuery = `SELECT * FROM "${schema}"."${pipeline.sourceTable}"`;
+    sourceQuery = `SELECT * FROM "${schema}"."${legacySourceTable}"`;
   }
   if (!sourceQuery) return { success: false, error: "No source table or query configured" };
 
@@ -193,7 +221,7 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
     source: { engine: srcConn.dbEngine, host: srcConn.host, port: srcConn.port, database: srcConn.dbName, username: srcUser, password: srcPass },
     dest:   { engine: dstConn.dbEngine, host: dstConn.host, port: dstConn.port, database: dstConn.dbName, username: dstUser, password: dstPass },
     sourceQuery,
-    destTarget: pipeline.destTarget,
+    destTarget,
     fieldMappings: mappings.map(m => ({
       sourceField: m.sourceField,
       destField: m.destField,

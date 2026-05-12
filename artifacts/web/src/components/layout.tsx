@@ -3,9 +3,9 @@ import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import {
   LayoutDashboard, Users, ShieldAlert, FileText, LogOut, UserCircle, Menu,
-  Activity, Mail, Settings, ChevronDown, ChevronRight, Lock, Database,
-  GitBranch, Shuffle, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
-  Type, FileType, LogIn, Info, Layers,
+  Activity, Mail, Settings, ChevronDown, ChevronRight, Database,
+  GitBranch, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
+  Type, FileType, LogIn, Info, Layers, Table2, History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,7 +28,6 @@ interface NavGroup {
 
 const topNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/workflow", label: "Data Workflow", icon: GitBranch },
   { href: "/about", label: "About", icon: Info },
 ];
 
@@ -56,7 +55,6 @@ const adminGroups: NavGroup[] = [
     items: [
       { href: "/audit-log", label: "Audit Log", icon: FileText },
       { href: "/admin/login-report", label: "Login Report", icon: LogIn },
-      { href: "/pii-records", label: "PII Records", icon: Lock },
       { href: "/admin/pii-permissions", label: "PII Permissions", icon: Database },
     ],
   },
@@ -72,11 +70,13 @@ const adminGroups: NavGroup[] = [
     ],
   },
   {
-    label: "Data Management",
+    label: "Data Pipeline",
     icon: ServerCog,
     items: [
-      { href: "/admin/db-connections", label: "Connections", icon: Network },
-      { href: "/admin/field-mappings", label: "Field Mappings", icon: Shuffle },
+      { href: "/admin/db-connections", label: "Step 1: Connections", icon: Network },
+      { href: "/admin/data-objects", label: "Step 2: Data Objects", icon: Table2 },
+      { href: "/workflow", label: "Step 3: Pipelines", icon: GitBranch },
+      { href: "/workflow/jobs", label: "Job History", icon: History },
     ],
   },
 ];

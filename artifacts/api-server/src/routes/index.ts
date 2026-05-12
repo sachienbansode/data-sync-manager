@@ -15,6 +15,7 @@ import docsRouter from "./docs";
 import allowedFileTypesRouter from "./allowed-file-types";
 import loginReportRouter from "./login-report";
 import applicationTypesRouter from "./application-types";
+import connectionObjectsRouter from "./connection-objects";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(docsRouter);
 router.use(allowedFileTypesRouter);
 router.use(loginReportRouter);
 router.use(applicationTypesRouter);
+router.use(connectionObjectsRouter);
 
 export default router;

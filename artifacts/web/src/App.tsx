@@ -19,8 +19,8 @@ import AuthCallback from "@/pages/auth-callback";
 import EmailSettings from "@/pages/admin/email-settings";
 import AppSettings from "@/pages/admin/app-settings";
 import PiiPermissions from "@/pages/admin/pii-permissions";
-import PiiRecords from "@/pages/pii-records";
 import DbConnections from "@/pages/admin/db-connections";
+import DataObjects from "@/pages/admin/data-objects";
 import FieldMappings from "@/pages/admin/field-mappings";
 import FontSettings from "@/pages/admin/font-settings";
 import AllowedFileTypes from "@/pages/admin/allowed-file-types";
@@ -76,7 +76,10 @@ function Router() {
         <ProtectedRoute component={AuditLog} path="/audit-log" />
       </Route>
       <Route path="/pii-records">
-        <ProtectedRoute component={PiiRecords} path="/pii-records" />
+        <Redirect to="/admin/pii-permissions" />
+      </Route>
+      <Route path="/admin/data-objects">
+        <ProtectedRoute component={DataObjects} path="/admin/data-objects" requireRole="Admin" />
       </Route>
       <Route path="/about">
         <ProtectedRoute component={About} path="/about" skipPermissionCheck />

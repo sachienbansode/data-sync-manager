@@ -60,11 +60,13 @@ router.get("/admin/pipelines/:id/runs", authenticate, requireRole("Admin"), asyn
 // POST /api/admin/pipelines
 router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, res) => {
   const {
-    name, description, sourceConnectionId, destConnectionId,
+    name, description, sourceObjectId, destObjectId,
+    sourceConnectionId, destConnectionId,
     sourceTable, sourceQuery, destTarget, status, scheduleEnabled, scheduleCron,
     notifyOnSuccess, notifyOnFailure,
   } = req.body as {
     name: string; description?: string;
+    sourceObjectId?: number | null; destObjectId?: number | null;
     sourceConnectionId?: number; destConnectionId?: number;
     sourceTable?: string; sourceQuery?: string; destTarget?: string;
     status?: string; scheduleEnabled?: boolean; scheduleCron?: string;
@@ -80,6 +82,8 @@ router.post("/admin/pipelines", authenticate, requireRole("Admin"), async (req, 
   const [row] = await db.insert(dataPipelinesTable).values({
     name,
     description: description ?? null,
+    sourceObjectId: sourceObjectId ?? null,
+    destObjectId: destObjectId ?? null,
     sourceConnectionId: sourceConnectionId ?? null,
     destConnectionId: destConnectionId ?? null,
     sourceTable: sourceTable ?? null,
@@ -116,6 +120,8 @@ router.put("/admin/pipelines/:id", authenticate, requireRole("Admin"), async (re
   const updates: Partial<typeof dataPipelinesTable.$inferInsert> = { updatedAt: new Date() };
   if (body.name !== undefined) updates.name = body.name as string;
   if (body.description !== undefined) updates.description = (body.description as string) || null;
+  if (body.sourceObjectId !== undefined) updates.sourceObjectId = (body.sourceObjectId as number) || null;
+  if (body.destObjectId !== undefined) updates.destObjectId = (body.destObjectId as number) || null;
   if (body.sourceConnectionId !== undefined) updates.sourceConnectionId = (body.sourceConnectionId as number) || null;
   if (body.destConnectionId !== undefined) updates.destConnectionId = (body.destConnectionId as number) || null;
   if (body.sourceTable !== undefined) updates.sourceTable = (body.sourceTable as string) || null;
@@ -258,11 +264,18 @@ router.post("/admin/pipelines/:id/run", authenticate, requireRole("Admin"), asyn
 
   const [pipeline] = await db.select().from(dataPipelinesTable).where(eq(dataPipelinesTable.id, id));
   if (!pipeline) { res.status(404).json({ error: "Pipeline not found" }); return; }
-  if (!pipeline.sourceConnectionId) { res.status(400).json({ error: "Configure a source connection before running" }); return; }
-  if (!pipeline.destConnectionId)   { res.status(400).json({ error: "Configure a destination connection before running" }); return; }
-  if (!pipeline.destTarget) { res.status(400).json({ error: "Destination table is required. Set it on the pipeline." }); return; }
-  if (!pipeline.sourceTable && !pipeline.sourceQuery) {
-    res.status(400).json({ error: "Source table or query is required. Configure it on the pipeline." });
+
+  // Validate: object-based or legacy — at least one source and one dest must be resolvable
+  const hasObjectSource = !!pipeline.sourceObjectId;
+  const hasLegacySource = !!pipeline.sourceConnectionId && (!!pipeline.sourceTable || !!pipeline.sourceQuery);
+  if (!hasObjectSource && !hasLegacySource) {
+    res.status(400).json({ error: "Configure a source Data Object (or legacy source connection + table) before running" });
+    return;
+  }
+  const hasObjectDest = !!pipeline.destObjectId;
+  const hasLegacyDest = !!pipeline.destConnectionId && !!pipeline.destTarget;
+  if (!hasObjectDest && !hasLegacyDest) {
+    res.status(400).json({ error: "Configure a destination Data Object (or legacy destination connection + target) before running" });
     return;
   }
 

@@ -8,7 +8,7 @@ export const DB_ENGINES = ["postgresql", "mysql", "mssql", "oracle", "s3", "sftp
 export type DbEngine = typeof DB_ENGINES[number];
 
 /** A DB connection is purely a credential store — one connection = one application/database.
- *  The same connection can be reused across many pipelines targeting different tables. */
+ *  The same connection can be reused across many data objects and pipelines. */
 export const dbConnectionsTable = pgTable("db_connections", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
@@ -22,9 +22,9 @@ export const dbConnectionsTable = pgTable("db_connections", {
   passwordEnc: text("password_enc"),
   /** Extra engine-specific params (bucket, region, remotePath, etc.) stored as JSON */
   extraParams: jsonb("extra_params").$type<Record<string, string>>(),
-  /** SELECT-only query for fetching data from this BackOffice connection */
+  /** Legacy: SELECT-only query for fetching data from this connection (kept for compat) */
   fetchQuery: text("fetch_query"),
-  /** Local file path where transformed CSV output is written during push */
+  /** Legacy: Local file path where transformed CSV output is written (kept for compat) */
   outputFilePath: text("output_file_path"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
@@ -34,6 +34,28 @@ export const dbConnectionsTable = pgTable("db_connections", {
 });
 
 export type DbConnection = typeof dbConnectionsTable.$inferSelect;
+
+export const CONNECTION_OBJECT_TYPES = ["table", "query"] as const;
+export type ConnectionObjectType = typeof CONNECTION_OBJECT_TYPES[number];
+
+/** Step 2: A named data object tied to a connection.
+ *  objectType='table' → objectValue is a table/view name (SELECT * FROM schema.objectValue).
+ *  objectType='query' → objectValue is a full SQL SELECT statement.
+ *  One connection can have many objects; objects are reused across pipelines. */
+export const connectionObjectsTable = pgTable("connection_objects", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  connectionId: integer("connection_id").notNull().references(() => dbConnectionsTable.id, { onDelete: "cascade" }),
+  objectType: text("object_type").$type<ConnectionObjectType>().notNull().default("table"),
+  /** For 'table': table/view name. For 'query': full SELECT SQL. */
+  objectValue: text("object_value").notNull(),
+  description: text("description"),
+  createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ConnectionObject = typeof connectionObjectsTable.$inferSelect;
 
 export const DATA_JOB_TYPES = ["fetch", "upload_csv", "push", "pipeline"] as const;
 export const DATA_JOB_STATUSES = ["pending", "running", "success", "failed"] as const;
@@ -87,23 +109,26 @@ export type FieldMapping = typeof fieldMappingsTable.$inferSelect;
 
 export const PIPELINE_STATUSES = ["active", "inactive"] as const;
 
-/** A data pipeline defines a source → destination flow with field-level mapping.
- *  Source: pick a DB connection + specify sourceTable (or write a custom sourceQuery).
- *  Destination: pick a DB connection + specify destTarget table.
- *  Scheduling lives on the pipeline, not the connection. */
+/** Step 3: A data pipeline moves data from a source object to a destination object.
+ *  Source and destination are connection objects (Step 2).
+ *  Legacy fields (sourceConnectionId, sourceTable, sourceQuery, destConnectionId, destTarget) kept for backward compat. */
 export const dataPipelinesTable = pgTable("data_pipelines", {
   id: serial("id").primaryKey(),
   name: text("name").notNull(),
   description: text("description"),
-  /** The source DB connection (credentials). */
+  /** Source data object (Step 2). Takes precedence over legacy sourceConnectionId/sourceTable/sourceQuery. */
+  sourceObjectId: integer("source_object_id").references(() => connectionObjectsTable.id, { onDelete: "set null" }),
+  /** Destination data object (Step 2). Takes precedence over legacy destConnectionId/destTarget. */
+  destObjectId: integer("dest_object_id").references(() => connectionObjectsTable.id, { onDelete: "set null" }),
+  /** Legacy: The source DB connection (credentials). */
   sourceConnectionId: integer("source_connection_id").references(() => dbConnectionsTable.id, { onDelete: "set null" }),
-  /** The destination DB connection (credentials). */
+  /** Legacy: The destination DB connection (credentials). */
   destConnectionId: integer("dest_connection_id").references(() => dbConnectionsTable.id, { onDelete: "set null" }),
-  /** Simple table name on the source (e.g. "clients"). Used to build SELECT * FROM <table>. */
+  /** Legacy: Simple table name on the source. */
   sourceTable: text("source_table"),
-  /** Custom SELECT query overriding sourceTable. Takes precedence over sourceTable. */
+  /** Legacy: Custom SELECT query overriding sourceTable. */
   sourceQuery: text("source_query"),
-  /** Target table on the destination (e.g. "public.clients_sync"). Required to run. */
+  /** Legacy: Target table on the destination. */
   destTarget: text("dest_target"),
   status: text("status").$type<typeof PIPELINE_STATUSES[number]>().notNull().default("inactive"),
   scheduleEnabled: boolean("schedule_enabled").notNull().default(false),

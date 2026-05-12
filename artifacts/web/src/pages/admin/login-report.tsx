@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Label } from "@/components/ui/label";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import { LogIn, AlertTriangle, TrendingUp, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { LogIn, AlertTriangle, TrendingUp, Search, ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { formatDateTime } from "@/lib/date";
 
 const BASE = import.meta.env.BASE_URL;
@@ -48,28 +49,83 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   M365_LOGIN: { label: "M365 SSO", color: "bg-purple-500/10 text-purple-600 border-purple-500/20" },
 };
 
+function escapeCsv(val: unknown): string {
+  return `"${String(val ?? "").replace(/"/g, '""')}"`;
+}
+
 export default function LoginReport() {
   const token = getAccessToken();
   const [email, setEmail] = useState("");
   const [action, setAction] = useState("all");
   const [page, setPage] = useState(1);
   const [emailInput, setEmailInput] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const { data, isLoading } = useQuery<LoginReportData>({
-    queryKey: ["login-report", email, action, page],
+    queryKey: ["login-report", email, action, page, fromDate, toDate],
     queryFn: () => {
-      const params = new URLSearchParams({ page: String(page), pageSize: "50" });
+      const params = new URLSearchParams({ page: String(page), pageSize: "10" });
       if (email) params.set("email", email);
       if (action !== "all") params.set("action", action);
+      if (fromDate) params.set("from", new Date(fromDate).toISOString());
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        params.set("to", to.toISOString());
+      }
       return apiFetch(`/admin/login-report?${params}`, token);
     },
   });
 
-  const totalPages = data ? Math.ceil(data.total / data.pageSize) : 1;
+  const totalPages = data ? Math.ceil(data.total / 10) : 1;
 
   const handleSearch = () => {
     setEmail(emailInput);
     setPage(1);
+  };
+
+  const handleDateChange = () => {
+    setPage(1);
+  };
+
+  const handleDownloadCsv = async () => {
+    setIsDownloading(true);
+    try {
+      const params = new URLSearchParams({ page: "1", pageSize: "9999" });
+      if (email) params.set("email", email);
+      if (action !== "all") params.set("action", action);
+      if (fromDate) params.set("from", new Date(fromDate).toISOString());
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        params.set("to", to.toISOString());
+      }
+      const result: LoginReportData = await apiFetch(`/admin/login-report?${params}`, token);
+      const headers = ["ID", "Email", "Action", "IP Address", "Time"];
+      const rows = result.entries.map(e => [
+        e.id,
+        e.userEmail ?? "",
+        e.action,
+        e.ipAddress ?? "",
+        formatDateTime(e.createdAt),
+      ]);
+      const csv = [headers, ...rows].map(r => r.map(escapeCsv).join(",")).join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `login-report-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   // Fill missing days in the chart
@@ -158,9 +214,22 @@ export default function LoginReport() {
       {/* Filters + table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle>Events</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Events</CardTitle>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDownloadCsv}
+              disabled={isDownloading || isLoading}
+              className="gap-2"
+            >
+              <Download className="h-3.5 w-3.5" />
+              {isDownloading ? "Preparing…" : "Download CSV"}
+            </Button>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {/* Search + action filter row */}
           <div className="flex gap-2 flex-wrap">
             <div className="flex gap-2 flex-1 min-w-[200px]">
               <Input
@@ -185,6 +254,38 @@ export default function LoginReport() {
                 <SelectItem value="M365_LOGIN">M365 SSO</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Date range filter row */}
+          <div className="flex gap-3 flex-wrap items-end">
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">From date</Label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => { setFromDate(e.target.value); handleDateChange(); }}
+                className="w-40 h-8 text-sm"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs text-muted-foreground">To date</Label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => { setToDate(e.target.value); handleDateChange(); }}
+                className="w-40 h-8 text-sm"
+              />
+            </div>
+            {(fromDate || toDate) && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-xs"
+                onClick={() => { setFromDate(""); setToDate(""); setPage(1); }}
+              >
+                Clear dates
+              </Button>
+            )}
           </div>
 
           {isLoading ? (
@@ -225,21 +326,19 @@ export default function LoginReport() {
                 </table>
               </div>
 
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between pt-1">
-                  <p className="text-xs text-muted-foreground">
-                    Page {page} of {totalPages} · {data?.total} total
-                  </p>
-                  <div className="flex gap-1">
-                    <Button size="icon" variant="outline" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                    </Button>
-                    <Button size="icon" variant="outline" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
+              <div className="flex items-center justify-between pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Page {page} of {totalPages} · {data?.total ?? 0} total events
+                </p>
+                <div className="flex gap-1">
+                  <Button size="icon" variant="outline" className="h-8 w-8" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button size="icon" variant="outline" className="h-8 w-8" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
-              )}
+              </div>
             </>
           )}
         </CardContent>

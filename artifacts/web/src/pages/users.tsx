@@ -39,9 +39,8 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Search, Filter, Plus, Shield, ShieldOff, Pencil, Trash2, Loader2 } from "lucide-react";
+import { Search, Filter, Plus, Shield, ShieldOff, Pencil, Trash2, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { getListUsersQueryKey } from "@workspace/api-client-react";
 
 const createSchema = z.object({
   email: z.string().email("Invalid email"),
@@ -100,12 +99,15 @@ export default function Users() {
   const [deleteUser, setDeleteUser] = useState<UserRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 10;
+
   const queryParams = {
     search: search || undefined,
     roleId: roleFilter !== "all" ? Number(roleFilter) : undefined,
     isActive: statusFilter !== "all" ? statusFilter === "active" : undefined,
-    page: 1,
-    pageSize: 100,
+    page,
+    pageSize: PAGE_SIZE,
   };
 
   const { data: usersData, isLoading: isLoadingUsers } = useListUsers(queryParams);
@@ -130,7 +132,13 @@ export default function Users() {
       : undefined,
   });
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: getListUsersQueryKey(queryParams) });
+  const [prevFilters, setPrevFilters] = useState({ search, roleFilter, statusFilter });
+  if (prevFilters.search !== search || prevFilters.roleFilter !== roleFilter || prevFilters.statusFilter !== statusFilter) {
+    setPrevFilters({ search, roleFilter, statusFilter });
+    setPage(1);
+  }
+
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["listUsers"] });
 
   const handleStatusChange = async (userId: number, isActive: boolean) => {
     try {
@@ -291,6 +299,26 @@ export default function Users() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {usersData && (
+            <div className="flex items-center justify-between px-4 py-2 border-b text-xs text-muted-foreground">
+              <span>
+                {usersData.total > 0
+                  ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, usersData.total)} of ${usersData.total} users`
+                  : "No users found"}
+              </span>
+              <div className="flex gap-1">
+                <Button size="icon" variant="outline" className="h-7 w-7" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>
+                  <ChevronLeft className="h-3.5 w-3.5" />
+                </Button>
+                <span className="flex items-center px-2 text-xs">
+                  {page} / {Math.max(1, Math.ceil((usersData.total ?? 0) / PAGE_SIZE))}
+                </span>
+                <Button size="icon" variant="outline" className="h-7 w-7" disabled={page >= Math.ceil((usersData.total ?? 0) / PAGE_SIZE)} onClick={() => setPage(p => p + 1)}>
+                  <ChevronRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
           <Table>
             <TableHeader>
               <TableRow>

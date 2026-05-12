@@ -70,7 +70,7 @@ function useAllPages() {
 
 const PAGE_GROUPS: Record<string, string[]> = {
   "Core":        ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
-  "Data":        ["/pii-records", "/workflow", "/workflow/jobs", "/admin/db-connections", "/admin/field-mappings"],
+  "Data":        ["/workflow", "/workflow/jobs", "/admin/db-connections", "/admin/data-objects"],
   "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/pii-permissions"],
   "Other":       ["/docs"],
 };

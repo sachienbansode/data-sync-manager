@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Loader2, Plus, Pencil, Trash2, GitBranch, ArrowRight, Database, Cloud,
   FolderOpen, Server, CheckCircle, Play, PauseCircle, Settings2,
-  CalendarClock, History, XCircle, Table2, ChevronDown, ChevronUp, User,
+  CalendarClock, History, XCircle, ChevronDown, ChevronUp, User,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
@@ -24,6 +24,8 @@ interface Pipeline {
   id: number;
   name: string;
   description: string | null;
+  sourceObjectId: number | null;
+  destObjectId: number | null;
   sourceConnectionId: number | null;
   destConnectionId: number | null;
   sourceTable: string | null;
@@ -45,6 +47,15 @@ interface DbConnection {
   type: string;
   dbEngine: string;
   schemaName: string | null;
+}
+
+interface ConnectionObject {
+  id: number;
+  connectionId: number;
+  name: string;
+  objectType: string;
+  objectValue: string;
+  description: string | null;
 }
 
 interface RunJob {
@@ -85,12 +96,8 @@ function formatCron(expr: string): string {
 
 const EMPTY_FORM = {
   name: "", description: "",
-  sourceConnectionId: "__none__",
-  destConnectionId: "__none__",
-  sourceTable: "__none__",
-  sourceQuery: "",
-  useCustomQuery: false,
-  destTarget: "",
+  sourceObjectId: "__none__",
+  destObjectId: "__none__",
   scheduleEnabled: false, scheduleCron: "",
   notifyOnSuccess: "",
   notifyOnFailure: "",
@@ -101,6 +108,7 @@ const apiBase = `${import.meta.env.BASE_URL}api`;
 export default function Workflow() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([]);
   const [connections, setConnections] = useState<DbConnection[]>([]);
+  const [dataObjects, setDataObjects] = useState<ConnectionObject[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -114,24 +122,22 @@ export default function Workflow() {
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
-  // Table listing
-  const [srcTables, setSrcTables] = useState<string[]>([]);
-  const [srcTablesLoading, setSrcTablesLoading] = useState(false);
-
   const token = getAccessToken();
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const hdrs = { Authorization: `Bearer ${token}` };
-      const [pRes, cRes] = await Promise.all([
+      const [pRes, cRes, oRes] = await Promise.all([
         fetch(`${apiBase}/admin/pipelines`, { headers: hdrs }),
         fetch(`${apiBase}/admin/db-connections`, { headers: hdrs }),
+        fetch(`${apiBase}/admin/connection-objects`, { headers: hdrs }),
       ]);
       if (!pRes.ok) throw new Error("Failed to load pipelines");
       if (!cRes.ok) throw new Error("Failed to load connections");
       setPipelines(await pRes.json());
       setConnections(await cRes.json());
+      if (oRes.ok) setDataObjects(await oRes.json());
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load");
     } finally {
@@ -141,60 +147,26 @@ export default function Workflow() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch table list when source connection changes
-  async function loadSourceTables(connectionId: string) {
-    if (connectionId === "__none__") { setSrcTables([]); return; }
-    setSrcTablesLoading(true);
-    try {
-      const res = await fetch(`${apiBase}/admin/db-connections/${connectionId}/tables`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to load tables");
-      const data = await res.json();
-      setSrcTables(data.tables ?? []);
-    } catch {
-      setSrcTables([]);
-    } finally {
-      setSrcTablesLoading(false);
-    }
-  }
-
   function openAdd() {
     setEditId(null);
     setForm(EMPTY_FORM);
     setCronPreset("");
-    setSrcTables([]);
     setDialogOpen(true);
   }
 
   function openEdit(p: Pipeline) {
     setEditId(p.id);
-    const hasCustomQuery = !!p.sourceQuery && !p.sourceTable;
     setForm({
       name: p.name, description: p.description ?? "",
-      sourceConnectionId: p.sourceConnectionId ? String(p.sourceConnectionId) : "__none__",
-      destConnectionId: p.destConnectionId ? String(p.destConnectionId) : "__none__",
-      sourceTable: p.sourceTable ?? "__none__",
-      sourceQuery: p.sourceQuery ?? "",
-      useCustomQuery: hasCustomQuery,
-      destTarget: p.destTarget ?? "",
+      sourceObjectId: p.sourceObjectId ? String(p.sourceObjectId) : "__none__",
+      destObjectId: p.destObjectId ? String(p.destObjectId) : "__none__",
       scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
       notifyOnSuccess: p.notifyOnSuccess ?? "",
       notifyOnFailure: p.notifyOnFailure ?? "",
     });
     const preset = CRON_PRESETS.find(pr => pr.value === p.scheduleCron && pr.value !== "__custom__");
     setCronPreset(preset ? preset.value : (p.scheduleCron ? "__custom__" : ""));
-    setSrcTables([]);
-    if (p.sourceConnectionId) {
-      loadSourceTables(String(p.sourceConnectionId));
-    }
     setDialogOpen(true);
-  }
-
-  function handleSourceConnectionChange(value: string) {
-    setForm(f => ({ ...f, sourceConnectionId: value, sourceTable: "__none__", sourceQuery: "" }));
-    setSrcTables([]);
-    loadSourceTables(value);
   }
 
   function handleCronPreset(value: string) {
@@ -208,23 +180,14 @@ export default function Workflow() {
     if (form.scheduleEnabled && !form.scheduleCron.trim()) {
       toast.error("Cron expression required when schedule is enabled"); return;
     }
-    if (!form.useCustomQuery && form.sourceTable === "__none__" && form.sourceConnectionId !== "__none__") {
-      toast.error("Select a source table or write a custom query"); return;
-    }
 
     setSaving(true);
     try {
-      const effectiveSourceTable = !form.useCustomQuery && form.sourceTable !== "__none__" ? form.sourceTable : null;
-      const effectiveSourceQuery = form.useCustomQuery ? form.sourceQuery.trim() || null : null;
-
       const body = {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
-        sourceConnectionId: form.sourceConnectionId !== "__none__" ? parseInt(form.sourceConnectionId) : null,
-        destConnectionId: form.destConnectionId !== "__none__" ? parseInt(form.destConnectionId) : null,
-        sourceTable: effectiveSourceTable || undefined,
-        sourceQuery: effectiveSourceQuery || undefined,
-        destTarget: form.destTarget.trim() || undefined,
+        sourceObjectId: form.sourceObjectId !== "__none__" ? parseInt(form.sourceObjectId) : null,
+        destObjectId: form.destObjectId !== "__none__" ? parseInt(form.destObjectId) : null,
         scheduleEnabled: form.scheduleEnabled,
         scheduleCron: form.scheduleCron.trim() || undefined,
         notifyOnSuccess: form.notifyOnSuccess.trim() || undefined,
@@ -319,24 +282,33 @@ export default function Workflow() {
     }
   }
 
+  function objById(id: number | null): ConnectionObject | undefined {
+    if (!id) return undefined;
+    return dataObjects.find(o => o.id === id);
+  }
+
   function connById(id: number | null): DbConnection | undefined {
     if (!id) return undefined;
     return connections.find(c => c.id === id);
   }
 
-  const srcConn = form.sourceConnectionId !== "__none__"
-    ? connections.find(c => c.id === parseInt(form.sourceConnectionId))
-    : undefined;
-  const isFileSource = srcConn && ["s3", "sftp", "csv"].includes(srcConn.dbEngine);
+  function objectLabel(obj: ConnectionObject): string {
+    const conn = connById(obj.connectionId);
+    return conn ? `${conn.name} · ${obj.name}` : obj.name;
+  }
+
+  function objectConnEngine(obj: ConnectionObject): string {
+    return connById(obj.connectionId)?.dbEngine ?? "postgresql";
+  }
 
   return (
     <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">Data Workflow</h1>
+            <h1 className="text-2xl font-bold tracking-tight">Pipelines</h1>
             <p className="text-muted-foreground mt-1">
-              Build pipelines: pick a source app → table, destination app → table, then run or schedule.
+              Build pipelines from Data Objects (Step 2) — pick a source object and a destination object, then run or schedule.
             </p>
           </div>
           <Button onClick={openAdd}>
@@ -354,8 +326,8 @@ export default function Workflow() {
             <p className="text-2xl font-bold mt-0.5 text-green-600">{loading ? "—" : pipelines.filter(p => p.status === "active").length}</p>
           </CardContent></Card>
           <Card><CardContent className="pt-4 pb-4">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide">Connections</p>
-            <p className="text-2xl font-bold mt-0.5">{loading ? "—" : connections.length}</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide">Data Objects</p>
+            <p className="text-2xl font-bold mt-0.5">{loading ? "—" : dataObjects.length}</p>
           </CardContent></Card>
         </div>
 
@@ -363,7 +335,7 @@ export default function Workflow() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2"><GitBranch className="h-5 w-5" /> Pipelines</CardTitle>
             <CardDescription>
-              Each pipeline moves data from a source table to a destination table, with optional field-level mapping.
+              Each pipeline moves data from a source Data Object to a destination Data Object, with optional field-level mapping.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -373,16 +345,23 @@ export default function Workflow() {
               <div className="text-center py-12 text-muted-foreground">
                 <GitBranch className="h-10 w-10 mx-auto mb-3 opacity-30" />
                 <p className="font-medium">No pipelines yet</p>
-                <p className="text-sm mt-1">Create your first pipeline to start moving data between systems.</p>
+                <p className="text-sm mt-1">
+                  {dataObjects.length === 0
+                    ? "First add Data Objects (Step 2), then create a pipeline here."
+                    : "Create your first pipeline to start moving data between systems."
+                  }
+                </p>
                 <Button className="mt-4" onClick={openAdd}><Plus className="h-4 w-4 mr-2" />New Pipeline</Button>
               </div>
             ) : (
               <div className="divide-y">
                 {pipelines.map((p) => {
-                  const src = connById(p.sourceConnectionId);
-                  const dst = connById(p.destConnectionId);
-                  const SrcIcon = src ? (ENGINE_ICON[src.dbEngine] ?? Database) : Database;
-                  const DstIcon = dst ? (ENGINE_ICON[dst.dbEngine] ?? Database) : Database;
+                  const srcObj = objById(p.sourceObjectId);
+                  const dstObj = objById(p.destObjectId);
+                  const srcEngine = srcObj ? objectConnEngine(srcObj) : (connById(p.sourceConnectionId)?.dbEngine ?? "");
+                  const dstEngine = dstObj ? objectConnEngine(dstObj) : (connById(p.destConnectionId)?.dbEngine ?? "");
+                  const SrcIcon = ENGINE_ICON[srcEngine] ?? Database;
+                  const DstIcon = ENGINE_ICON[dstEngine] ?? Database;
 
                   return (
                     <div key={p.id} className="py-4 flex items-start justify-between gap-4">
@@ -407,23 +386,22 @@ export default function Workflow() {
                         <div className="flex items-center gap-2 text-sm flex-wrap">
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
                             <SrcIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            {src ? <span className="font-medium">{src.name}</span> : <span className="text-muted-foreground italic">No source</span>}
-                            {(p.sourceTable || p.sourceQuery) && (
-                              <span className="text-muted-foreground">
-                                {p.sourceTable
-                                  ? <>· <Table2 className="h-3 w-3 inline" /> <span className="font-mono">{p.sourceTable}</span></>
-                                  : <span className="italic">custom query</span>
-                                }
-                              </span>
-                            )}
+                            {srcObj
+                              ? <span className="font-medium">{objectLabel(srcObj)}</span>
+                              : p.sourceConnectionId
+                                ? <span className="font-medium">{connById(p.sourceConnectionId)?.name ?? "Unknown"}{p.sourceTable ? ` · ${p.sourceTable}` : ""}</span>
+                                : <span className="text-muted-foreground italic">No source</span>
+                            }
                           </div>
                           <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
                           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
                             <DstIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            {dst ? <span className="font-medium">{dst.name}</span> : <span className="text-muted-foreground italic">No destination</span>}
-                            {p.destTarget && (
-                              <span className="text-muted-foreground">· <span className="font-mono">{p.destTarget}</span></span>
-                            )}
+                            {dstObj
+                              ? <span className="font-medium">{objectLabel(dstObj)}</span>
+                              : p.destConnectionId
+                                ? <span className="font-medium">{connById(p.destConnectionId)?.name ?? "Unknown"}{p.destTarget ? ` · ${p.destTarget}` : ""}</span>
+                                : <span className="text-muted-foreground italic">No destination</span>
+                            }
                           </div>
                         </div>
 
@@ -488,7 +466,7 @@ export default function Workflow() {
           <DialogHeader>
             <DialogTitle>{editId ? "Edit Pipeline" : "New Pipeline"}</DialogTitle>
             <DialogDescription>
-              Choose a source application and table, then a destination application and table.
+              Select a source and destination Data Object, then configure an optional schedule.
             </DialogDescription>
           </DialogHeader>
 
@@ -511,124 +489,82 @@ export default function Workflow() {
               />
             </div>
 
-            {/* SOURCE */}
+            {/* SOURCE OBJECT */}
             <div className="rounded-lg border p-4 space-y-3">
               <p className="text-sm font-semibold flex items-center gap-2">
-                <Database className="h-4 w-4 text-muted-foreground" /> Source
+                <Database className="h-4 w-4 text-muted-foreground" /> Source Object
               </p>
-
-              <div className="space-y-1">
-                <Label>Source Application (Connection)</Label>
-                <Select
-                  value={form.sourceConnectionId}
-                  onValueChange={handleSourceConnectionChange}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select source application…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {connections.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} <span className="text-muted-foreground text-xs">({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {form.sourceConnectionId !== "__none__" && !isFileSource && (
-                <>
-                  {/* Toggle custom query */}
-                  <div className="flex items-center gap-2">
-                    <Switch
-                      checked={form.useCustomQuery}
-                      onCheckedChange={v => setForm(f => ({ ...f, useCustomQuery: v, sourceTable: "__none__", sourceQuery: "" }))}
-                    />
-                    <Label className="cursor-pointer text-sm font-normal">Use custom SQL query instead of selecting a table</Label>
-                  </div>
-
-                  {!form.useCustomQuery ? (
-                    <div className="space-y-1">
-                      <Label className="flex items-center gap-1.5">
-                        <Table2 className="h-3.5 w-3.5" /> Source Table
-                        {srcTablesLoading && <Loader2 className="h-3 w-3 animate-spin" />}
-                      </Label>
-                      <Select
-                        value={form.sourceTable}
-                        onValueChange={v => setForm(f => ({ ...f, sourceTable: v }))}
-                        disabled={srcTablesLoading}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder={srcTablesLoading ? "Loading tables…" : "Select a table…"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">— Select table —</SelectItem>
-                          {srcTables.map(t => (
-                            <SelectItem key={t} value={t}>{t}</SelectItem>
-                          ))}
-                          {!srcTablesLoading && srcTables.length === 0 && (
-                            <SelectItem value="__none__" disabled>No tables found — check connection</SelectItem>
-                          )}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-muted-foreground">Fetches all rows: SELECT * FROM [schema].[table]</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      <Label>Custom SELECT Query</Label>
-                      <textarea
-                        className="w-full min-h-[72px] rounded-md border border-input bg-background px-3 py-2 text-sm font-mono shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-y"
-                        value={form.sourceQuery}
-                        onChange={e => setForm(f => ({ ...f, sourceQuery: e.target.value }))}
-                        placeholder={`SELECT col1, col2 FROM "${srcConn?.schemaName ?? "public"}".table_name WHERE condition`}
-                        spellCheck={false}
-                      />
-                      <p className="text-xs text-muted-foreground">Only SELECT statements are permitted.</p>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {isFileSource && (
-                <p className="text-xs text-muted-foreground italic">File/cloud sources are fetched as-is using the configured path.</p>
+              {dataObjects.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No Data Objects defined yet. <Link href="/admin/data-objects" className="text-primary underline underline-offset-2">Add some in Step 2</Link> first.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  <Label>Source Data Object</Label>
+                  <Select
+                    value={form.sourceObjectId}
+                    onValueChange={v => setForm(f => ({ ...f, sourceObjectId: v }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select source object…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {dataObjects.map(o => (
+                        <SelectItem key={o.id} value={String(o.id)}>
+                          {objectLabel(o)}
+                          <span className="text-muted-foreground text-xs ml-1">({o.objectType})</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {form.sourceObjectId !== "__none__" && (() => {
+                    const obj = dataObjects.find(o => o.id === parseInt(form.sourceObjectId));
+                    if (!obj) return null;
+                    return (
+                      <p className="text-xs text-muted-foreground font-mono truncate">
+                        {obj.objectType === "query" ? obj.objectValue.slice(0, 80) + (obj.objectValue.length > 80 ? "…" : "") : obj.objectValue}
+                      </p>
+                    );
+                  })()}
+                </div>
               )}
             </div>
 
-            {/* DESTINATION */}
+            {/* DESTINATION OBJECT */}
             <div className="rounded-lg border p-4 space-y-3">
               <p className="text-sm font-semibold flex items-center gap-2">
-                <Database className="h-4 w-4 text-muted-foreground" /> Destination
+                <Database className="h-4 w-4 text-muted-foreground" /> Destination Object
               </p>
-
-              <div className="space-y-1">
-                <Label>Destination Application (Connection)</Label>
-                <Select
-                  value={form.destConnectionId}
-                  onValueChange={v => setForm(f => ({ ...f, destConnectionId: v }))}
-                >
-                  <SelectTrigger><SelectValue placeholder="Select destination application…" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">— None —</SelectItem>
-                    {connections.map(c => (
-                      <SelectItem key={c.id} value={String(c.id)}>
-                        {c.name} <span className="text-muted-foreground text-xs">({ENGINE_LABEL[c.dbEngine] ?? c.dbEngine})</span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1">
-                <Label>Destination Table *</Label>
-                <Input
-                  value={form.destTarget}
-                  onChange={e => setForm(f => ({ ...f, destTarget: e.target.value }))}
-                  placeholder="public.target_table"
-                  className="font-mono"
-                />
-                <p className="text-xs text-muted-foreground">
-                  The table to INSERT rows into. Format: <span className="font-mono">schema.table</span> or just <span className="font-mono">table</span>.
+              {dataObjects.length === 0 ? (
+                <p className="text-sm text-muted-foreground italic">
+                  No Data Objects defined yet. <Link href="/admin/data-objects" className="text-primary underline underline-offset-2">Add some in Step 2</Link> first.
                 </p>
-              </div>
+              ) : (
+                <div className="space-y-1">
+                  <Label>Destination Data Object</Label>
+                  <Select
+                    value={form.destObjectId}
+                    onValueChange={v => setForm(f => ({ ...f, destObjectId: v }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Select destination object…" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— None —</SelectItem>
+                      {dataObjects.map(o => (
+                        <SelectItem key={o.id} value={String(o.id)}>
+                          {objectLabel(o)}
+                          <span className="text-muted-foreground text-xs ml-1">({o.objectType})</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {form.destObjectId !== "__none__" && (() => {
+                    const obj = dataObjects.find(o => o.id === parseInt(form.destObjectId));
+                    if (!obj) return null;
+                    return (
+                      <p className="text-xs text-muted-foreground font-mono truncate">{obj.objectValue}</p>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
             {/* NOTIFICATIONS */}
@@ -654,7 +590,7 @@ export default function Workflow() {
                   onChange={e => setForm(f => ({ ...f, notifyOnFailure: e.target.value }))}
                   placeholder="oncall@example.com"
                 />
-                <p className="text-xs text-muted-foreground">Email to receive a detailed error report (including logs) when the pipeline fails.</p>
+                <p className="text-xs text-muted-foreground">Email to receive a detailed error report when the pipeline fails.</p>
               </div>
             </div>
 

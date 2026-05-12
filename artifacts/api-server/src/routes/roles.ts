@@ -17,7 +17,7 @@ export const ALL_PAGES = [
   { path: "/roles", name: "Roles & Permissions" },
   { path: "/audit-log", name: "Audit Log" },
   { path: "/admin/login-report", name: "Login Report" },
-  { path: "/pii-records", name: "PII Records" },
+  { path: "/admin/data-objects", name: "Data Objects" },
   { path: "/workflow", name: "Data Workflow" },
   { path: "/workflow/jobs", name: "Workflow Jobs" },
   { path: "/admin/db-connections", name: "DB Connections" },

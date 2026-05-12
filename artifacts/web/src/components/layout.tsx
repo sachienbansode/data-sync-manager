@@ -24,6 +24,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface LayoutProps {
   children: ReactNode;
@@ -155,6 +156,10 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
               Profile
             </div>
           </Link>
+          <div className="flex items-center justify-between px-3 py-1">
+            <span className="text-sm font-medium text-sidebar-foreground/70">Theme</span>
+            <ThemeToggle />
+          </div>
           <button
             onClick={() => { logout(); onNav?.(); }}
             className="w-full flex items-center px-3 py-2 text-sm font-medium rounded-md text-destructive/80 hover:bg-destructive/10 hover:text-destructive transition-colors text-left"
@@ -189,9 +194,12 @@ export function Layout({ children }: LayoutProps) {
             <Activity className="h-5 w-5 text-primary mr-2" />
             <span className="font-semibold tracking-tight">Ashika</span>
           </div>
-          <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
-            <Menu className="h-5 w-5" />
-          </Button>
+          <div className="flex items-center gap-1">
+            <ThemeToggle />
+            <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
+              <Menu className="h-5 w-5" />
+            </Button>
+          </div>
         </header>
 
         <ScrollArea className="flex-1">

@@ -7,6 +7,7 @@ import { ShieldAlert, Activity, KeyRound, Mail, ArrowRight, RefreshCw } from "lu
 import { useLogin, useVerifyMfa } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Form,
   FormControl,
@@ -156,6 +157,9 @@ export default function Login() {
       data-testid="login-page"
       className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden"
     >
+      <div className="absolute top-4 right-4 z-20">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md z-10 relative">
         <div className="mb-8 flex flex-col items-center">
           <div className="h-12 w-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">

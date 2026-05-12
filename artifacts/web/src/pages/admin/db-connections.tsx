@@ -374,7 +374,7 @@ export default function DbConnections() {
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0">
-                        {!eng.isFile && (
+                        {(!eng.isFile || c.dbEngine === "s3") && (
                           <Button variant="outline" size="sm" onClick={() => testConnection(c.id)} disabled={testing === c.id}>
                             {testing === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
                             <span className="ml-1 hidden sm:inline">Test</span>

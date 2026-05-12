@@ -4,6 +4,7 @@ import {
   useGetRolePagePermissions,
   useUpdateRolePagePermissions,
   getGetRolePagePermissionsQueryKey,
+  getGetMeQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient, useMutation, useQuery } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -71,7 +72,7 @@ function useAllPages() {
 const PAGE_GROUPS: Record<string, string[]> = {
   "Core":        ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
   "Data Pipeline": ["/admin/db-connections", "/admin/data-objects", "/workflow", "/workflow/jobs"],
-  "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/application-types", "/admin/field-mappings", "/admin/pii-permissions"],
+  "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/application-types", "/admin/field-mappings", "/admin/pii-permissions", "/pii-records"],
   "Other":       ["/docs"],
 };
 function groupPages(pages: PageItem[]): Array<{ group: string; pages: PageItem[] }> {
@@ -314,6 +315,7 @@ export default function Roles() {
     try {
       await updatePermissionsMutation.mutateAsync({ id: selectedRoleId, data: { permissions: updatedPermissions } });
       queryClient.invalidateQueries({ queryKey: getGetRolePagePermissionsQueryKey(selectedRoleId) });
+      queryClient.invalidateQueries({ queryKey: getGetMeQueryKey() });
       setPendingChanges({});
       toast.success("Permissions updated");
     } catch {

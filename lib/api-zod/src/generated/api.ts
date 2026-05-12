@@ -399,6 +399,8 @@ export const GetAuditLogQueryParams = zod.object({
   pageSize: zod.coerce.number().default(getAuditLogQueryPageSizeDefault),
   userId: zod.coerce.number().nullish(),
   action: zod.coerce.string().nullish(),
+  startDate: zod.string().nullish(),
+  endDate: zod.string().nullish(),
 });
 
 export const GetAuditLogResponse = zod.object({

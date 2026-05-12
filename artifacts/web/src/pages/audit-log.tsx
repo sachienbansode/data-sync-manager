@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Filter, Globe, CalendarDays, Download, Loader2, Search, ShieldAlert } from "lucide-react";
+import { Filter, Globe, CalendarDays, Download, Loader2, Search, ShieldAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { getGetAuditLogQueryKey } from "@workspace/api-client-react";
@@ -61,14 +61,18 @@ export default function AuditLog() {
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [groupFilter, setGroupFilter] = useState<string>("all");
   const [userSearch, setUserSearch] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [isExporting, setIsExporting] = useState(false);
 
   const effectiveAction = actionFilter !== "all" ? actionFilter : undefined;
 
   const queryParams = {
     page,
-    pageSize: 50,
+    pageSize: 10,
     action: effectiveAction,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
   };
 
   const { data, isLoading } = useGetAuditLog(queryParams, {
@@ -84,12 +88,22 @@ export default function AuditLog() {
     return true;
   });
 
+  const hasDateFilter = !!startDate || !!endDate;
+
+  const handleClearDates = () => {
+    setStartDate("");
+    setEndDate("");
+    setPage(1);
+  };
+
   const handleExport = async () => {
     setIsExporting(true);
     try {
       const token = getAccessToken();
       const params = new URLSearchParams({ page: "1", pageSize: "10000" });
       if (effectiveAction) params.set("action", effectiveAction);
+      if (startDate) params.set("startDate", startDate);
+      if (endDate) params.set("endDate", endDate);
       const resp = await fetch(`${import.meta.env.BASE_URL}api/dashboard/audit-log?${params}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
@@ -135,6 +149,8 @@ export default function AuditLog() {
 
   const isPiiRow = (action: string) => PII_ACTIONS.includes(action);
 
+  const totalPages = data ? Math.ceil(data.total / data.pageSize) : 0;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="flex items-start justify-between">
@@ -152,7 +168,8 @@ export default function AuditLog() {
 
       <Card>
         <CardHeader className="pb-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex flex-col gap-3">
+            {/* Row 1: group, action, user search */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 flex-wrap">
               {/* Group filter */}
               <div className="flex items-center gap-2">
@@ -211,8 +228,39 @@ export default function AuditLog() {
                 />
               </div>
             </div>
-            <div className="text-sm text-muted-foreground shrink-0">
-              {data ? `Showing ${filteredEntries.length} of ${data.total} records` : "Loading..."}
+
+            {/* Row 2: date range */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm text-muted-foreground">From</span>
+                <Input
+                  type="date"
+                  className="w-[160px] h-9 text-sm"
+                  value={startDate}
+                  max={endDate || undefined}
+                  onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">To</span>
+                <Input
+                  type="date"
+                  className="w-[160px] h-9 text-sm"
+                  value={endDate}
+                  min={startDate || undefined}
+                  onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                />
+              </div>
+              {hasDateFilter && (
+                <Button variant="ghost" size="sm" className="h-9 gap-1 text-muted-foreground" onClick={handleClearDates}>
+                  <X className="h-3.5 w-3.5" />
+                  Clear dates
+                </Button>
+              )}
+              <div className="ml-auto text-sm text-muted-foreground shrink-0">
+                {data ? `Showing ${filteredEntries.length} of ${data.total} records` : "Loading..."}
+              </div>
             </div>
           </div>
         </CardHeader>
@@ -294,14 +342,16 @@ export default function AuditLog() {
             </TableBody>
           </Table>
 
-          {data && data.total > data.pageSize && (
+          {data && totalPages > 1 && (
             <div className="p-4 border-t flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Page {page}</span>
+              <span className="text-sm text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
                   Previous
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page * data.pageSize >= data.total}>
+                <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={page >= totalPages}>
                   Next
                 </Button>
               </div>

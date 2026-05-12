@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, sql, desc, and, gte } from "drizzle-orm";
+import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
 import { db, usersTable, rolesTable, auditLogsTable, dbConnectionsTable, dataPipelinesTable, apiApplicationsTable } from "@workspace/db";
 import { GetAuditLogQueryParams } from "@workspace/api-zod";
 import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
@@ -86,11 +86,18 @@ router.get("/dashboard/audit-log", authenticate, requirePageAccess("/audit-log")
     return;
   }
 
-  const { page = 1, pageSize = 50, userId, action } = params.data;
+  const { page = 1, pageSize = 50, userId, action, startDate, endDate } = params.data;
 
   const conditions = [];
   if (userId != null) conditions.push(eq(auditLogsTable.userId, userId));
   if (action != null) conditions.push(eq(auditLogsTable.action, action));
+  if (startDate) conditions.push(gte(auditLogsTable.createdAt, new Date(startDate)));
+  if (endDate) {
+    // Include the full end day by advancing to midnight of the next day
+    const end = new Date(endDate);
+    end.setDate(end.getDate() + 1);
+    conditions.push(lte(auditLogsTable.createdAt, end));
+  }
 
   const whereClause = conditions.length > 1
     ? and(...(conditions as [typeof conditions[0], typeof conditions[0], ...typeof conditions]))

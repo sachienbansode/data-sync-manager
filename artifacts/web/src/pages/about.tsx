@@ -114,16 +114,17 @@ export default function About() {
           /* Hide everything except the printable content */
           body * { visibility: hidden; }
           #about-printable, #about-printable * { visibility: visible; }
-          /* Full-page positioned block with its own padding instead of @page margins */
+          /* Full-page block with its own padding instead of @page margins.
+             position:absolute (not fixed) lets content span multiple print pages. */
           #about-printable {
-            position: fixed;
-            inset: 0;
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
-            padding: 14mm 16mm;
+            padding: 12mm 16mm 16mm;
             box-sizing: border-box;
             background: white;
             color: black;
-            overflow: visible;
           }
           .no-print { display: none !important; }
           /* Reset card/background styles for clean B&W print */

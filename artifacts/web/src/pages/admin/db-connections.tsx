@@ -7,9 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Clock, CalendarClock, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
+import cronstrue from "cronstrue";
+import { CronExpressionParser } from "cron-parser";
 
 interface DbConnection {
   id: number;
@@ -24,6 +26,7 @@ interface DbConnection {
   scheduleEnabled: boolean;
   scheduleCron: string | null;
   scheduleLastRunAt: string | null;
+  scheduleNextRunAt: string | null;
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
@@ -46,14 +49,72 @@ const CRON_PRESETS = [
   { label: "Custom", value: "" },
 ];
 
-function formatCron(expr: string): string {
-  const preset = CRON_PRESETS.find((p) => p.value === expr && p.value !== "");
-  return preset ? preset.label : expr;
+function formatCronHuman(expr: string): string {
+  try {
+    return cronstrue.toString(expr, { throwExceptionOnParseError: true });
+  } catch {
+    const preset = CRON_PRESETS.find((p) => p.value === expr && p.value !== "");
+    return preset ? preset.label : expr;
+  }
 }
 
 function formatDate(iso: string | null): string {
   if (!iso) return "Never";
   return new Date(iso).toLocaleString();
+}
+
+function computeNextRunFromCron(cronExpr: string): Date | null {
+  try {
+    return CronExpressionParser.parse(cronExpr).next().toDate();
+  } catch {
+    return null;
+  }
+}
+
+function formatCountdown(targetDate: Date): string {
+  const diffMs = targetDate.getTime() - Date.now();
+  if (diffMs <= 0) return "any moment now";
+  const totalSeconds = Math.floor(diffMs / 1000);
+  const days = Math.floor(totalSeconds / 86400);
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (days > 0) return `in ${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `in ${hours}h ${minutes}m`;
+  if (minutes > 0) return `in ${minutes}m ${seconds}s`;
+  return `in ${seconds}s`;
+}
+
+function NextRunCountdown({ scheduleNextRunAt, scheduleCron, scheduleEnabled }: {
+  scheduleNextRunAt: string | null;
+  scheduleCron: string | null;
+  scheduleEnabled: boolean;
+}) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!scheduleEnabled || !scheduleCron) return;
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, [scheduleEnabled, scheduleCron]);
+
+  if (!scheduleEnabled || !scheduleCron) return null;
+
+  let nextDate: Date | null = scheduleNextRunAt ? new Date(scheduleNextRunAt) : null;
+  if (!nextDate || nextDate.getTime() <= Date.now()) {
+    nextDate = computeNextRunFromCron(scheduleCron);
+  }
+
+  if (!nextDate) return null;
+
+  const countdown = formatCountdown(nextDate);
+
+  return (
+    <span className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+      <Timer className="h-3 w-3" />
+      Next run: {countdown}
+    </span>
+  );
 }
 
 const apiBase = `${import.meta.env.BASE_URL}api`;
@@ -256,7 +317,7 @@ export default function DbConnections() {
                         {c.type === "backoffice" && c.scheduleCron && (
                           <span className={`flex items-center gap-1 text-xs ${c.scheduleEnabled ? "text-blue-600" : "text-muted-foreground"}`}>
                             <CalendarClock className="h-3 w-3" />
-                            {c.scheduleEnabled ? "Scheduled" : "Schedule off"} · {formatCron(c.scheduleCron)}
+                            {c.scheduleEnabled ? "Scheduled" : "Schedule off"} · {formatCronHuman(c.scheduleCron)}
                           </span>
                         )}
                       </div>
@@ -269,8 +330,13 @@ export default function DbConnections() {
                         {c.outputFilePath && <span className="ml-3">Output: <span className="font-mono">{c.outputFilePath}</span></span>}
                       </div>
                       {c.type === "backoffice" && c.scheduleCron && (
-                        <div className="text-xs text-muted-foreground flex items-center gap-3">
+                        <div className="text-xs text-muted-foreground flex items-center gap-3 flex-wrap">
                           <span className="flex items-center gap-1"><Clock className="h-3 w-3" /> Last run: {formatDate(c.scheduleLastRunAt)}</span>
+                          <NextRunCountdown
+                            scheduleNextRunAt={c.scheduleNextRunAt}
+                            scheduleCron={c.scheduleCron}
+                            scheduleEnabled={c.scheduleEnabled}
+                          />
                         </div>
                       )}
                     </div>
@@ -404,16 +470,23 @@ export default function DbConnections() {
                       </div>
                     )}
                     {form.scheduleCron.trim() && (
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <Label className="text-sm">Enable Schedule</Label>
-                          <p className="text-xs text-muted-foreground">Automatically fetch data on the schedule above</p>
+                      <>
+                        <p className="text-xs text-muted-foreground italic">
+                          {(() => {
+                            try { return cronstrue.toString(form.scheduleCron); } catch { return null; }
+                          })()}
+                        </p>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <Label className="text-sm">Enable Schedule</Label>
+                            <p className="text-xs text-muted-foreground">Automatically fetch data on the schedule above</p>
+                          </div>
+                          <Switch
+                            checked={form.scheduleEnabled}
+                            onCheckedChange={v => setForm(f => ({ ...f, scheduleEnabled: v }))}
+                          />
                         </div>
-                        <Switch
-                          checked={form.scheduleEnabled}
-                          onCheckedChange={v => setForm(f => ({ ...f, scheduleEnabled: v }))}
-                        />
-                      </div>
+                      </>
                     )}
                   </div>
                 </>

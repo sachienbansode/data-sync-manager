@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { CronExpressionParser } from "cron-parser";
 import pg from "pg";
 import { eq, and } from "drizzle-orm";
 import { db, dbConnectionsTable, dataJobsTable, dataStagingTable, auditLogsTable } from "@workspace/db";
@@ -18,6 +19,15 @@ function validateSelectQuery(query: string): string | null {
   const match = q.match(DML_PATTERN);
   if (match) return `Query must not contain ${match[0].toUpperCase()} statements`;
   return null;
+}
+
+function computeNextRunAt(cronExpression: string): Date | null {
+  try {
+    const interval = CronExpressionParser.parse(cronExpression);
+    return interval.next().toDate();
+  } catch {
+    return null;
+  }
 }
 
 export async function runScheduledFetch(connectionId: number): Promise<void> {
@@ -54,9 +64,14 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
     })
     .returning();
 
+  const nextRunAt = conn.scheduleCron ? computeNextRunAt(conn.scheduleCron) : null;
   await db
     .update(dbConnectionsTable)
-    .set({ scheduleLastRunAt: new Date(), updatedAt: new Date() })
+    .set({
+      scheduleLastRunAt: new Date(),
+      scheduleNextRunAt: nextRunAt,
+      updatedAt: new Date(),
+    })
     .where(eq(dbConnectionsTable.id, connectionId));
 
   const fetchPool = new Pool({
@@ -121,12 +136,20 @@ export async function runScheduledFetch(connectionId: number): Promise<void> {
 type ScheduledTask = ReturnType<typeof cron.schedule>;
 const activeTasks = new Map<number, ScheduledTask>();
 
-export function registerSchedule(connectionId: number, cronExpression: string): void {
+export async function registerSchedule(connectionId: number, cronExpression: string): Promise<void> {
   cancelSchedule(connectionId);
 
   if (!cron.validate(cronExpression)) {
     logger.warn({ connectionId, cronExpression }, "Invalid cron expression — schedule not registered");
     return;
+  }
+
+  const nextRunAt = computeNextRunAt(cronExpression);
+  if (nextRunAt) {
+    await db
+      .update(dbConnectionsTable)
+      .set({ scheduleNextRunAt: nextRunAt, updatedAt: new Date() })
+      .where(eq(dbConnectionsTable.id, connectionId));
   }
 
   const task = cron.schedule(cronExpression, () => {
@@ -161,7 +184,7 @@ export async function initScheduler(): Promise<void> {
 
   for (const conn of connections) {
     if (conn.scheduleCron) {
-      registerSchedule(conn.id, conn.scheduleCron);
+      await registerSchedule(conn.id, conn.scheduleCron);
     }
   }
 

@@ -24,6 +24,7 @@ function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
     scheduleEnabled: r.scheduleEnabled,
     scheduleCron: r.scheduleCron,
     scheduleLastRunAt: r.scheduleLastRunAt,
+    scheduleNextRunAt: r.scheduleNextRunAt,
     createdBy: r.createdBy,
     lastTestedAt: r.lastTestedAt,
     lastTestSuccess: r.lastTestSuccess,
@@ -85,7 +86,7 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
   }).returning();
 
   if (row.scheduleEnabled && row.scheduleCron && row.type === "backoffice") {
-    registerSchedule(row.id, row.scheduleCron);
+    await registerSchedule(row.id, row.scheduleCron);
   }
 
   await db.insert(auditLogsTable).values({
@@ -154,7 +155,7 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
   const [updated] = await db.update(dbConnectionsTable).set(updates).where(eq(dbConnectionsTable.id, id)).returning();
 
   if (updated.type === "backoffice" && updated.scheduleEnabled && updated.scheduleCron) {
-    registerSchedule(updated.id, updated.scheduleCron);
+    await registerSchedule(updated.id, updated.scheduleCron);
   } else {
     cancelSchedule(updated.id);
   }
@@ -202,9 +203,13 @@ router.put("/admin/db-connections/:id/schedule", authenticate, requireRole("Admi
     .returning();
 
   if (enabled && updated.scheduleCron) {
-    registerSchedule(updated.id, updated.scheduleCron);
+    await registerSchedule(updated.id, updated.scheduleCron);
   } else {
     cancelSchedule(updated.id);
+    await db
+      .update(dbConnectionsTable)
+      .set({ scheduleNextRunAt: null, updatedAt: new Date() })
+      .where(eq(dbConnectionsTable.id, id));
   }
 
   await db.insert(auditLogsTable).values({

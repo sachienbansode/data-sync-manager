@@ -27,6 +27,7 @@ import Docs from "@/pages/docs";
 import DocsViewer from "@/pages/docs-viewer";
 import DocsAdmin from "@/pages/docs-admin";
 import { ProtectedRoute } from "@/components/protected-route";
+import { FaviconSync } from "@/components/favicon-sync";
 
 const queryClient = new QueryClient();
 
@@ -110,6 +111,7 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthProvider>
+              <FaviconSync />
               <Router />
               <Toaster richColors position="top-right" />
             </AuthProvider>

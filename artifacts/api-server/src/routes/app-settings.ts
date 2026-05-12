@@ -24,8 +24,8 @@ async function getOrCreateSettings() {
   return created!;
 }
 
-// GET /admin/app-settings — public (any authenticated user can read app name + logo url)
-router.get("/admin/app-settings", authenticate, async (_req, res): Promise<void> => {
+// GET /admin/app-settings — public (no auth needed for basic branding info)
+router.get("/admin/app-settings", async (_req, res): Promise<void> => {
   const cfg = await getOrCreateSettings();
   res.json({
     id: cfg.id,

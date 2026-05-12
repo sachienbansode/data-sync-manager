@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useAppSettings, getLogoUrl } from "@/lib/use-app-settings";
 
 interface LayoutProps {
   children: ReactNode;
@@ -78,6 +79,8 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   const [adminExpanded, setAdminExpanded] = useState(
     adminNavItems.some(item => location.startsWith(item.href))
   );
+  const { data: appCfg } = useAppSettings();
+  const logoUrl = appCfg?.hasLogo ? getLogoUrl() : null;
 
   const filteredMain = mainNavItems.filter(item => checkPermission(item.href));
   const isAdmin = user?.roleName === "Admin";
@@ -89,8 +92,14 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
   return (
     <div className="flex flex-col h-full bg-sidebar">
       <div className="h-14 flex items-center px-6 border-b border-border shrink-0">
-        <Activity className="h-5 w-5 text-primary mr-2" />
-        <span className="font-semibold text-sidebar-foreground tracking-tight">Ashika Platform</span>
+        {logoUrl ? (
+          <img src={logoUrl} alt="Logo" className="h-7 w-7 object-contain mr-2 rounded" />
+        ) : (
+          <Activity className="h-5 w-5 text-primary mr-2" />
+        )}
+        <span className="font-semibold text-sidebar-foreground tracking-tight">
+          {appCfg?.appName ?? "Ashika Platform"}
+        </span>
       </div>
 
       <ScrollArea className="flex-1 py-4">
@@ -175,6 +184,8 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
 
 export function Layout({ children }: LayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const { data: appCfg } = useAppSettings();
+  const logoUrl = appCfg?.hasLogo ? getLogoUrl() : null;
 
   return (
     <div className="flex h-screen w-full bg-background overflow-hidden">
@@ -191,8 +202,12 @@ export function Layout({ children }: LayoutProps) {
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
         <header className="h-14 flex items-center justify-between px-4 border-b border-border bg-card shrink-0 lg:hidden">
           <div className="flex items-center">
-            <Activity className="h-5 w-5 text-primary mr-2" />
-            <span className="font-semibold tracking-tight">Ashika</span>
+            {logoUrl ? (
+              <img src={logoUrl} alt="Logo" className="h-7 w-7 object-contain mr-2 rounded" />
+            ) : (
+              <Activity className="h-5 w-5 text-primary mr-2" />
+            )}
+            <span className="font-semibold tracking-tight">{appCfg?.appName ?? "Ashika"}</span>
           </div>
           <div className="flex items-center gap-1">
             <ThemeToggle />

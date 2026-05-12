@@ -8,6 +8,7 @@ import { useLogin, useVerifyMfa } from "@workspace/api-client-react";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { useAppSettings, getLogoUrl } from "@/lib/use-app-settings";
 import {
   Form,
   FormControl,
@@ -152,6 +153,9 @@ export default function Login() {
     setMfaError("");
   };
 
+  const { data: appCfg } = useAppSettings();
+  const logoUrl = `${import.meta.env.BASE_URL}api/admin/app-settings/logo`;
+
   return (
     <div
       data-testid="login-page"
@@ -162,10 +166,14 @@ export default function Login() {
       </div>
       <div className="w-full max-w-md z-10 relative">
         <div className="mb-8 flex flex-col items-center">
-          <div className="h-12 w-12 bg-primary/10 rounded-xl flex items-center justify-center mb-4">
-            <Activity className="h-6 w-6 text-primary" />
+          <div className="h-16 w-16 rounded-xl flex items-center justify-center mb-4 overflow-hidden bg-primary/10">
+            {appCfg?.hasLogo ? (
+              <img src={logoUrl} alt="Logo" className="h-full w-full object-contain p-1" />
+            ) : (
+              <Activity className="h-7 w-7 text-primary" />
+            )}
           </div>
-          <h1 className="text-2xl font-semibold tracking-tight">Ashika Enterprise</h1>
+          <h1 className="text-2xl font-semibold tracking-tight">{appCfg?.appName ?? "Ashika Enterprise"}</h1>
           <p className="text-sm text-muted-foreground mt-2">Sign in to your account</p>
         </div>
 

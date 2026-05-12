@@ -42,6 +42,13 @@ export default function EmailSettings() {
   const [isTesting, setIsTesting] = useState(false);
   const [passwordChanged, setPasswordChanged] = useState(false);
 
+  const handlePortChange = (e: React.ChangeEvent<HTMLInputElement>, fieldOnChange: (v: number) => void) => {
+    const port = parseInt(e.target.value, 10);
+    fieldOnChange(port);
+    if (port === 465) form.setValue("secure", true);
+    else if (port === 587 || port === 25) form.setValue("secure", false);
+  };
+
   const { data: cfg, isLoading } = useQuery({
     queryKey: ["smtp-settings"],
     queryFn: () => apiFetch("/admin/smtp-settings"),
@@ -140,7 +147,14 @@ export default function EmailSettings() {
                 <FormField control={form.control} name="port" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Port</FormLabel>
-                    <FormControl><Input type="number" placeholder="587" {...field} /></FormControl>
+                    <FormControl>
+                      <Input
+                        type="number"
+                        placeholder="587"
+                        {...field}
+                        onChange={(e) => handlePortChange(e, field.onChange)}
+                      />
+                    </FormControl>
                     <FormMessage />
                   </FormItem>
                 )} />

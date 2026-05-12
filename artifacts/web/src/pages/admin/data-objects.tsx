@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Loader2, Plus, Pencil, Trash2, Table2, Code2, Database, Eye, Network, RefreshCw, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, XCircle } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, Table2, Code2, Database, Eye, Network, RefreshCw, ChevronLeft, ChevronRight, FlaskConical, CheckCircle2, XCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 
@@ -73,6 +73,7 @@ export default function DataObjects() {
   const [objects, setObjects] = useState<ConnectionObject[]>([]);
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterName, setFilterName] = useState("");
   const [filterConn, setFilterConn] = useState("all");
   const [filterType, setFilterType] = useState<"all" | "table" | "query">("all");
   const [page, setPage] = useState(1);
@@ -112,13 +113,14 @@ export default function DataObjects() {
   const filtered = objects.filter(o => {
     if (filterConn !== "all" && String(o.connectionId) !== filterConn) return false;
     if (filterType !== "all" && o.objectType !== filterType) return false;
+    if (filterName.trim() && !o.name.toLowerCase().includes(filterName.trim().toLowerCase())) return false;
     return true;
   });
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => { setPage(1); }, [filterConn, filterType]);
+  useEffect(() => { setPage(1); }, [filterConn, filterType, filterName]);
 
   function openAdd() {
     setEditId(null);
@@ -245,6 +247,15 @@ export default function DataObjects() {
         <CardHeader className="pb-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-3">
             <div className="flex gap-2 flex-1 flex-wrap">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  value={filterName}
+                  onChange={e => setFilterName(e.target.value)}
+                  placeholder="Search by name…"
+                  className="pl-8 h-9 w-48"
+                />
+              </div>
               <Select value={filterConn} onValueChange={setFilterConn}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="All connections" />

@@ -40,12 +40,16 @@ def main():
         sys.exit(1)
 
     def build_url(conn):
+        from urllib.parse import quote_plus
         engine = conn.get("engine", "postgresql")
-        host = conn.get("host", "localhost")
+        raw_host = (conn.get("host") or "localhost").strip()
+        # Sanitise: if someone accidentally stored "user@host" in the host field, strip the prefix
+        host = raw_host.split("@")[-1] if "@" in raw_host else raw_host
         port = conn.get("port", 5432)
-        db = conn.get("database", "")
-        user = conn.get("username", "")
-        password = conn.get("password", "")
+        db = conn.get("database", "") or ""
+        # URL-encode credentials so special characters (@ # % etc.) don't break the DSN
+        user = quote_plus(conn.get("username", "") or "")
+        password = quote_plus(conn.get("password", "") or "")
 
         if engine in ("postgresql", "postgres"):
             return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{db}"

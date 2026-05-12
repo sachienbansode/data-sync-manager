@@ -103,6 +103,7 @@ const apiBase = `${import.meta.env.BASE_URL}api`;
 export default function DbConnections() {
   const [connections, setConnections] = useState<DbConnection[]>([]);
   const [appTypes, setAppTypes] = useState<AppType[]>([]);
+  const [awsRegions, setAwsRegions] = useState<{ code: string; name: string; regionGroup: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editId, setEditId] = useState<number | null>(null);
@@ -143,13 +144,15 @@ export default function DbConnections() {
     setLoading(true);
     try {
       const token = getAccessToken();
-      const [cRes, tRes] = await Promise.all([
+      const [cRes, tRes, rRes] = await Promise.all([
         fetch(`${apiBase}/admin/db-connections`, { headers: { Authorization: `Bearer ${token}` } }),
         fetch(`${apiBase}/admin/application-types/active`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${apiBase}/admin/aws-regions`, { headers: { Authorization: `Bearer ${token}` } }),
       ]);
       if (!cRes.ok) throw new Error("Failed to load connections");
       setConnections(await cRes.json());
       if (tRes.ok) setAppTypes(await tRes.json());
+      if (rRes.ok) setAwsRegions(await rRes.json());
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Failed to load connections");
     } finally {
@@ -199,6 +202,7 @@ export default function DbConnections() {
       }
     }
     if (isS3 && !form.bucket) { toast.error("S3 bucket is required"); return; }
+    if (isS3 && !form.region) { toast.error("S3 region is required"); return; }
     if (isSftp && !form.host) { toast.error("SFTP host is required"); return; }
 
     setSaving(true);
@@ -570,8 +574,20 @@ export default function DbConnections() {
                     <Input value={form.bucket} onChange={e => setForm(f => ({ ...f, bucket: e.target.value }))} placeholder="my-bucket" />
                   </div>
                   <div className="space-y-1">
-                    <Label>Region</Label>
-                    <Input value={form.region} onChange={e => setForm(f => ({ ...f, region: e.target.value }))} placeholder="ap-south-1" />
+                    <Label>Region *</Label>
+                    <Select value={form.region} onValueChange={v => setForm(f => ({ ...f, region: v }))}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select AWS region…" />
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {awsRegions.map(r => (
+                          <SelectItem key={r.code} value={r.code}>
+                            <span className="font-mono text-xs">{r.code}</span>
+                            <span className="text-muted-foreground ml-2 text-xs">{r.name}</span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="space-y-1">

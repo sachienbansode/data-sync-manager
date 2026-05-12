@@ -1,6 +1,15 @@
 import { pgTable, serial, text, integer, boolean, timestamp, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
+/** Reference table for AWS region codes and display names. */
+export const awsRegionsTable = pgTable("aws_regions", {
+  id: serial("id").primaryKey(),
+  code: text("code").notNull(),       // e.g. "us-east-1"
+  name: text("name").notNull(),       // e.g. "US East (N. Virginia)"
+  regionGroup: text("region_group").notNull(), // e.g. "US East"
+  sortOrder: integer("sort_order").notNull().default(0),
+}, (t) => [uniqueIndex("aws_regions_code_idx").on(t.code)]);
+
 export const DB_CONNECTION_TYPES = ["backoffice", "trading"] as const;
 export type DbConnectionType = string;
 

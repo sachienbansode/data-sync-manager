@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import pg from "pg";
 import net from "net";
-import { db, dbConnectionsTable, auditLogsTable, dataJobsTable } from "@workspace/db";
+import { db, dbConnectionsTable, auditLogsTable, dataJobsTable, awsRegionsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
 
@@ -105,6 +105,12 @@ router.get("/admin/db-connections/:id/tables", authenticate, requireRole("Admin"
   } finally {
     await pool.end().catch(() => {});
   }
+});
+
+// GET /api/admin/aws-regions
+router.get("/admin/aws-regions", authenticate, async (_req, res) => {
+  const rows = await db.select().from(awsRegionsTable).orderBy(awsRegionsTable.sortOrder, awsRegionsTable.code);
+  res.json(rows);
 });
 
 // POST /api/admin/db-connections

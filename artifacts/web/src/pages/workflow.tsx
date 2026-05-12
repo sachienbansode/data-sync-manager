@@ -134,6 +134,9 @@ export default function Workflow() {
   const [historyPipeline, setHistoryPipeline] = useState<Pipeline | null>(null);
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
+  const [historyPage, setHistoryPage] = useState(1);
+  const HISTORY_PAGE_SIZE = 10;
   const [, setLocation] = useLocation();
 
   const token = getAccessToken();
@@ -294,9 +297,20 @@ export default function Workflow() {
     }
   }
 
+  const filteredHistoryJobs = historyJobs.filter(j =>
+    historyStatusFilter === "all" || j.status === historyStatusFilter
+  );
+  const historyTotalPages = Math.max(1, Math.ceil(filteredHistoryJobs.length / HISTORY_PAGE_SIZE));
+  const pagedHistoryJobs = filteredHistoryJobs.slice(
+    (historyPage - 1) * HISTORY_PAGE_SIZE,
+    historyPage * HISTORY_PAGE_SIZE
+  );
+
   async function openHistory(p: Pipeline) {
     setHistoryPipeline(p);
     setHistoryJobs([]);
+    setHistoryStatusFilter("all");
+    setHistoryPage(1);
     setHistoryLoading(true);
     try {
       const res = await fetch(`${apiBase}/admin/pipelines/${p.id}/runs`, {
@@ -753,48 +767,89 @@ export default function Workflow() {
       </Dialog>
 
       {/* Run history dialog */}
-      <Dialog open={!!historyPipeline} onOpenChange={() => setHistoryPipeline(null)}>
-        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+      <Dialog open={!!historyPipeline} onOpenChange={() => { setHistoryPipeline(null); setHistoryStatusFilter("all"); setHistoryPage(1); }}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Run History — {historyPipeline?.name}</DialogTitle>
             <DialogDescription>Last 50 pipeline executions.</DialogDescription>
           </DialogHeader>
+
+          {/* Filter bar */}
+          {!historyLoading && historyJobs.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Select value={historyStatusFilter} onValueChange={v => { setHistoryStatusFilter(v); setHistoryPage(1); }}>
+                <SelectTrigger className="w-36 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All statuses</SelectItem>
+                  <SelectItem value="success">Success</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
+                  <SelectItem value="running">Running</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                </SelectContent>
+              </Select>
+              <span className="text-xs text-muted-foreground ml-auto">
+                {filteredHistoryJobs.length} run{filteredHistoryJobs.length !== 1 ? "s" : ""}
+              </span>
+            </div>
+          )}
+
           {historyLoading ? (
             <div className="flex items-center justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
           ) : historyJobs.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No runs yet.</p>
+          ) : filteredHistoryJobs.length === 0 ? (
+            <p className="text-center text-muted-foreground py-6 text-sm">No runs match the selected filter.</p>
           ) : (
-            <div className="divide-y text-sm">
-              {historyJobs.map(j => (
-                <div key={j.id} className="py-3 flex items-start justify-between gap-3">
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
-                      {j.status === "success" && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
-                      {j.status === "failed"  && <XCircle   className="h-4 w-4 text-destructive shrink-0" />}
-                      {j.status === "running" && <Loader2   className="h-4 w-4 animate-spin text-blue-600 shrink-0" />}
-                      {j.status === "pending" && <History   className="h-4 w-4 text-muted-foreground shrink-0" />}
-                      <span className="font-medium capitalize">{j.status}</span>
-                      {j.triggeredBySchedule
-                        ? <span className="flex items-center gap-1 text-xs font-medium text-blue-600"><CalendarClock className="h-3 w-3" /> Scheduled</span>
-                        : <span className="flex items-center gap-1 text-xs text-muted-foreground"><User className="h-3 w-3" /> Manual</span>
-                      }
+            <>
+              <div className="divide-y text-sm">
+                {pagedHistoryJobs.map(j => (
+                  <div key={j.id} className="py-3 flex items-start justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        {j.status === "success" && <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />}
+                        {j.status === "failed"  && <XCircle   className="h-4 w-4 text-destructive shrink-0" />}
+                        {j.status === "running" && <Loader2   className="h-4 w-4 animate-spin text-blue-600 shrink-0" />}
+                        {j.status === "pending" && <History   className="h-4 w-4 text-muted-foreground shrink-0" />}
+                        <span className="font-medium capitalize">{j.status}</span>
+                        {j.triggeredBySchedule
+                          ? <span className="flex items-center gap-1 text-xs font-medium text-blue-600"><CalendarClock className="h-3 w-3" /> Scheduled</span>
+                          : <span className="flex items-center gap-1 text-xs text-muted-foreground"><User className="h-3 w-3" /> Manual</span>
+                        }
+                      </div>
+                      {j.recordCount !== null && (
+                        <p className="text-muted-foreground text-xs">{j.recordCount.toLocaleString()} row{j.recordCount !== 1 ? "s" : ""} transferred</p>
+                      )}
+                      {j.errorMessage && (
+                        <p className="text-destructive text-xs font-mono break-all">{j.errorMessage}</p>
+                      )}
                     </div>
-                    {j.recordCount !== null && (
-                      <p className="text-muted-foreground text-xs">{j.recordCount.toLocaleString()} row{j.recordCount !== 1 ? "s" : ""} transferred</p>
-                    )}
-                    {j.errorMessage && (
-                      <p className="text-destructive text-xs font-mono">{j.errorMessage}</p>
-                    )}
+                    <div className="text-xs text-muted-foreground text-right shrink-0">
+                      <p>{fmtIsoDateTime(j.startedAt ?? j.createdAt)}</p>
+                      {j.startedAt && j.finishedAt && (
+                        <p>{Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000)}s</p>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-xs text-muted-foreground text-right shrink-0">
-                    <p>{fmtIsoDateTime(j.startedAt ?? j.createdAt)}</p>
-                    {j.startedAt && j.finishedAt && (
-                      <p>{Math.round((new Date(j.finishedAt).getTime() - new Date(j.startedAt).getTime()) / 1000)}s</p>
-                    )}
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {historyTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-1 text-xs text-muted-foreground border-t">
+                  <span>Page {historyPage} of {historyTotalPages}</span>
+                  <div className="flex gap-1">
+                    <Button variant="outline" size="icon" className="h-7 w-7" disabled={historyPage === 1} onClick={() => setHistoryPage(p => p - 1)}>
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button variant="outline" size="icon" className="h-7 w-7" disabled={historyPage === historyTotalPages} onClick={() => setHistoryPage(p => p + 1)}>
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
         </DialogContent>
       </Dialog>

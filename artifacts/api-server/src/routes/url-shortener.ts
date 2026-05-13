@@ -5,6 +5,13 @@ import { authenticate } from "../middlewares/authenticate";
 
 const router: IRouter = Router();
 
+/** Converts a date string (e.g. "2026-05-13") to 23:59:59.999 UTC on that day. */
+function toEndOfDayUTC(dateStr: string): Date {
+  const d = new Date(dateStr);
+  d.setUTCHours(23, 59, 59, 999);
+  return d;
+}
+
 function parseUserAgent(ua: string | undefined): { browser: string; browserVersion: string; os: string; deviceType: string } {
   if (!ua) return { browser: "Unknown", browserVersion: "", os: "Unknown", deviceType: "Unknown" };
   let browser = "Unknown", browserVersion = "", os = "Unknown", deviceType = "Desktop";
@@ -99,7 +106,7 @@ router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
     description: description || null,
     domainId: domainId ? Number(domainId) : null,
     startDate: startDate ? new Date(startDate) : null,
-    endDate: endDate ? new Date(endDate) : null,
+    endDate: endDate ? toEndOfDayUTC(endDate) : null,
     isActive: isActive !== false,
     createdBy: req.user!.sub,
   }).returning();
@@ -129,7 +136,7 @@ router.put("/short-urls/:id", authenticate, async (req, res): Promise<void> => {
     description: description ?? null,
     domainId: domainId !== undefined ? (domainId ? Number(domainId) : null) : undefined,
     startDate: startDate ? new Date(startDate) : null,
-    endDate: endDate ? new Date(endDate) : null,
+    endDate: endDate ? toEndOfDayUTC(endDate) : null,
     isActive: isActive !== undefined ? isActive : undefined,
     updatedBy: req.user!.sub,
     updatedAt: new Date(),
@@ -221,10 +228,9 @@ export async function handleRedirect(req: Request, res: Response): Promise<void>
 
   const now = new Date();
   if (row.startDate && now < new Date(row.startDate)) { res.status(403).send("Link not yet active"); return; }
-  if (row.endDate) {
-    const endOfDay = new Date(row.endDate);
-    endOfDay.setHours(23, 59, 59, 999);
-    if (now > endOfDay) { res.status(410).send("Link has expired"); return; }
+  if (row.endDate && now > new Date(row.endDate)) {
+    res.status(410).send("Link has expired");
+    return;
   }
 
   const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "";

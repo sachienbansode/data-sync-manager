@@ -18,8 +18,8 @@ cd "$APP_DIR"
 # ── 1. Node.js 20 (skip if already installed) ───────────────────────────────
 if ! command -v node &>/dev/null || [[ "$(node --version)" != v20* ]]; then
   echo "[1/8] Installing Node.js 20..."
-  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - -q
-  sudo apt-get install -y -q nodejs
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
+  sudo apt-get install -y nodejs
 else
   echo "[1/8] Node.js already installed: $(node --version)"
 fi

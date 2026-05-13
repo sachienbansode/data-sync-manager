@@ -29,7 +29,9 @@ export const ALL_PAGES = [
   { path: "/admin/pii-permissions", name: "PII Permissions" },
   { path: "/pii-records", name: "PII Records" },
   { path: "/admin/application-types", name: "Application Types" },
+  { path: "/admin/email-templates", name: "Email Templates" },
   { path: "/docs", name: "API Documentation" },
+  { path: "/url-shortener", name: "URL Shortener" },
 ];
 
 const CreateRoleBody = z.object({

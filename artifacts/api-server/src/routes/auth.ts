@@ -57,10 +57,7 @@ async function getUserWithRole(userId: number) {
   return row;
 }
 
-async function getPagePermissions(roleId: number, roleName?: string): Promise<string[]> {
-  if (roleName === "Admin") {
-    return ALL_PAGES.map(p => p.path);
-  }
+async function getPagePermissions(roleId: number, _roleName?: string): Promise<string[]> {
   const perms = await db
     .select({ pagePath: pagePermissionsTable.pagePath })
     .from(pagePermissionsTable)

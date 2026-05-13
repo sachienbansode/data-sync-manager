@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import pinoHttp from "pino-http";
 import router from "./routes";
+import { handleRedirect } from "./routes/url-shortener";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
@@ -30,6 +31,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// Public short URL redirect — outside /api so it resolves as /s/:code
+app.get("/s/:code", handleRedirect);
 
 // Global error handler — always return JSON so clients get useful messages
 app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {

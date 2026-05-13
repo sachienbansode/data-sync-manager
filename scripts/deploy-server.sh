@@ -108,7 +108,7 @@ set +a
 
 # ── 8. Run DB schema migrations ──────────────────────────────────────────────
 echo "[8/9] Running database migrations..."
-pnpm --filter @workspace/db run push --accept-warnings 2>&1 || \
+pnpm --filter @workspace/db run push 2>&1 || \
   pnpm --filter @workspace/db run push-force 2>&1 || \
   echo "  WARNING: Migration step had issues — check DB manually if login fails."
 

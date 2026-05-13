@@ -34,6 +34,7 @@ import Docs from "@/pages/docs";
 import DocsViewer from "@/pages/docs-viewer";
 import DocsAdmin from "@/pages/docs-admin";
 import About from "@/pages/about";
+import UrlShortener from "@/pages/url-shortener";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 
@@ -132,6 +133,10 @@ function Router() {
       </Route>
       <Route path="/docs/:appId">
         <ProtectedRoute component={DocsViewer} path="/docs" />
+      </Route>
+
+      <Route path="/url-shortener">
+        <ProtectedRoute component={UrlShortener} path="/url-shortener" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, Users, ShieldAlert, FileText, LogOut, UserCircle, Menu,
   Activity, Mail, Settings, ChevronDown, ChevronRight, Database,
   GitBranch, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
-  Type, FileType, LogIn, Info, Layers, Table2, History,
+  Type, FileType, LogIn, Info, Layers, Table2, History, Link2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,6 +28,7 @@ interface NavGroup {
 
 const topNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/url-shortener", label: "URL Shortener", icon: Link2 },
   { href: "/about", label: "About", icon: Info },
 ];
 

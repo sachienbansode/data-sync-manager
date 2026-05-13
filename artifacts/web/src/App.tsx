@@ -36,6 +36,10 @@ import DocsAdmin from "@/pages/docs-admin";
 import About from "@/pages/about";
 import UrlShortener from "@/pages/url-shortener";
 import ShortDomains from "@/pages/admin/short-domains";
+import Campaigns from "@/pages/email-hub/campaigns";
+import CampaignDetail from "@/pages/email-hub/campaign-detail";
+import EmailHubTemplates from "@/pages/email-hub/templates";
+import CommSettings from "@/pages/admin/comm-settings";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 
@@ -141,6 +145,19 @@ function Router() {
       </Route>
       <Route path="/admin/short-domains">
         <ProtectedRoute component={ShortDomains} path="/admin/short-domains" requireRole="Admin" />
+      </Route>
+
+      <Route path="/email-hub/campaigns/:id">
+        <ProtectedRoute component={CampaignDetail} path="/email-hub/campaigns" />
+      </Route>
+      <Route path="/email-hub/campaigns">
+        <ProtectedRoute component={Campaigns} path="/email-hub/campaigns" />
+      </Route>
+      <Route path="/email-hub/templates">
+        <ProtectedRoute component={EmailHubTemplates} path="/email-hub/templates" />
+      </Route>
+      <Route path="/admin/comm-settings">
+        <ProtectedRoute component={CommSettings} path="/admin/comm-settings" requireRole="Admin" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

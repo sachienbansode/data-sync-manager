@@ -6,6 +6,7 @@ import {
   Activity, Mail, Settings, ChevronDown, ChevronRight, Database,
   GitBranch, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
   Type, FileType, LogIn, Info, Layers, Table2, History, Link2,
+  Megaphone, Send,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -31,6 +32,15 @@ const topNavItems: NavItem[] = [
   { href: "/about", label: "About", icon: Info },
   { href: "/url-shortener", label: "URL Shortener", icon: Link2 },
 ];
+
+const commHubGroup: NavGroup = {
+  label: "Communication HUB",
+  icon: Megaphone,
+  items: [
+    { href: "/email-hub/campaigns", label: "Campaigns", icon: Send },
+    { href: "/email-hub/templates", label: "Email Templates", icon: FileText },
+  ],
+};
 
 const apiDocGroup: NavGroup = {
   label: "API Documentation",
@@ -70,6 +80,7 @@ const adminGroups: NavGroup[] = [
       { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
       { href: "/admin/application-types", label: "Application Types", icon: Layers },
       { href: "/admin/short-domains", label: "Short Domains", icon: Link2 },
+      { href: "/admin/comm-settings", label: "Bulk Email Settings", icon: Megaphone },
     ],
   },
   {
@@ -191,6 +202,16 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
               <NavLink key={item.href} href={item.href} label={item.label} Icon={Icon} isActive={isActive} onNav={onNav} />
             );
           })}
+
+          {/* Communication HUB group */}
+          <CollapsibleGroup
+            group={commHubGroup}
+            location={location}
+            onNav={onNav}
+            isAdmin={isAdmin}
+            checkPermission={checkPermission}
+            indent={false}
+          />
 
           {/* API Documentation group — visible to anyone with /docs access or admin */}
           <CollapsibleGroup

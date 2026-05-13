@@ -21,6 +21,10 @@ import urlShortenerRouter from "./url-shortener";
 import shortDomainsRouter from "./short-domains";
 import apiKeysRouter from "./api-keys";
 import urlShortenerV1Router from "./url-shortener-v1";
+import commSettingsRouter from "./comm-settings";
+import commTemplatesRouter from "./comm-templates";
+import commCampaignsRouter, { initCommScheduler } from "./comm-campaigns";
+import commWebhookRouter from "./comm-webhook";
 
 const router: IRouter = Router();
 
@@ -46,5 +50,11 @@ router.use(urlShortenerRouter);
 router.use(shortDomainsRouter);
 router.use(apiKeysRouter);
 router.use("/v1", urlShortenerV1Router);
+router.use(commSettingsRouter);
+router.use(commTemplatesRouter);
+router.use(commCampaignsRouter);
+router.use(commWebhookRouter);
+
+initCommScheduler();
 
 export default router;

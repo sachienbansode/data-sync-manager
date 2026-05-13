@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Activity, Shield, GitBranch, BookOpen, Lock, Database,
-  Mail, Settings, Users, FileText, Network, Eye, Printer, Cpu, Link2,
+  Mail, Settings, Users, FileText, Network, Eye, Printer, Cpu, Link2, Megaphone,
 } from "lucide-react";
 
 const FEATURES = [
@@ -87,6 +87,12 @@ const FEATURES = [
     badge: "Tools",
   },
   {
+    icon: Megaphone,
+    title: "Communication HUB",
+    description: "Enterprise bulk email engine powered by Netcore Cloud API. Create static and dynamic HTML templates with variable placeholders ({{first_name}}, {{account_no}}), manage version-controlled templates, upload CSV recipient lists with deduplication, schedule or send immediately, track delivery events (delivered, opened, clicked, bounced, unsubscribed, spam) via webhooks, and manage file attachments including CID inline images.",
+    badge: "Communication",
+  },
+  {
     icon: Cpu,
     title: "Python ETL Engine",
     description: "High-performance streaming ETL worker using server-side named cursors (PostgreSQL), bulk COPY via StringIO for full-load, and execute_values with ON CONFLICT DO UPDATE for incremental upserts. Per-batch watermark persistence ensures crash durability. Supports PostgreSQL, MySQL, MSSQL, Oracle, S3, SFTP, and CSV sources and destinations, with pre/post SQL command hooks and field-level transformation rules.",
@@ -107,6 +113,7 @@ const BADGE_COLORS: Record<string, string> = {
   Settings: "bg-green-500/10 text-green-600 border-green-500/20",
   Analytics: "bg-violet-500/10 text-violet-600 border-violet-500/20",
   Tools: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
+  Communication: "bg-sky-500/10 text-sky-600 border-sky-500/20",
 };
 
 export default function About() {

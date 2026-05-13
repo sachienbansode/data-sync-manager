@@ -14,3 +14,4 @@ export * from "./api_doc_attachments";
 export * from "./application_types";
 export * from "./email_templates";
 export * from "./url_shortener";
+export * from "./communications";

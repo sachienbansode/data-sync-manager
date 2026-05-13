@@ -181,8 +181,13 @@ export async function handleRedirect(req: Request, res: Response): Promise<void>
   if (!row || !row.isActive) { res.status(404).send("Link not found or inactive"); return; }
 
   const now = new Date();
-  if (row.startDate && now < row.startDate) { res.status(403).send("Link not yet active"); return; }
-  if (row.endDate && now > row.endDate) { res.status(410).send("Link has expired"); return; }
+  if (row.startDate && now < new Date(row.startDate)) { res.status(403).send("Link not yet active"); return; }
+  if (row.endDate) {
+    // Expire at end of the chosen day (23:59:59.999)
+    const endOfDay = new Date(row.endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+    if (now > endOfDay) { res.status(410).send("Link has expired"); return; }
+  }
 
   const ip = (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ?? req.socket.remoteAddress ?? "";
   const ua = req.headers["user-agent"] ?? "";

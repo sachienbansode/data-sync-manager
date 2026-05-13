@@ -67,8 +67,12 @@ else
   sudo systemctl start nginx
 fi
 
-# ── 5. Log directory ─────────────────────────────────────────────────────────
+# ── 5. Log directory & permissions ──────────────────────────────────────────
 mkdir -p "$LOG_DIR"
+
+# Allow Nginx (www-data) to read static files inside /home/ubuntu
+sudo chmod o+x /home/ubuntu
+sudo chmod -R o+rX "$APP_DIR/artifacts/web/dist"
 
 # ── 6. Install dependencies ──────────────────────────────────────────────────
 echo "[6/8] Installing Node dependencies..."

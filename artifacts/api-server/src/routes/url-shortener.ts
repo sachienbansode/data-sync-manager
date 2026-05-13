@@ -1,62 +1,30 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, desc, sql, count } from "drizzle-orm";
-import { db, shortUrlsTable, urlClicksTable, shortDomainsTable } from "@workspace/db";
+import { db, shortUrlsTable, urlClicksTable, shortDomainsTable, usersTable, auditLogsTable } from "@workspace/db";
 import { authenticate } from "../middlewares/authenticate";
 
 const router: IRouter = Router();
 
 function parseUserAgent(ua: string | undefined): { browser: string; browserVersion: string; os: string; deviceType: string } {
   if (!ua) return { browser: "Unknown", browserVersion: "", os: "Unknown", deviceType: "Unknown" };
-
-  let browser = "Unknown";
-  let browserVersion = "";
-  let os = "Unknown";
-  let deviceType = "Desktop";
-
-  if (/mobile|android|iphone|ipad|ipod|blackberry|windows phone/i.test(ua)) {
-    deviceType = /ipad/i.test(ua) ? "Tablet" : "Mobile";
-  } else if (/tablet/i.test(ua)) {
-    deviceType = "Tablet";
-  }
-
-  if (/edg\//i.test(ua)) {
-    browser = "Edge";
-    browserVersion = ua.match(/edg\/([\d.]+)/i)?.[1] ?? "";
-  } else if (/opr\//i.test(ua)) {
-    browser = "Opera";
-    browserVersion = ua.match(/opr\/([\d.]+)/i)?.[1] ?? "";
-  } else if (/chrome\//i.test(ua) && !/chromium/i.test(ua)) {
-    browser = "Chrome";
-    browserVersion = ua.match(/chrome\/([\d.]+)/i)?.[1] ?? "";
-  } else if (/firefox\//i.test(ua)) {
-    browser = "Firefox";
-    browserVersion = ua.match(/firefox\/([\d.]+)/i)?.[1] ?? "";
-  } else if (/safari\//i.test(ua) && !/chrome/i.test(ua)) {
-    browser = "Safari";
-    browserVersion = ua.match(/version\/([\d.]+)/i)?.[1] ?? "";
-  }
-
-  if (/windows nt/i.test(ua)) {
-    const ver = ua.match(/windows nt ([\d.]+)/i)?.[1];
-    const winMap: Record<string, string> = { "10.0": "Windows 10/11", "6.3": "Windows 8.1", "6.2": "Windows 8", "6.1": "Windows 7" };
-    os = winMap[ver ?? ""] ?? "Windows";
-  } else if (/mac os x/i.test(ua)) {
-    os = "macOS";
-  } else if (/android/i.test(ua)) {
-    os = `Android ${ua.match(/android ([\d.]+)/i)?.[1] ?? ""}`.trim();
-  } else if (/iphone|ipad|ipod/i.test(ua)) {
-    os = "iOS";
-  } else if (/linux/i.test(ua)) {
-    os = "Linux";
-  }
-
+  let browser = "Unknown", browserVersion = "", os = "Unknown", deviceType = "Desktop";
+  if (/mobile|android|iphone|ipad|ipod|blackberry|windows phone/i.test(ua)) deviceType = /ipad/i.test(ua) ? "Tablet" : "Mobile";
+  else if (/tablet/i.test(ua)) deviceType = "Tablet";
+  if (/edg\//i.test(ua)) { browser = "Edge"; browserVersion = ua.match(/edg\/([\d.]+)/i)?.[1] ?? ""; }
+  else if (/opr\//i.test(ua)) { browser = "Opera"; browserVersion = ua.match(/opr\/([\d.]+)/i)?.[1] ?? ""; }
+  else if (/chrome\//i.test(ua) && !/chromium/i.test(ua)) { browser = "Chrome"; browserVersion = ua.match(/chrome\/([\d.]+)/i)?.[1] ?? ""; }
+  else if (/firefox\//i.test(ua)) { browser = "Firefox"; browserVersion = ua.match(/firefox\/([\d.]+)/i)?.[1] ?? ""; }
+  else if (/safari\//i.test(ua) && !/chrome/i.test(ua)) { browser = "Safari"; browserVersion = ua.match(/version\/([\d.]+)/i)?.[1] ?? ""; }
+  if (/windows nt/i.test(ua)) { const ver = ua.match(/windows nt ([\d.]+)/i)?.[1]; const m: Record<string, string> = { "10.0": "Windows 10/11", "6.3": "Windows 8.1", "6.2": "Windows 8", "6.1": "Windows 7" }; os = m[ver ?? ""] ?? "Windows"; }
+  else if (/mac os x/i.test(ua)) os = "macOS";
+  else if (/android/i.test(ua)) os = `Android ${ua.match(/android ([\d.]+)/i)?.[1] ?? ""}`.trim();
+  else if (/iphone|ipad|ipod/i.test(ua)) os = "iOS";
+  else if (/linux/i.test(ua)) os = "Linux";
   return { browser, browserVersion, os, deviceType };
 }
 
 async function getGeoLocation(ip: string): Promise<{ country: string; city: string }> {
-  if (!ip || ip === "127.0.0.1" || ip === "::1" || ip.startsWith("192.168") || ip.startsWith("10.")) {
-    return { country: "Local", city: "Local" };
-  }
+  if (!ip || ip === "127.0.0.1" || ip === "::1" || ip.startsWith("192.168") || ip.startsWith("10.")) return { country: "Local", city: "Local" };
   try {
     const res = await fetch(`http://ip-api.com/json/${ip}?fields=country,city,status`, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return { country: "Unknown", city: "Unknown" };
@@ -68,46 +36,54 @@ async function getGeoLocation(ip: string): Promise<{ country: string; city: stri
 
 function generateCode(length = 7): string {
   const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  let code = "";
-  for (let i = 0; i < length; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
+  return Array.from({ length }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
 }
 
 async function generateUniqueCode(): Promise<string> {
   let code = generateCode();
-  let existing = await db.select({ id: shortUrlsTable.id }).from(shortUrlsTable).where(eq(shortUrlsTable.shortCode, code));
-  while (existing.length > 0) {
+  while ((await db.select({ id: shortUrlsTable.id }).from(shortUrlsTable).where(eq(shortUrlsTable.shortCode, code))).length > 0) {
     code = generateCode();
-    existing = await db.select({ id: shortUrlsTable.id }).from(shortUrlsTable).where(eq(shortUrlsTable.shortCode, code));
   }
   return code;
 }
 
-// GET /short-urls
-router.get("/short-urls", authenticate, async (_req, res): Promise<void> => {
-  const rows = await db
+// Shared select builder that includes creator/updater names
+function buildUrlSelect() {
+  const creatorAlias = db.$with("creator").as(db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable));
+  return db
     .select({
       id: shortUrlsTable.id,
       shortCode: shortUrlsTable.shortCode,
       originalUrl: shortUrlsTable.originalUrl,
       title: shortUrlsTable.title,
+      description: shortUrlsTable.description,
       domainId: shortUrlsTable.domainId,
       domainName: shortDomainsTable.domain,
       startDate: shortUrlsTable.startDate,
       endDate: shortUrlsTable.endDate,
       isActive: shortUrlsTable.isActive,
+      createdBy: shortUrlsTable.createdBy,
+      updatedBy: shortUrlsTable.updatedBy,
       createdAt: shortUrlsTable.createdAt,
+      updatedAt: shortUrlsTable.updatedAt,
       clickCount: sql<number>`(select count(*) from url_clicks where url_clicks.short_url_id = ${shortUrlsTable.id})`.mapWith(Number),
+      creatorName: usersTable.name,
     })
     .from(shortUrlsTable)
     .leftJoin(shortDomainsTable, eq(shortUrlsTable.domainId, shortDomainsTable.id))
-    .orderBy(desc(shortUrlsTable.createdAt));
+    .leftJoin(usersTable, eq(shortUrlsTable.createdBy, usersTable.id));
+  void creatorAlias;
+}
+
+// GET /short-urls
+router.get("/short-urls", authenticate, async (_req, res): Promise<void> => {
+  const rows = await buildUrlSelect().orderBy(desc(shortUrlsTable.createdAt));
   res.json(rows);
 });
 
 // POST /short-urls
 router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
-  const { originalUrl, title, startDate, endDate, isActive, customCode, domainId } = req.body;
+  const { originalUrl, title, description, startDate, endDate, isActive, customCode, domainId } = req.body;
   if (!originalUrl) { res.status(400).json({ error: "originalUrl is required" }); return; }
 
   let shortCode = customCode?.trim();
@@ -122,6 +98,7 @@ router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
     shortCode,
     originalUrl,
     title: title || null,
+    description: description || null,
     domainId: domainId ? Number(domainId) : null,
     startDate: startDate ? new Date(startDate) : null,
     endDate: endDate ? new Date(endDate) : null,
@@ -129,30 +106,65 @@ router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
     createdBy: req.user!.sub,
   }).returning();
 
+  db.insert(auditLogsTable).values({
+    userId: req.user!.sub,
+    userEmail: req.user!.email,
+    action: "SHORT_URL_CREATED",
+    details: `Created short URL /${shortCode} → ${originalUrl}`,
+    resourceType: "short_url",
+    resourceId: String(row.id),
+  }).catch(() => {});
+
   res.status(201).json(row);
 });
 
 // PUT /short-urls/:id
 router.put("/short-urls/:id", authenticate, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
-  const { originalUrl, title, startDate, endDate, isActive, domainId } = req.body;
+  const { originalUrl, title, description, startDate, endDate, isActive, domainId } = req.body;
+
+  const [before] = await db.select({ shortCode: shortUrlsTable.shortCode }).from(shortUrlsTable).where(eq(shortUrlsTable.id, id));
+
   const [row] = await db.update(shortUrlsTable).set({
     originalUrl: originalUrl || undefined,
     title: title ?? null,
+    description: description ?? null,
     domainId: domainId !== undefined ? (domainId ? Number(domainId) : null) : undefined,
     startDate: startDate ? new Date(startDate) : null,
     endDate: endDate ? new Date(endDate) : null,
     isActive: isActive !== undefined ? isActive : undefined,
+    updatedBy: req.user!.sub,
     updatedAt: new Date(),
   }).where(eq(shortUrlsTable.id, id)).returning();
   if (!row) { res.status(404).json({ error: "Not found" }); return; }
+
+  db.insert(auditLogsTable).values({
+    userId: req.user!.sub,
+    userEmail: req.user!.email,
+    action: "SHORT_URL_UPDATED",
+    details: `Updated short URL /${before?.shortCode ?? id}`,
+    resourceType: "short_url",
+    resourceId: String(id),
+  }).catch(() => {});
+
   res.json(row);
 });
 
 // DELETE /short-urls/:id
 router.delete("/short-urls/:id", authenticate, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
+  const [row] = await db.select({ shortCode: shortUrlsTable.shortCode, originalUrl: shortUrlsTable.originalUrl }).from(shortUrlsTable).where(eq(shortUrlsTable.id, id));
   await db.delete(shortUrlsTable).where(eq(shortUrlsTable.id, id));
+
+  db.insert(auditLogsTable).values({
+    userId: req.user!.sub,
+    userEmail: req.user!.email,
+    action: "SHORT_URL_DELETED",
+    details: `Deleted short URL /${row?.shortCode ?? id} → ${row?.originalUrl ?? ""}`,
+    resourceType: "short_url",
+    resourceId: String(id),
+  }).catch(() => {});
+
   res.json({ success: true });
 });
 
@@ -166,15 +178,19 @@ router.get("/short-urls/:id/analytics", authenticate, async (req, res): Promise<
       shortCode: shortUrlsTable.shortCode,
       originalUrl: shortUrlsTable.originalUrl,
       title: shortUrlsTable.title,
+      description: shortUrlsTable.description,
       domainId: shortUrlsTable.domainId,
       domainName: shortDomainsTable.domain,
       startDate: shortUrlsTable.startDate,
       endDate: shortUrlsTable.endDate,
       isActive: shortUrlsTable.isActive,
       createdAt: shortUrlsTable.createdAt,
+      updatedAt: shortUrlsTable.updatedAt,
+      creatorName: usersTable.name,
     })
     .from(shortUrlsTable)
     .leftJoin(shortDomainsTable, eq(shortUrlsTable.domainId, shortDomainsTable.id))
+    .leftJoin(usersTable, eq(shortUrlsTable.createdBy, usersTable.id))
     .where(eq(shortUrlsTable.id, id));
 
   if (!urlRow) { res.status(404).json({ error: "Not found" }); return; }
@@ -189,7 +205,13 @@ router.get("/short-urls/:id/analytics", authenticate, async (req, res): Promise<
     count: count(),
   }).from(urlClicksTable).where(eq(urlClicksTable.shortUrlId, id)).groupBy(sql`date_trunc('day', clicked_at)`).orderBy(sql`date_trunc('day', clicked_at)`);
 
-  res.json({ url: urlRow, clicks, stats: { byBrowser, byOs, byDevice, byCountry, byDay, total: clicks.length } });
+  // Audit log for this resource
+  const auditLog = await db.select().from(auditLogsTable)
+    .where(eq(auditLogsTable.resourceId, String(id)))
+    .orderBy(desc(auditLogsTable.createdAt))
+    .limit(50);
+
+  res.json({ url: urlRow, clicks, auditLog, stats: { byBrowser, byOs, byDevice, byCountry, byDay, total: clicks.length } });
 });
 
 // Public redirect — GET /s/:code (mounted in app.ts, not under /api)
@@ -213,19 +235,7 @@ export async function handleRedirect(req: Request, res: Response): Promise<void>
   const { browser, browserVersion, os, deviceType } = parseUserAgent(ua);
   const { country, city } = await getGeoLocation(ip);
 
-  db.insert(urlClicksTable).values({
-    shortUrlId: row.id,
-    ipAddress: ip,
-    userAgent: ua,
-    browser,
-    browserVersion,
-    os,
-    deviceType,
-    country,
-    city,
-    referer: referer || null,
-  }).catch(() => {});
-
+  db.insert(urlClicksTable).values({ shortUrlId: row.id, ipAddress: ip, userAgent: ua, browser, browserVersion, os, deviceType, country, city, referer: referer || null }).catch(() => {});
   res.redirect(302, row.originalUrl);
 }
 

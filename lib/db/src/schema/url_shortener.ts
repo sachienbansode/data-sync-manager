@@ -19,11 +19,13 @@ export const shortUrlsTable = pgTable("short_urls", {
   shortCode: text("short_code").notNull().unique(),
   originalUrl: text("original_url").notNull(),
   title: text("title"),
+  description: text("description"),
   domainId: integer("domain_id").references(() => shortDomainsTable.id, { onDelete: "set null" }),
   startDate: timestamp("start_date", { withTimezone: true }),
   endDate: timestamp("end_date", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
+  updatedBy: integer("updated_by").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -46,3 +48,17 @@ export const urlClicksTable = pgTable("url_clicks", {
 });
 
 export type UrlClick = typeof urlClicksTable.$inferSelect;
+
+export const apiKeysTable = pgTable("api_keys", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  keyPrefix: text("key_prefix").notNull(),
+  keyHash: text("key_hash").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ApiKey = typeof apiKeysTable.$inferSelect;

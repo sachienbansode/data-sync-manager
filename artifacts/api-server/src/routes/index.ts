@@ -19,6 +19,8 @@ import connectionObjectsRouter from "./connection-objects";
 import emailTemplatesRouter from "./email-templates";
 import urlShortenerRouter from "./url-shortener";
 import shortDomainsRouter from "./short-domains";
+import apiKeysRouter from "./api-keys";
+import urlShortenerV1Router from "./url-shortener-v1";
 
 const router: IRouter = Router();
 
@@ -42,5 +44,7 @@ router.use(connectionObjectsRouter);
 router.use(emailTemplatesRouter);
 router.use(urlShortenerRouter);
 router.use(shortDomainsRouter);
+router.use(apiKeysRouter);
+router.use("/v1", urlShortenerV1Router);
 
 export default router;

@@ -97,7 +97,7 @@ const adminGroups: NavGroup[] = [
       { href: "/admin/font-settings", label: "Font Settings", icon: Type },
       { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
       { href: "/admin/application-types", label: "Application Types", icon: Layers },
-      { href: "/admin/short-domains", label: "Short Domains", icon: Link2 },
+      { href: "/admin/short-domains", label: "Domain Registrations", icon: Link2 },
     ],
   },
 ];

@@ -8,17 +8,33 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { toast } from "sonner";
-import { getAccessToken } from "@/lib/auth";
+import { getAccessToken, silentRefresh } from "@/lib/auth";
 import { Plus, Trash2, CheckCircle2, XCircle, RefreshCw, Copy, Globe } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL;
 
 async function apiFetch(path: string, options?: RequestInit) {
-  const token = getAccessToken();
+  let token = getAccessToken();
+  if (!token) token = await silentRefresh();
   const res = await fetch(`${BASE}api${path}`, {
     ...options,
     headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options?.headers },
   });
+  if (res.status === 401) {
+    const fresh = await silentRefresh();
+    if (fresh) {
+      const retry = await fetch(`${BASE}api${path}`, {
+        ...options,
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${fresh}`, ...options?.headers },
+      });
+      if (!retry.ok) {
+        const err = await retry.json().catch(() => ({ error: retry.statusText }));
+        throw new Error(err.error ?? "Request failed");
+      }
+      return retry.json();
+    }
+    throw new Error("Session expired — please log in again");
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
     throw new Error(err.error ?? "Request failed");
@@ -85,7 +101,7 @@ export default function ShortDomains() {
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Custom Short Domains</h1>
+          <h1 className="text-2xl font-bold">Domain Registrations</h1>
           <p className="text-muted-foreground text-sm">Add and verify custom domains for your short URLs</p>
         </div>
         <Button onClick={() => setDialogOpen(true)}>

@@ -51,6 +51,17 @@ const apiDocGroup: NavGroup = {
   ],
 };
 
+const dataPipelineGroup: NavGroup = {
+  label: "Data Pipeline",
+  icon: ServerCog,
+  items: [
+    { href: "/admin/db-connections", label: "Step 1: Connections", icon: Network },
+    { href: "/admin/data-objects", label: "Step 2: Data Objects", icon: Table2 },
+    { href: "/workflow", label: "Step 3: Pipelines", icon: GitBranch },
+    { href: "/workflow/jobs", label: "Job History", icon: History },
+  ],
+};
+
 const adminGroups: NavGroup[] = [
   {
     label: "RBAC",
@@ -87,16 +98,6 @@ const adminGroups: NavGroup[] = [
       { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
       { href: "/admin/application-types", label: "Application Types", icon: Layers },
       { href: "/admin/short-domains", label: "Short Domains", icon: Link2 },
-    ],
-  },
-  {
-    label: "Data Pipeline",
-    icon: ServerCog,
-    items: [
-      { href: "/admin/db-connections", label: "Step 1: Connections", icon: Network },
-      { href: "/admin/data-objects", label: "Step 2: Data Objects", icon: Table2 },
-      { href: "/workflow", label: "Step 3: Pipelines", icon: GitBranch },
-      { href: "/workflow/jobs", label: "Job History", icon: History },
     ],
   },
 ];
@@ -222,6 +223,16 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
           {/* API Documentation group — visible to anyone with /docs access or admin */}
           <CollapsibleGroup
             group={apiDocGroup}
+            location={location}
+            onNav={onNav}
+            isAdmin={isAdmin}
+            checkPermission={checkPermission}
+            indent={false}
+          />
+
+          {/* Data Pipeline group */}
+          <CollapsibleGroup
+            group={dataPipelineGroup}
             location={location}
             onNav={onNav}
             isAdmin={isAdmin}

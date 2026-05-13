@@ -1,6 +1,5 @@
 // PM2 ecosystem config for Ananta Platform (AWS production)
 // Uses CommonJS (.cjs) so PM2 can require() it without ESM issues
-// Environment variables are sourced from .env.production before PM2 starts
 
 module.exports = {
   apps: [
@@ -14,6 +13,8 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: '512M',
+      // Load all secrets from .env.production on every start/reload
+      env_file: '/home/ubuntu/ananta-platform/.env.production',
       env_production: {
         NODE_ENV: 'production',
         PORT: '8080',

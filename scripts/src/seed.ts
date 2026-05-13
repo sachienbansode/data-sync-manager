@@ -1,72 +1,118 @@
-import { db, rolesTable, usersTable, pagePermissionsTable } from "@workspace/db";
+import { db, rolesTable, pagePermissionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import bcrypt from "bcrypt";
 
-const SALT_ROUNDS = 12;
-
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Roles                                                                        */
+/* ─────────────────────────────────────────────────────────────────────────── */
 const ROLES = [
-  { name: "Admin", description: "Full system access — manage users, roles, configurations" },
-  { name: "Manager", description: "View and manage users; cannot change system settings" },
-  { name: "Analyst", description: "Access to data workflows and read-only views" },
-  { name: "Viewer", description: "Read-only access to permitted pages" },
+  { name: "Admin",        description: "Full system access — manage users, roles, configurations" },
+  { name: "Manager",      description: "View and manage users; cannot change system settings" },
+  { name: "Analyst",      description: "Access to data workflows and read-only views" },
+  { name: "Viewer",       description: "Read-only access to permitted pages" },
   { name: "ExternalUser", description: "Limited access for external partners" },
 ];
 
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Pages  — kept in sync with ALL_PAGES in api-server/src/routes/roles.ts      */
+/* ─────────────────────────────────────────────────────────────────────────── */
 const PAGES = [
-  { path: "/dashboard", name: "Dashboard" },
-  { path: "/users", name: "User Management" },
-  { path: "/roles", name: "Role & Permissions" },
-  { path: "/profile", name: "My Profile" },
-  { path: "/mfa-setup", name: "MFA Setup" },
-  { path: "/audit-log", name: "Audit Log" },
-  { path: "/docs", name: "API Documentation" },
-  { path: "/workflow", name: "Data Workflow" },
-  { path: "/admin/app-settings", name: "App Settings" },
-  { path: "/admin/email-settings", name: "Email Settings" },
-  { path: "/admin/pii-permissions", name: "PII Permissions" },
-  { path: "/pii-records", name: "PII Records" },
-  { path: "/admin/db-connections", name: "DB Connections" },
-  { path: "/admin/field-mappings", name: "Field Mappings" },
+  { path: "/dashboard",                name: "Dashboard" },
+  { path: "/users",                    name: "Users" },
+  { path: "/roles",                    name: "Roles & Permissions" },
+  { path: "/audit-log",                name: "Audit Log" },
+  { path: "/admin/login-report",       name: "Login Report" },
+  { path: "/admin/data-objects",       name: "Data Objects" },
+  { path: "/workflow",                 name: "Data Workflow" },
+  { path: "/workflow/jobs",            name: "Workflow Jobs" },
+  { path: "/admin/db-connections",     name: "DB Connections" },
+  { path: "/admin/field-mappings",     name: "Field Mappings" },
+  { path: "/admin/email-settings",     name: "Email Settings" },
+  { path: "/admin/app-settings",       name: "App Settings" },
+  { path: "/admin/font-settings",      name: "Font Settings" },
+  { path: "/admin/allowed-file-types", name: "Allowed File Types" },
+  { path: "/admin/pii-permissions",    name: "PII Permissions" },
+  { path: "/pii-records",              name: "PII Records" },
+  { path: "/admin/application-types",  name: "Application Types" },
+  { path: "/admin/email-templates",    name: "Email Templates" },
+  { path: "/docs",                     name: "API Documentation" },
+  { path: "/url-shortener",            name: "URL Shortener" },
+  { path: "/admin/short-domains",      name: "Short Domains" },
+  { path: "/email-hub/campaigns",      name: "Email Campaigns" },
+  { path: "/email-hub/templates",      name: "Email Templates (Bulk)" },
+  { path: "/admin/comm-settings",      name: "Bulk Email Settings" },
 ];
 
-const ALL_ROLES_PATHS = ["/dashboard", "/profile", "/mfa-setup"];
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Permission matrix  (true = role can access that page)                        */
+/* ─────────────────────────────────────────────────────────────────────────── */
+const ALL_PATHS = PAGES.map(p => p.path);
 
 const PAGE_ACCESS: Record<string, string[]> = {
-  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/pii-records", "/admin/app-settings", "/admin/email-settings", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
-  Manager: [...ALL_ROLES_PATHS, "/docs", "/workflow", "/pii-records"],
-  Analyst: [...ALL_ROLES_PATHS, "/docs", "/workflow", "/pii-records"],
-  Viewer: [...ALL_ROLES_PATHS, "/docs", "/pii-records"],
-  ExternalUser: [...ALL_ROLES_PATHS, "/docs"],
+  Admin: ALL_PATHS,   // Admin gets everything
+
+  Manager: [
+    "/dashboard",
+    "/workflow",
+    "/workflow/jobs",
+    "/docs",
+    "/pii-records",
+    "/url-shortener",
+    "/email-hub/campaigns",
+    "/email-hub/templates",
+  ],
+
+  Analyst: [
+    "/dashboard",
+    "/workflow",
+    "/workflow/jobs",
+    "/docs",
+    "/pii-records",
+  ],
+
+  Viewer: [
+    "/dashboard",
+    "/docs",
+    "/pii-records",
+  ],
+
+  ExternalUser: [
+    "/dashboard",
+    "/docs",
+  ],
 };
 
-const USERS = [
-  { email: "sachin.bansode@ashikagroup.com", firstName: "Sachin", lastName: "Bansode", role: "Admin", password: "Admin@123456" },
-  { email: "priya.sharma@ashikagroup.com", firstName: "Priya", lastName: "Sharma", role: "Manager", password: "Manager@123456" },
-  { email: "rahul.mehta@ashikagroup.com", firstName: "Rahul", lastName: "Mehta", role: "Analyst", password: "Analyst@123456" },
-  { email: "deepa.nair@ashikagroup.com", firstName: "Deepa", lastName: "Nair", role: "Viewer", password: "Viewer@123456" },
-  { email: "arjun.patel@ashikagroup.com", firstName: "Arjun", lastName: "Patel", role: "Analyst", password: "Analyst@123456" },
-  { email: "james.wilson@externalpartner.com", firstName: "James", lastName: "Wilson", role: "ExternalUser", password: "External@123456" },
-];
-
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* Seed                                                                         */
+/* ─────────────────────────────────────────────────────────────────────────── */
 async function seed() {
-  console.log("Seeding roles...");
+  console.log("── Seeding roles ──────────────────────────────────────────────");
   const roleMap: Record<string, number> = {};
+
   for (const role of ROLES) {
-    const [existing] = await db.select().from(rolesTable).where(eq(rolesTable.name, role.name));
+    const [existing] = await db
+      .select({ id: rolesTable.id })
+      .from(rolesTable)
+      .where(eq(rolesTable.name, role.name));
+
     if (existing) {
       roleMap[role.name] = existing.id;
-      console.log(`  Role ${role.name} already exists (id=${existing.id})`);
+      console.log(`  SKIP  ${role.name} (id=${existing.id}) — already exists`);
     } else {
-      const [inserted] = await db.insert(rolesTable).values(role).returning({ id: rolesTable.id });
+      const [inserted] = await db
+        .insert(rolesTable)
+        .values(role)
+        .returning({ id: rolesTable.id });
       roleMap[role.name] = inserted!.id;
-      console.log(`  Created role ${role.name} (id=${inserted!.id})`);
+      console.log(`  CREATE ${role.name} (id=${inserted!.id})`);
     }
   }
 
-  console.log("Seeding page permissions...");
+  console.log("\n── Seeding page permissions ───────────────────────────────────");
   for (const [roleName, allowedPaths] of Object.entries(PAGE_ACCESS)) {
     const roleId = roleMap[roleName];
-    if (!roleId) continue;
+    if (!roleId) { console.log(`  WARN  role "${roleName}" not found — skipping`); continue; }
+
+    let granted = 0, denied = 0;
     for (const page of PAGES) {
       const canAccess = allowedPaths.includes(page.path);
       await db
@@ -74,43 +120,18 @@ async function seed() {
         .values({ roleId, pagePath: page.path, pageName: page.name, canAccess })
         .onConflictDoUpdate({
           target: [pagePermissionsTable.roleId, pagePermissionsTable.pagePath],
-          set: { canAccess },
+          set: { pageName: page.name, canAccess },
         });
+      canAccess ? granted++ : denied++;
     }
-    console.log(`  Seeded permissions for ${roleName}`);
+    console.log(`  ${roleName.padEnd(12)} granted=${granted}  denied=${denied}`);
   }
 
-  console.log("Seeding users...");
-  for (const user of USERS) {
-    const [existing] = await db.select().from(usersTable).where(eq(usersTable.email, user.email));
-    if (existing) {
-      console.log(`  User ${user.email} already exists`);
-      continue;
-    }
-    const roleId = roleMap[user.role];
-    if (!roleId) {
-      console.log(`  Role ${user.role} not found for ${user.email}`);
-      continue;
-    }
-    const passwordHash = await bcrypt.hash(user.password, SALT_ROUNDS);
-    await db.insert(usersTable).values({
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      roleId,
-      passwordHash,
-      authProvider: "local",
-      isActive: true,
-      mfaEnabled: false,
-    });
-    console.log(`  Created user ${user.email} (${user.role})`);
-  }
-
-  console.log("Seed complete!");
+  console.log("\n✓ Seed complete — users skipped (manage via the app).");
   process.exit(0);
 }
 
-seed().catch((err) => {
+seed().catch(err => {
   console.error("Seed failed:", err);
   process.exit(1);
 });

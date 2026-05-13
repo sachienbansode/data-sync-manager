@@ -72,9 +72,13 @@ mkdir -p "$LOG_DIR"
 sudo chmod o+x /home/ubuntu
 sudo chmod -R o+rX "$APP_DIR/artifacts/web/dist"
 
-# ── 6. Install dependencies ──────────────────────────────────────────────────
+# ── 6. Install dependencies & rebuild native modules ────────────────────────
 echo "[6/9] Installing Node dependencies..."
+# Ensure build tools are present for native modules (bcrypt etc.)
+sudo apt-get install -y build-essential python3 2>/dev/null | tail -1
 pnpm install --frozen-lockfile
+# Rebuild native addons compiled for this server's architecture
+pnpm rebuild
 
 # ── 7. .env.production (create template on first deploy, never overwrite) ────
 if [ ! -f "$ENV_FILE" ]; then

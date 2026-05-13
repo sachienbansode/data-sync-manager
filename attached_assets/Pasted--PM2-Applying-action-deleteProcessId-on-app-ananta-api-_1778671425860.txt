@@ -1,0 +1,66 @@
+[PM2] Applying action deleteProcessId on app [ananta-api](ids: [ 0 ])
+[PM2] [ananta-api](0) ✓
+┌────┬───────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name      │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+└────┴───────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+[PM2][WARN] Applications ananta-api not running, starting...
+[PM2] App [ananta-api] launched (1 instances)
+┌────┬───────────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐
+│ id │ name          │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │
+├────┼───────────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤
+│ 0  │ ananta-api    │ default     │ 0.0.0   │ cluster │ 29531    │ 0s     │ 0    │ online    │ 0%       │ 39.6mb   │ ubuntu   │ disabled │
+└────┴───────────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘
+SESSION_SECRET: supersecretSessionkey789ashika2024platform
+CUSTOM_DATABASE_URL: postgresql://root_admin:SuperMumbai2001@13.233.106.37:5432/uat_ananta
+NODE_ENV: production
+PORT: 8080
+node:internal/modules/cjs/loader:1210
+  throw err;
+  ^
+
+Error: Cannot find module 'pg'
+Require stack:
+- /home/ubuntu/ananta-platform/[eval]
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1207:15)
+    at Module._load (node:internal/modules/cjs/loader:1038:27)
+    at Module.require (node:internal/modules/cjs/loader:1289:19)
+    at require (node:internal/modules/helpers:182:18)
+    at [eval]:2:18
+    at runScriptInThisContext (node:internal/vm:209:10)
+    at node:internal/process/execution:118:14
+    at [eval]-wrapper:6:24
+    at runScript (node:internal/process/execution:101:62)
+    at evalScript (node:internal/process/execution:133:3) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [ '/home/ubuntu/ananta-platform/[eval]' ]
+}
+
+Node.js v20.20.2
+Loaded .env.production
+DB: postgresql://root_admin:***@13.233.106.37:5432/uat_ananta
+node:internal/modules/cjs/loader:1207
+  const err = new Error(message);
+              ^
+
+Error: Cannot find module '/home/ubuntu/ananta-platform/node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt/lib/binding/napi-v3/bcrypt_lib.node'
+Require stack:
+- /home/ubuntu/ananta-platform/node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt/bcrypt.js
+- /home/ubuntu/ananta-platform/scripts/reset-admin-password.mjs
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1207:15)
+    at Module._load (node:internal/modules/cjs/loader:1038:27)
+    at Module.require (node:internal/modules/cjs/loader:1289:19)
+    at require (node:internal/modules/helpers:182:18)
+    at Object.<anonymous> (/home/ubuntu/ananta-platform/node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt/bcrypt.js:6:16)
+    at Module._compile (node:internal/modules/cjs/loader:1521:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1623:10)
+    at Module.load (node:internal/modules/cjs/loader:1266:32)
+    at Module._load (node:internal/modules/cjs/loader:1091:12)
+    at Module.require (node:internal/modules/cjs/loader:1289:19) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    '/home/ubuntu/ananta-platform/node_modules/.pnpm/bcrypt@5.1.1/node_modules/bcrypt/bcrypt.js',
+    '/home/ubuntu/ananta-platform/scripts/reset-admin-password.mjs'
+  ]
+}
+
+Node.js v20.20.2

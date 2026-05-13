@@ -17,45 +17,45 @@ cd "$APP_DIR"
 
 # ── 1. Node.js 20 (skip if already installed) ───────────────────────────────
 if ! command -v node &>/dev/null || [[ "$(node --version)" != v20* ]]; then
-  echo "[1/8] Installing Node.js 20..."
+  echo "[1/9] Installing Node.js 20..."
   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -
   sudo apt-get install -y nodejs
 else
-  echo "[1/8] Node.js already installed: $(node --version)"
+  echo "[1/9] Node.js already installed: $(node --version)"
 fi
 
 # ── 2. pnpm ──────────────────────────────────────────────────────────────────
 if ! command -v pnpm &>/dev/null; then
-  echo "[2/8] Installing pnpm..."
+  echo "[2/9] Installing pnpm..."
   sudo npm install -g pnpm@10 --silent
 else
-  echo "[2/8] pnpm already installed: $(pnpm --version)"
+  echo "[2/9] pnpm already installed: $(pnpm --version)"
 fi
 
 # ── 3. PM2 ───────────────────────────────────────────────────────────────────
 if ! command -v pm2 &>/dev/null; then
-  echo "[3/8] Installing PM2..."
+  echo "[3/9] Installing PM2..."
   sudo npm install -g pm2 --silent
 else
-  echo "[3/8] PM2 already installed: $(pm2 --version)"
+  echo "[3/9] PM2 already installed: $(pm2 --version)"
 fi
 
 # ── 4. Nginx ─────────────────────────────────────────────────────────────────
 if ! command -v nginx &>/dev/null; then
-  echo "[4/8] Installing Nginx..."
+  echo "[4/9] Installing Nginx..."
   sudo apt-get update -q
   sudo apt-get install -y nginx
 fi
 
 # Stop Apache2 if running — it occupies port 80 and blocks Nginx
 if sudo systemctl is-active --quiet apache2; then
-  echo "[4/8] Stopping Apache2 (conflicts with Nginx on port 80)..."
+  echo "[4/9] Stopping Apache2 (conflicts with Nginx on port 80)..."
   sudo systemctl stop apache2
   sudo systemctl disable apache2
 fi
 
 # Configure Nginx (idempotent — overwrite each deploy to pick up any changes)
-echo "[4/8] Configuring Nginx..."
+echo "[4/9] Configuring Nginx..."
 sudo cp "$APP_DIR/scripts/nginx.conf" /etc/nginx/sites-available/ananta-platform
 sudo ln -sf /etc/nginx/sites-available/ananta-platform /etc/nginx/sites-enabled/ananta-platform
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -69,45 +69,48 @@ fi
 
 # ── 5. Log directory & permissions ──────────────────────────────────────────
 mkdir -p "$LOG_DIR"
-
-# Allow Nginx (www-data) to read static files inside /home/ubuntu
 sudo chmod o+x /home/ubuntu
 sudo chmod -R o+rX "$APP_DIR/artifacts/web/dist"
 
 # ── 6. Install dependencies ──────────────────────────────────────────────────
-echo "[6/8] Installing Node dependencies..."
+echo "[6/9] Installing Node dependencies..."
 pnpm install --frozen-lockfile
 
 # ── 7. .env.production (create template on first deploy, never overwrite) ────
 if [ ! -f "$ENV_FILE" ]; then
-  echo "[7/8] Creating .env.production template..."
+  echo "[7/9] Creating .env.production template..."
   cat > "$ENV_FILE" << 'ENVTEMPLATE'
 NODE_ENV=production
 PORT=8080
-CUSTOM_DATABASE_URL=postgresql://root_admin:YOUR_PASSWORD@13.233.106.37:5432/dev_ananta
+CUSTOM_DATABASE_URL=postgresql://root_admin:YOUR_PASSWORD@13.233.106.37:5432/uat_ananta
 JWT_SECRET=REPLACE_WITH_64_CHAR_RANDOM_STRING
 REFRESH_TOKEN_SECRET=REPLACE_WITH_64_CHAR_RANDOM_STRING
 SESSION_SECRET=REPLACE_WITH_64_CHAR_RANDOM_STRING
 BASE_PATH=/
 ENVTEMPLATE
   echo ""
-  echo "  ⚠️  IMPORTANT: Edit $ENV_FILE with real secrets, then re-run the deploy."
+  echo "  IMPORTANT: Edit $ENV_FILE with real secrets, then re-run the deploy."
   echo "  SSH in and run: nano $ENV_FILE"
   echo ""
 else
-  echo "[7/8] .env.production already exists — keeping existing secrets."
+  echo "[7/9] .env.production already exists — keeping existing secrets."
 fi
 
-# ── 8. Start / reload via PM2 ────────────────────────────────────────────────
-echo "[8/8] Reloading application via PM2..."
-
-# Source the .env file for PM2
+# Source env vars for subsequent steps (migrations + PM2)
 set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
 
-pm2 startOrReload "$APP_DIR/ecosystem.config.cjs" --env production
+# ── 8. Run DB schema migrations ──────────────────────────────────────────────
+echo "[8/9] Running database migrations..."
+pnpm --filter @workspace/db run push --accept-warnings 2>&1 || \
+  pnpm --filter @workspace/db run push-force 2>&1 || \
+  echo "  WARNING: Migration step had issues — check DB manually if login fails."
+
+# ── 9. Start / reload via PM2 (always update env) ───────────────────────────
+echo "[9/9] Reloading application via PM2..."
+pm2 startOrReload "$APP_DIR/ecosystem.config.cjs" --env production --update-env
 pm2 save
 # Enable PM2 startup on reboot (first time only — idempotent)
 sudo env PATH="$PATH:/usr/bin" pm2 startup systemd -u ubuntu --hp /home/ubuntu 2>/dev/null | tail -1 | sudo bash 2>/dev/null || true

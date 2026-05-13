@@ -1,6 +1,6 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import { eq, desc, sql, count } from "drizzle-orm";
-import { db, shortUrlsTable, urlClicksTable } from "@workspace/db";
+import { db, shortUrlsTable, urlClicksTable, shortDomainsTable } from "@workspace/db";
 import { authenticate } from "../middlewares/authenticate";
 
 const router: IRouter = Router();
@@ -62,8 +62,7 @@ async function getGeoLocation(ip: string): Promise<{ country: string; city: stri
     if (!res.ok) return { country: "Unknown", city: "Unknown" };
     const data = await res.json() as { status: string; country?: string; city?: string };
     if (data.status === "success") return { country: data.country ?? "Unknown", city: data.city ?? "Unknown" };
-  } catch {
-  }
+  } catch { }
   return { country: "Unknown", city: "Unknown" };
 }
 
@@ -85,13 +84,15 @@ async function generateUniqueCode(): Promise<string> {
 }
 
 // GET /short-urls
-router.get("/short-urls", authenticate, async (req, res): Promise<void> => {
+router.get("/short-urls", authenticate, async (_req, res): Promise<void> => {
   const rows = await db
     .select({
       id: shortUrlsTable.id,
       shortCode: shortUrlsTable.shortCode,
       originalUrl: shortUrlsTable.originalUrl,
       title: shortUrlsTable.title,
+      domainId: shortUrlsTable.domainId,
+      domainName: shortDomainsTable.domain,
       startDate: shortUrlsTable.startDate,
       endDate: shortUrlsTable.endDate,
       isActive: shortUrlsTable.isActive,
@@ -99,13 +100,14 @@ router.get("/short-urls", authenticate, async (req, res): Promise<void> => {
       clickCount: sql<number>`(select count(*) from url_clicks where url_clicks.short_url_id = ${shortUrlsTable.id})`.mapWith(Number),
     })
     .from(shortUrlsTable)
+    .leftJoin(shortDomainsTable, eq(shortUrlsTable.domainId, shortDomainsTable.id))
     .orderBy(desc(shortUrlsTable.createdAt));
   res.json(rows);
 });
 
 // POST /short-urls
 router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
-  const { originalUrl, title, startDate, endDate, isActive, customCode } = req.body;
+  const { originalUrl, title, startDate, endDate, isActive, customCode, domainId } = req.body;
   if (!originalUrl) { res.status(400).json({ error: "originalUrl is required" }); return; }
 
   let shortCode = customCode?.trim();
@@ -120,6 +122,7 @@ router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
     shortCode,
     originalUrl,
     title: title || null,
+    domainId: domainId ? Number(domainId) : null,
     startDate: startDate ? new Date(startDate) : null,
     endDate: endDate ? new Date(endDate) : null,
     isActive: isActive !== false,
@@ -132,10 +135,11 @@ router.post("/short-urls", authenticate, async (req, res): Promise<void> => {
 // PUT /short-urls/:id
 router.put("/short-urls/:id", authenticate, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
-  const { originalUrl, title, startDate, endDate, isActive } = req.body;
+  const { originalUrl, title, startDate, endDate, isActive, domainId } = req.body;
   const [row] = await db.update(shortUrlsTable).set({
     originalUrl: originalUrl || undefined,
     title: title ?? null,
+    domainId: domainId !== undefined ? (domainId ? Number(domainId) : null) : undefined,
     startDate: startDate ? new Date(startDate) : null,
     endDate: endDate ? new Date(endDate) : null,
     isActive: isActive !== undefined ? isActive : undefined,
@@ -156,11 +160,26 @@ router.delete("/short-urls/:id", authenticate, async (req, res): Promise<void> =
 router.get("/short-urls/:id/analytics", authenticate, async (req, res): Promise<void> => {
   const id = Number(req.params.id);
 
-  const [urlRow] = await db.select().from(shortUrlsTable).where(eq(shortUrlsTable.id, id));
+  const [urlRow] = await db
+    .select({
+      id: shortUrlsTable.id,
+      shortCode: shortUrlsTable.shortCode,
+      originalUrl: shortUrlsTable.originalUrl,
+      title: shortUrlsTable.title,
+      domainId: shortUrlsTable.domainId,
+      domainName: shortDomainsTable.domain,
+      startDate: shortUrlsTable.startDate,
+      endDate: shortUrlsTable.endDate,
+      isActive: shortUrlsTable.isActive,
+      createdAt: shortUrlsTable.createdAt,
+    })
+    .from(shortUrlsTable)
+    .leftJoin(shortDomainsTable, eq(shortUrlsTable.domainId, shortDomainsTable.id))
+    .where(eq(shortUrlsTable.id, id));
+
   if (!urlRow) { res.status(404).json({ error: "Not found" }); return; }
 
   const clicks = await db.select().from(urlClicksTable).where(eq(urlClicksTable.shortUrlId, id)).orderBy(desc(urlClicksTable.clickedAt));
-
   const byBrowser = await db.select({ name: urlClicksTable.browser, count: count() }).from(urlClicksTable).where(eq(urlClicksTable.shortUrlId, id)).groupBy(urlClicksTable.browser);
   const byOs = await db.select({ name: urlClicksTable.os, count: count() }).from(urlClicksTable).where(eq(urlClicksTable.shortUrlId, id)).groupBy(urlClicksTable.os);
   const byDevice = await db.select({ name: urlClicksTable.deviceType, count: count() }).from(urlClicksTable).where(eq(urlClicksTable.shortUrlId, id)).groupBy(urlClicksTable.deviceType);
@@ -183,7 +202,6 @@ export async function handleRedirect(req: Request, res: Response): Promise<void>
   const now = new Date();
   if (row.startDate && now < new Date(row.startDate)) { res.status(403).send("Link not yet active"); return; }
   if (row.endDate) {
-    // Expire at end of the chosen day (23:59:59.999)
     const endOfDay = new Date(row.endDate);
     endOfDay.setHours(23, 59, 59, 999);
     if (now > endOfDay) { res.status(410).send("Link has expired"); return; }

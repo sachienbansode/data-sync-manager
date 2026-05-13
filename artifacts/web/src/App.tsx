@@ -35,6 +35,7 @@ import DocsViewer from "@/pages/docs-viewer";
 import DocsAdmin from "@/pages/docs-admin";
 import About from "@/pages/about";
 import UrlShortener from "@/pages/url-shortener";
+import ShortDomains from "@/pages/admin/short-domains";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 
@@ -137,6 +138,9 @@ function Router() {
 
       <Route path="/url-shortener">
         <ProtectedRoute component={UrlShortener} path="/url-shortener" />
+      </Route>
+      <Route path="/admin/short-domains">
+        <ProtectedRoute component={ShortDomains} path="/admin/short-domains" requireRole="Admin" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

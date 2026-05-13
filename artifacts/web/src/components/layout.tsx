@@ -28,8 +28,8 @@ interface NavGroup {
 
 const topNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/url-shortener", label: "URL Shortener", icon: Link2 },
   { href: "/about", label: "About", icon: Info },
+  { href: "/url-shortener", label: "URL Shortener", icon: Link2 },
 ];
 
 const apiDocGroup: NavGroup = {
@@ -69,6 +69,7 @@ const adminGroups: NavGroup[] = [
       { href: "/admin/email-templates", label: "Email Templates", icon: FileText },
       { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
       { href: "/admin/application-types", label: "Application Types", icon: Layers },
+      { href: "/admin/short-domains", label: "Short Domains", icon: Link2 },
     ],
   },
   {

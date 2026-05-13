@@ -18,6 +18,7 @@ import applicationTypesRouter from "./application-types";
 import connectionObjectsRouter from "./connection-objects";
 import emailTemplatesRouter from "./email-templates";
 import urlShortenerRouter from "./url-shortener";
+import shortDomainsRouter from "./short-domains";
 
 const router: IRouter = Router();
 
@@ -40,5 +41,6 @@ router.use(applicationTypesRouter);
 router.use(connectionObjectsRouter);
 router.use(emailTemplatesRouter);
 router.use(urlShortenerRouter);
+router.use(shortDomainsRouter);
 
 export default router;

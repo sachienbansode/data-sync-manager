@@ -1,11 +1,25 @@
 import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 
+export const shortDomainsTable = pgTable("short_domains", {
+  id: serial("id").primaryKey(),
+  domain: text("domain").notNull().unique(),
+  verificationToken: text("verification_token").notNull(),
+  isVerified: boolean("is_verified").notNull().default(false),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ShortDomain = typeof shortDomainsTable.$inferSelect;
+
 export const shortUrlsTable = pgTable("short_urls", {
   id: serial("id").primaryKey(),
   shortCode: text("short_code").notNull().unique(),
   originalUrl: text("original_url").notNull(),
   title: text("title"),
+  domainId: integer("domain_id").references(() => shortDomainsTable.id, { onDelete: "set null" }),
   startDate: timestamp("start_date", { withTimezone: true }),
   endDate: timestamp("end_date", { withTimezone: true }),
   isActive: boolean("is_active").notNull().default(true),

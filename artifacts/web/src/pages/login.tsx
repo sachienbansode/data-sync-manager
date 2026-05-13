@@ -193,10 +193,12 @@ export default function Login() {
   const { data: appCfg } = useAppSettings();
   const logoUrl = `${import.meta.env.BASE_URL}api/admin/app-settings/logo`;
 
+  const currentYear = new Date().getFullYear();
+
   return (
     <div
       data-testid="login-page"
-      className="min-h-screen flex items-center justify-center bg-background p-4 relative overflow-hidden"
+      className="min-h-screen flex flex-col items-center justify-center bg-background p-4 relative overflow-hidden"
     >
       <div className="absolute top-4 right-4 z-20">
         <ThemeToggle />
@@ -532,6 +534,9 @@ export default function Login() {
           )}
         </div>
       </div>
+      <p className="mt-8 text-xs text-muted-foreground z-10">
+        Copyright &copy; {currentYear} Ashika Stock Services Limited. All rights reserved.
+      </p>
     </div>
   );
 }

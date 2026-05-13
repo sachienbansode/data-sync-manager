@@ -32,6 +32,7 @@ export const ALL_PAGES = [
   { path: "/admin/email-templates", name: "Email Templates" },
   { path: "/docs", name: "API Documentation" },
   { path: "/url-shortener", name: "URL Shortener" },
+  { path: "/admin/short-domains", name: "Short Domains" },
 ];
 
 const CreateRoleBody = z.object({

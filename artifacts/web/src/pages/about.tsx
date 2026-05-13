@@ -4,7 +4,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Activity, Shield, GitBranch, BookOpen, Lock, Database,
-  Mail, Settings, Users, FileText, Network, Eye, Printer, Cpu,
+  Mail, Settings, Users, FileText, Network, Eye, Printer, Cpu, Link2,
 } from "lucide-react";
 
 const FEATURES = [
@@ -81,6 +81,12 @@ const FEATURES = [
     badge: "Analytics",
   },
   {
+    icon: Link2,
+    title: "URL Shortener & Analytics",
+    description: "Create branded short links with custom domains, expiry date ranges, and real-time analytics: click counts, geo-location, browser, OS, and device tracking.",
+    badge: "Tools",
+  },
+  {
     icon: Cpu,
     title: "Python ETL Engine",
     description: "High-performance streaming ETL worker using server-side named cursors (PostgreSQL), bulk COPY via StringIO for full-load, and execute_values with ON CONFLICT DO UPDATE for incremental upserts. Per-batch watermark persistence ensures crash durability. Supports PostgreSQL, MySQL, MSSQL, Oracle, S3, SFTP, and CSV sources and destinations, with pre/post SQL command hooks and field-level transformation rules.",
@@ -100,11 +106,13 @@ const BADGE_COLORS: Record<string, string> = {
   Notifications: "bg-cyan-500/10 text-cyan-600 border-cyan-500/20",
   Settings: "bg-green-500/10 text-green-600 border-green-500/20",
   Analytics: "bg-violet-500/10 text-violet-600 border-violet-500/20",
+  Tools: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
 };
 
 export default function About() {
   const { data: appCfg } = useAppSettings();
   const logoUrl = appCfg?.hasLogo ? getLogoUrl() : null;
+  const currentYear = new Date().getFullYear();
 
   const handlePrint = () => window.print();
 
@@ -112,43 +120,21 @@ export default function About() {
     <>
       <style>{`
         @media print {
-          /* Remove URL / date / page number from browser margin areas */
-          @page {
-            size: A4 landscape;
-            margin: 0;
-          }
-          /* Unlock all ancestor overflow/height constraints so content can paginate */
+          @page { size: A4 landscape; margin: 0; }
           * { overflow: visible !important; max-height: none !important; }
-          /* Hide everything except the printable content */
           body * { visibility: hidden; }
           #about-printable, #about-printable * { visibility: visible; }
-          /* Full-page block with its own padding instead of @page margins.
-             position:absolute (not fixed) lets content span multiple print pages. */
           #about-printable {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            padding: 12mm 16mm 16mm;
-            box-sizing: border-box;
-            background: white;
-            color: black;
+            position: absolute; top: 0; left: 0; width: 100%;
+            padding: 12mm 16mm 16mm; box-sizing: border-box;
+            background: white; color: black;
           }
           .no-print { display: none !important; }
-          /* Reset card/background styles for clean B&W print */
-          #about-printable .print-card {
-            border: 1px solid #d1d5db !important;
-            background: white !important;
-            break-inside: avoid;
-          }
+          #about-printable .print-card { border: 1px solid #d1d5db !important; background: white !important; break-inside: avoid; }
           #about-printable h1 { font-size: 22pt; }
           #about-printable h2 { font-size: 14pt; }
           #about-printable p  { font-size: 9pt; }
-          #about-printable .feature-grid {
-            display: grid !important;
-            grid-template-columns: repeat(4, 1fr) !important;
-            gap: 6pt !important;
-          }
+          #about-printable .feature-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 6pt !important; }
         }
       `}</style>
       <div id="about-printable" className="space-y-10 animate-in fade-in duration-500">
@@ -216,8 +202,10 @@ export default function About() {
         </div>
 
         {/* Footer */}
-        <div className="border-t pt-6 text-center text-xs text-muted-foreground">
-          <p>{appCfg?.appName ?? "Ashika Platform"} · Ashika Group · Enterprise Platform</p>
+        <div className="border-t pt-6 space-y-1 text-center text-xs text-muted-foreground">
+          <p className="font-medium text-sm text-foreground/70">Designed and developed by Ashika Group — Technology Team</p>
+          <p>{appCfg?.appName ?? "Ashika Platform"} · Enterprise Integration & Data Management Platform</p>
+          <p>Copyright &copy; {currentYear} Ashika Stock Services Limited. All rights reserved.</p>
         </div>
       </div>
     </>

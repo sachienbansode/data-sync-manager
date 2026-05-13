@@ -1,48 +1,105 @@
 #!/usr/bin/env bash
-# deploy-server.sh — runs ON the AWS server after rsync
+# deploy-server.sh — runs ON the AWS server after every GitHub Actions rsync
+# Handles BOTH first-time setup AND subsequent deploys (fully idempotent)
 # Called by GitHub Actions SSH step
 
 set -e
 
 APP_DIR="/home/ubuntu/ananta-platform"
 ENV_FILE="$APP_DIR/.env.production"
+LOG_DIR="/home/ubuntu/logs"
 
-echo "=== Ananta Platform — Production Deploy ==="
+echo ""
+echo "============================================"
+echo "  Ananta Platform — Production Deploy"
+echo "============================================"
 cd "$APP_DIR"
 
-# ── 1. Install/update runtime deps ──────────────────────────────────────────
-echo "[1/5] Installing pnpm..."
-npm install -g pnpm@10 --silent 2>/dev/null || true
+# ── 1. Node.js 20 (skip if already installed) ───────────────────────────────
+if ! command -v node &>/dev/null || [[ "$(node --version)" != v20* ]]; then
+  echo "[1/8] Installing Node.js 20..."
+  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - -q
+  sudo apt-get install -y -q nodejs
+else
+  echo "[1/8] Node.js already installed: $(node --version)"
+fi
 
-echo "[2/5] Installing production dependencies..."
-pnpm install --frozen-lockfile --prod 2>/dev/null || pnpm install --frozen-lockfile
+# ── 2. pnpm ──────────────────────────────────────────────────────────────────
+if ! command -v pnpm &>/dev/null; then
+  echo "[2/8] Installing pnpm..."
+  sudo npm install -g pnpm@10 --silent
+else
+  echo "[2/8] pnpm already installed: $(pnpm --version)"
+fi
 
-# ── 2. Check .env.production exists ─────────────────────────────────────────
+# ── 3. PM2 ───────────────────────────────────────────────────────────────────
+if ! command -v pm2 &>/dev/null; then
+  echo "[3/8] Installing PM2..."
+  sudo npm install -g pm2 --silent
+else
+  echo "[3/8] PM2 already installed: $(pm2 --version)"
+fi
+
+# ── 4. Nginx ─────────────────────────────────────────────────────────────────
+if ! command -v nginx &>/dev/null; then
+  echo "[4/8] Installing Nginx..."
+  sudo apt-get update -q
+  sudo apt-get install -y -q nginx
+fi
+
+# Configure Nginx (idempotent — overwrite each deploy to pick up any changes)
+echo "[4/8] Configuring Nginx..."
+sudo cp "$APP_DIR/scripts/nginx.conf" /etc/nginx/sites-available/ananta-platform
+sudo ln -sf /etc/nginx/sites-available/ananta-platform /etc/nginx/sites-enabled/ananta-platform
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+
+# ── 5. Log directory ─────────────────────────────────────────────────────────
+mkdir -p "$LOG_DIR"
+
+# ── 6. Install dependencies ──────────────────────────────────────────────────
+echo "[6/8] Installing Node dependencies..."
+pnpm install --frozen-lockfile
+
+# ── 7. .env.production (create template on first deploy, never overwrite) ────
 if [ ! -f "$ENV_FILE" ]; then
-  echo "WARNING: $ENV_FILE not found — creating template. Fill it in and redeploy."
+  echo "[7/8] Creating .env.production template..."
   cat > "$ENV_FILE" << 'ENVTEMPLATE'
 NODE_ENV=production
 PORT=8080
-CUSTOM_DATABASE_URL=postgresql://root_admin:PASSWORD@13.233.106.37:5432/dev_ananta
-JWT_SECRET=CHANGE_ME_TO_STRONG_RANDOM_SECRET
-REFRESH_TOKEN_SECRET=CHANGE_ME_TO_STRONG_RANDOM_SECRET
+CUSTOM_DATABASE_URL=postgresql://root_admin:YOUR_PASSWORD@13.233.106.37:5432/dev_ananta
+JWT_SECRET=REPLACE_WITH_64_CHAR_RANDOM_STRING
+REFRESH_TOKEN_SECRET=REPLACE_WITH_64_CHAR_RANDOM_STRING
 BASE_PATH=/
 ENVTEMPLATE
+  echo ""
+  echo "  ⚠️  IMPORTANT: Edit $ENV_FILE with real secrets, then re-run the deploy."
+  echo "  SSH in and run: nano $ENV_FILE"
+  echo ""
+else
+  echo "[7/8] .env.production already exists — keeping existing secrets."
 fi
 
-# ── 3. Install/update PM2 ────────────────────────────────────────────────────
-echo "[3/5] Ensuring PM2 is installed..."
-npm install -g pm2 --silent 2>/dev/null || true
+# ── 8. Start / reload via PM2 ────────────────────────────────────────────────
+echo "[8/8] Reloading application via PM2..."
 
-# ── 4. Start / reload PM2 processes ─────────────────────────────────────────
-echo "[4/5] Starting/reloading PM2 processes..."
+# Source the .env file for PM2
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
 pm2 startOrReload "$APP_DIR/ecosystem.config.cjs" --env production
-
-# ── 5. Save PM2 process list & enable startup ────────────────────────────────
-echo "[5/5] Saving PM2 state..."
 pm2 save
-pm2 startup systemd -u ubuntu --hp /home/ubuntu 2>/dev/null || true
+# Enable PM2 startup on reboot (first time only — idempotent)
+sudo env PATH="$PATH:/usr/bin" pm2 startup systemd -u ubuntu --hp /home/ubuntu 2>/dev/null | tail -1 | sudo bash 2>/dev/null || true
 
 echo ""
-echo "=== Deploy complete ==="
+echo "============================================"
+echo "  Deploy complete!"
+echo ""
 pm2 status
+echo ""
+echo "  App:   http://13.233.106.37"
+echo "  API:   http://13.233.106.37/api/health"
+echo "============================================"

@@ -58,11 +58,11 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/home/${{ secrets.DEPLOY_USER }}/ananta-platform/
 
-      - name: Install production dependencies & start services
+      - name: Bootstrap & deploy on server
         run: |
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            'bash /home/${{ secrets.DEPLOY_USER }}/ananta-platform/scripts/deploy-server.sh'
+            'bash /home/${{ secrets.DEPLOY_USER }}/ananta-platform/scripts/deploy-server.sh 2>&1'
 
       - name: Health check
         run: |

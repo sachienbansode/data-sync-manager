@@ -47,9 +47,8 @@ async function generateUniqueCode(): Promise<string> {
   return code;
 }
 
-// Shared select builder that includes creator/updater names
+// Shared select builder that includes creator name and click count
 function buildUrlSelect() {
-  const creatorAlias = db.$with("creator").as(db.select({ id: usersTable.id, name: usersTable.name }).from(usersTable));
   return db
     .select({
       id: shortUrlsTable.id,
@@ -67,12 +66,11 @@ function buildUrlSelect() {
       createdAt: shortUrlsTable.createdAt,
       updatedAt: shortUrlsTable.updatedAt,
       clickCount: sql<number>`(select count(*) from url_clicks where url_clicks.short_url_id = ${shortUrlsTable.id})`.mapWith(Number),
-      creatorName: usersTable.name,
+      creatorName: sql<string | null>`nullif(trim(coalesce(${usersTable.firstName}, '') || ' ' || coalesce(${usersTable.lastName}, '')), '')`,
     })
     .from(shortUrlsTable)
     .leftJoin(shortDomainsTable, eq(shortUrlsTable.domainId, shortDomainsTable.id))
     .leftJoin(usersTable, eq(shortUrlsTable.createdBy, usersTable.id));
-  void creatorAlias;
 }
 
 // GET /short-urls

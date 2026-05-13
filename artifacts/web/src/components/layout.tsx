@@ -70,17 +70,23 @@ const adminGroups: NavGroup[] = [
     ],
   },
   {
+    label: "Email & Messaging",
+    icon: Mail,
+    items: [
+      { href: "/admin/email-settings", label: "SMTP Settings", icon: Mail },
+      { href: "/admin/email-templates", label: "System Templates", icon: FileText },
+      { href: "/admin/comm-settings", label: "Bulk Email (Netcore)", icon: Megaphone },
+    ],
+  },
+  {
     label: "Settings",
     icon: Settings,
     items: [
       { href: "/admin/app-settings", label: "App Settings", icon: Settings },
       { href: "/admin/font-settings", label: "Font Settings", icon: Type },
-      { href: "/admin/email-settings", label: "Email Settings", icon: Mail },
-      { href: "/admin/email-templates", label: "Email Templates", icon: FileText },
       { href: "/admin/allowed-file-types", label: "Allowed File Types", icon: FileType },
       { href: "/admin/application-types", label: "Application Types", icon: Layers },
       { href: "/admin/short-domains", label: "Short Domains", icon: Link2 },
-      { href: "/admin/comm-settings", label: "Bulk Email Settings", icon: Megaphone },
     ],
   },
   {

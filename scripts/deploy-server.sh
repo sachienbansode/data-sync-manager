@@ -44,7 +44,14 @@ fi
 if ! command -v nginx &>/dev/null; then
   echo "[4/8] Installing Nginx..."
   sudo apt-get update -q
-  sudo apt-get install -y -q nginx
+  sudo apt-get install -y nginx
+fi
+
+# Stop Apache2 if running — it occupies port 80 and blocks Nginx
+if sudo systemctl is-active --quiet apache2; then
+  echo "[4/8] Stopping Apache2 (conflicts with Nginx on port 80)..."
+  sudo systemctl stop apache2
+  sudo systemctl disable apache2
 fi
 
 # Configure Nginx (idempotent — overwrite each deploy to pick up any changes)

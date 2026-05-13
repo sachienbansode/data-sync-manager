@@ -1,6 +1,6 @@
 // PM2 ecosystem config for Ananta Platform (AWS production)
 // Uses CommonJS (.cjs) so PM2 can require() it without ESM issues
-require('dotenv').config({ path: '/home/ubuntu/ananta-platform/.env.production' });
+// Environment variables are sourced from .env.production before PM2 starts
 
 module.exports = {
   apps: [

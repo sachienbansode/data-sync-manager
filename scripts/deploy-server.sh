@@ -52,7 +52,13 @@ echo "[4/8] Configuring Nginx..."
 sudo cp "$APP_DIR/scripts/nginx.conf" /etc/nginx/sites-available/ananta-platform
 sudo ln -sf /etc/nginx/sites-available/ananta-platform /etc/nginx/sites-enabled/ananta-platform
 sudo rm -f /etc/nginx/sites-enabled/default
-sudo nginx -t && sudo systemctl reload nginx
+sudo nginx -t
+if sudo systemctl is-active --quiet nginx; then
+  sudo systemctl reload nginx
+else
+  sudo systemctl enable nginx
+  sudo systemctl start nginx
+fi
 
 # ── 5. Log directory ─────────────────────────────────────────────────────────
 mkdir -p "$LOG_DIR"

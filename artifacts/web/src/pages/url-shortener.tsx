@@ -201,7 +201,28 @@ export default function UrlShortener() {
     return `${window.location.origin}/s/${row.shortCode}`;
   }
 
-  function copyUrl(row: ShortUrl) { navigator.clipboard.writeText(getShortUrl(row)); toast.success("Copied to clipboard"); }
+  function clipboardCopy(text: string, message = "Copied to clipboard") {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => toast.success(message)).catch(() => fallbackCopy(text, message));
+    } else {
+      fallbackCopy(text, message);
+    }
+  }
+
+  function fallbackCopy(text: string, message = "Copied to clipboard") {
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try { document.execCommand("copy"); toast.success(message); }
+    catch { toast.error("Copy failed — please select and copy manually"); }
+    document.body.removeChild(el);
+  }
+
+  function copyUrl(row: ShortUrl) { clipboardCopy(getShortUrl(row), "Copied to clipboard"); }
 
   function formatDate(d: string | null) { return d ? new Date(d).toLocaleDateString() : "—"; }
 
@@ -461,7 +482,7 @@ export default function UrlShortener() {
               <CardContent>
                 <div className="flex items-center gap-2">
                   <code className="flex-1 font-mono text-sm bg-muted px-3 py-2 rounded-md break-all">{revealedKey}</code>
-                  <Button size="sm" variant="outline" onClick={() => { navigator.clipboard.writeText(revealedKey); toast.success("Key copied"); }}><Copy className="h-4 w-4" /></Button>
+                  <Button size="sm" variant="outline" onClick={() => clipboardCopy(revealedKey, "Key copied")}><Copy className="h-4 w-4" /></Button>
                 </div>
                 <Button size="sm" variant="ghost" className="mt-2 text-xs" onClick={() => setRevealedKey(null)}>Dismiss</Button>
               </CardContent>
@@ -535,7 +556,7 @@ export default function UrlShortener() {
                   </div>
                   <div className="relative">
                     <pre className="bg-muted text-xs rounded-md px-4 py-2.5 overflow-x-auto font-mono">{e.example}</pre>
-                    <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6 opacity-60 hover:opacity-100" onClick={() => { navigator.clipboard.writeText(e.example); toast.success("Copied"); }}><Copy className="h-3 w-3" /></Button>
+                    <Button variant="ghost" size="icon" className="absolute top-1 right-1 h-6 w-6 opacity-60 hover:opacity-100" onClick={() => clipboardCopy(e.example, "Copied")}><Copy className="h-3 w-3" /></Button>
                   </div>
                 </div>
               ))}
@@ -601,7 +622,7 @@ export default function UrlShortener() {
             <p className="text-xs text-muted-foreground text-center break-all">{qrTarget}</p>
           </div>
           <DialogFooter className="flex-row gap-2 sm:gap-2">
-            <Button variant="outline" className="flex-1" onClick={() => { navigator.clipboard.writeText(qrTarget); toast.success("URL copied"); }}><Copy className="h-4 w-4 mr-2" />Copy URL</Button>
+            <Button variant="outline" className="flex-1" onClick={() => clipboardCopy(qrTarget, "URL copied")}><Copy className="h-4 w-4 mr-2" />Copy URL</Button>
             <Button className="flex-1" onClick={downloadQr}><Download className="h-4 w-4 mr-2" />Download PNG</Button>
           </DialogFooter>
         </DialogContent>

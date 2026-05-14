@@ -93,8 +93,30 @@ export default function ShortDomains() {
   }
 
   function copyToken(token: string) {
-    navigator.clipboard.writeText(token);
-    toast.success("Verification token copied");
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(token).then(() => {
+        toast.success("Verification token copied");
+      }).catch(() => fallbackCopy(token));
+    } else {
+      fallbackCopy(token);
+    }
+  }
+
+  function fallbackCopy(text: string) {
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try {
+      document.execCommand("copy");
+      toast.success("Verification token copied");
+    } catch {
+      toast.error("Copy failed — please select and copy the token manually");
+    }
+    document.body.removeChild(el);
   }
 
   return (

@@ -4,12 +4,10 @@ import * as schema from "./schema";
 
 const { Pool } = pg;
 
-const connectionString = process.env.CUSTOM_DATABASE_URL || process.env.DATABASE_URL;
+const connectionString = process.env.DATABASE_URL || process.env.CUSTOM_DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error(
-    "No database URL configured. Set CUSTOM_DATABASE_URL or DATABASE_URL.",
-  );
+  throw new Error("DATABASE_URL must be set in .env.production (or CUSTOM_DATABASE_URL in Replit)");
 }
 
 export const pool = new Pool({ connectionString });

@@ -318,16 +318,22 @@ export function Layout({ children }: LayoutProps) {
         </SheetContent>
       </Sheet>
       <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-background">
-        <header className="h-14 flex items-center justify-between px-4 border-b border-border bg-card shrink-0 lg:hidden">
-          <div className="flex items-center">
+        <header className="h-14 flex items-center justify-between px-3 sm:px-4 border-b border-border bg-card shrink-0 lg:hidden">
+          <button
+            className="flex items-center min-w-0"
+            onClick={() => setMobileOpen(true)}
+            aria-label="Open navigation"
+          >
             {logoUrl ? (
-              <img src={logoUrl} alt="Logo" className="h-7 w-7 object-contain mr-2 rounded" />
+              <img src={logoUrl} alt="Logo" className="h-7 w-7 object-contain mr-2 rounded shrink-0" />
             ) : (
-              <Activity className="h-5 w-5 text-primary mr-2" />
+              <Activity className="h-5 w-5 text-primary mr-2 shrink-0" />
             )}
-            <span className="font-semibold tracking-tight">{appCfg?.appName ?? "Ashika"}</span>
-          </div>
-          <div className="flex items-center gap-1">
+            <span className="font-semibold tracking-tight truncate text-sm sm:text-base">
+              {appCfg?.appName ?? "Ashika"}
+            </span>
+          </button>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
             <ThemeToggle />
             <Button variant="ghost" size="icon" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
               <Menu className="h-5 w-5" />
@@ -335,7 +341,7 @@ export function Layout({ children }: LayoutProps) {
           </div>
         </header>
         <ScrollArea className="flex-1">
-          <div className="p-6 md:p-8 max-w-7xl mx-auto">
+          <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
             {children}
           </div>
         </ScrollArea>

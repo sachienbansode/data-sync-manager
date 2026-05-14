@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { resolveTxt } from "dns/promises";
+import { Resolver } from "dns/promises";
 import { randomBytes } from "crypto";
 import { db, shortDomainsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
@@ -45,7 +45,9 @@ router.post("/short-domains/:id/verify", authenticate, requireRole("Admin"), asy
   if (!domain) { res.status(404).json({ error: "Not found" }); return; }
 
   try {
-    const records = await resolveTxt(domain.domain);
+    const resolver = new Resolver();
+    resolver.setServers(["8.8.8.8", "1.1.1.1"]);
+    const records = await resolver.resolveTxt(domain.domain);
     const flat = records.flat();
     const verified = flat.some(r => r === domain.verificationToken);
 

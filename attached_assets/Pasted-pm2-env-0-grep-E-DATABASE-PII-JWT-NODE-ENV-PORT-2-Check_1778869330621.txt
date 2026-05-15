@@ -1,0 +1,42 @@
+pm2 env 0 | grep -E "DATABASE|PII|JWT|NODE_ENV|PORT"
+
+# 2. Check the error log for the exact DB error
+pm2 logs ananta-api --err --lines 30
+
+# 3. Confirm which ecosystem.config.cjs is on the server right now
+head -5 /home/ubuntu/ananta-platform/ecosystem.config.cjs
+
+# 4. Confirm DATABASE_URL is in .env.production
+grep -c "DATABASE_URL" /home/ubuntu/ananta-platform/.env.production
+[TAILING] Tailing last 30 lines for [ananta-api] process (change the value with --lines option)
+/home/ubuntu/logs/ananta-api-error.log last 30 lines:
+0|ananta-a |     at NodePgPreparedQuery.queryWithCache (/home/ubuntu/ananta-platform/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+0|ananta-a |     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+0|ananta-a |     at async <anonymous> (/home/ubuntu/ananta-platform/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+0|ananta-a |     at async <anonymous> (/home/ubuntu/ananta-platform/artifacts/api-server/src/routes/auth.ts:144:18)
+0|ananta-a | 2026-05-13 16:59:13: Error: Failed query: select "users"."id", "users"."email", "users"."first_name", "users"."last_name", "users"."role_id", "roles"."name", "users"."is_active", "users"."mfa_enabled", "users"."auth_provider", "users"."password_hash" from "users" inner join "roles" on "users"."role_id" = "roles"."id" where "users"."email" = $1
+0|ananta-a | params: admin@ashikagroup.com
+0|ananta-a |     at NodePgPreparedQuery.queryWithCache (/home/ubuntu/ananta-platform/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+0|ananta-a |     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+0|ananta-a |     at async <anonymous> (/home/ubuntu/ananta-platform/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+0|ananta-a |     at async <anonymous> (/home/ubuntu/ananta-platform/artifacts/api-server/src/routes/auth.ts:144:18)
+0|ananta-a | 2026-05-13 17:00:56: Error: Failed query: select "users"."id", "users"."email", "users"."first_name", "users"."last_name", "users"."role_id", "roles"."name", "users"."is_active", "users"."mfa_enabled", "users"."auth_provider", "users"."password_hash" from "users" inner join "roles" on "users"."role_id" = "roles"."id" where "users"."email" = $1
+0|ananta-a | params: admin@ashikagroup.com
+0|ananta-a |     at NodePgPreparedQuery.queryWithCache (/home/ubuntu/ananta-platform/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/pg-core/session.ts:73:11)
+0|ananta-a |     at process.processTicksAndRejections (node:internal/process/task_queues:95:5)
+0|ananta-a |     at async <anonymous> (/home/ubuntu/ananta-platform/node_modules/.pnpm/drizzle-orm@0.45.2_@types+pg@8.18.0_pg@8.20.0/node_modules/src/node-postgres/session.ts:154:19)
+0|ananta-a |     at async <anonymous> (/home/ubuntu/ananta-platform/artifacts/api-server/src/routes/auth.ts:144:18)
+0|ananta-a | You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+0|ananta-a | Error: DATABASE_URL must be set in .env.production (or CUSTOM_DATABASE_URL in Replit)
+0|ananta-a |     at ../../lib/db/src/index.ts (/home/ubuntu/ananta-platform/lib/db/src/index.ts:10:9)
+0|ananta-a |     at __init (file:///home/ubuntu/ananta-platform/artifacts/api-server/dist/index.mjs:22:56)
+0|ananta-a |     at <anonymous> (/home/ubuntu/ananta-platform/artifacts/api-server/src/app.ts:5:1)
+0|ananta-a |     at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+0|ananta-a |     at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+0|ananta-a | You have triggered an unhandledRejection, you may have forgotten to catch a Promise rejection:
+0|ananta-a | Error: DATABASE_URL must be set in .env.production (or CUSTOM_DATABASE_URL in Replit)
+0|ananta-a |     at ../../lib/db/src/index.ts (/home/ubuntu/ananta-platform/lib/db/src/index.ts:10:9)
+0|ananta-a |     at __init (file:///home/ubuntu/ananta-platform/artifacts/api-server/dist/index.mjs:22:56)
+0|ananta-a |     at <anonymous> (/home/ubuntu/ananta-platform/artifacts/api-server/src/app.ts:5:1)
+0|ananta-a |     at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+0|ananta-a |     at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)

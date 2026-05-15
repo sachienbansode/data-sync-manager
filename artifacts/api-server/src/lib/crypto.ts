@@ -25,7 +25,7 @@ export function loadEncryptionKey(): string {
     throw new Error(
       "PII_ENCRYPTION_KEY is not set. " +
       "Generate one with: openssl rand -hex 32 " +
-      "and add it as a Replit Secret before using PII routes."
+      "and add it to .env.production (server) or Replit Secrets (dev) before using PII routes."
     );
   }
 

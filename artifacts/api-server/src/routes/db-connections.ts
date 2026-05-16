@@ -237,6 +237,12 @@ router.delete("/admin/db-connections/:id", authenticate, requireRole("Admin"), a
   res.status(204).send();
 });
 
+interface TestStep {
+  name: string;
+  status: "success" | "fail" | "info" | "skip";
+  detail: string;
+}
+
 // POST /api/admin/db-connections/:id/test — verify connectivity
 router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin"), async (req, res) => {
   const id = parseInt(String(req.params.id));
@@ -245,9 +251,10 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
 
   // S3: use AWS SDK for a real connectivity check
   if (conn.dbEngine === "s3") {
+    const steps: TestStep[] = [];
     const bucket = conn.extraParams?.bucket ?? "";
     if (!bucket || !conn.usernameEnc || !conn.passwordEnc) {
-      res.status(400).json({ success: false, error: "Bucket, Access Key ID and Secret Access Key are required to test an S3 connection" });
+      res.status(400).json({ success: false, error: "Bucket, Access Key ID and Secret Access Key are required to test an S3 connection", steps });
       return;
     }
     loadEncryptionKey();
@@ -257,7 +264,7 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
       accessKeyId = decrypt(conn.usernameEnc);
       secretAccessKey = decrypt(conn.passwordEnc);
     } catch {
-      res.status(500).json({ success: false, error: "Failed to decrypt S3 credentials" });
+      res.status(500).json({ success: false, error: "Failed to decrypt S3 credentials", steps });
       return;
     }
     const { S3Client, ListObjectsV2Command } = await import("@aws-sdk/client-s3");
@@ -274,6 +281,8 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     const savedEndpoint = conn.extraParams?.endpoint;
     const s3 = makeS3Client(savedRegion, savedEndpoint);
 
+    steps.push({ name: "Credentials Decrypted", status: "success", detail: "Access Key ID and Secret Access Key loaded successfully" });
+
     let s3Success = false;
     let s3Error: string | null = null;
     let correctedEndpoint: string | null = null;
@@ -281,8 +290,8 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     try {
       await s3.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
       s3Success = true;
+      steps.push({ name: "S3 Bucket Access", status: "success", detail: `Bucket "${bucket}" in region "${savedRegion}" is accessible` });
     } catch (err: unknown) {
-      // Handle region-redirect: bucket is in a different region than configured
       const errAny = err as Record<string, unknown>;
       const isPermanentRedirect =
         errAny?.name === "PermanentRedirect" ||
@@ -290,25 +299,28 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
         (typeof errAny?.message === "string" && errAny.message.includes("addressed using the specified endpoint"));
 
       if (isPermanentRedirect && !savedEndpoint) {
-        // Extract the correct endpoint from the error metadata
         const redirectEndpoint = errAny?.Endpoint as string | undefined;
         if (redirectEndpoint) {
           correctedEndpoint = `https://${redirectEndpoint}`;
+          steps.push({ name: "Region Redirect", status: "info", detail: `Bucket is in a different region — retrying with corrected endpoint: ${correctedEndpoint}` });
           const s3Retry = makeS3Client(savedRegion, correctedEndpoint);
           try {
             await s3Retry.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
             s3Success = true;
-            // Persist the working endpoint so future operations use it automatically
+            steps.push({ name: "S3 Bucket Access", status: "success", detail: `Bucket "${bucket}" accessible via corrected endpoint (saved automatically)` });
             const newParams = { ...(conn.extraParams ?? {}), endpoint: correctedEndpoint };
             await db.update(dbConnectionsTable).set({ extraParams: newParams, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
           } catch (retryErr: unknown) {
             s3Error = retryErr instanceof Error ? retryErr.message : "S3 retry failed";
+            steps.push({ name: "S3 Bucket Access", status: "fail", detail: s3Error });
           }
         } else {
           s3Error = `${errAny?.message ?? "S3 connection failed"} — the bucket is in a different AWS region than configured. Update the Region field to match your bucket's region (e.g. ap-south-1, eu-west-1).`;
+          steps.push({ name: "S3 Bucket Access", status: "fail", detail: s3Error });
         }
       } else {
         s3Error = err instanceof Error ? err.message : "S3 connection failed";
+        steps.push({ name: "S3 Bucket Access", status: "fail", detail: s3Error });
       }
     }
     await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: s3Success, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
@@ -319,12 +331,10 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
       resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
     });
     if (s3Success) {
-      const note = correctedEndpoint
-        ? ` (auto-corrected endpoint saved: ${correctedEndpoint})`
-        : "";
-      res.json({ success: true, message: `S3 bucket "${bucket}" is accessible${note}` });
+      const note = correctedEndpoint ? ` (auto-corrected endpoint saved: ${correctedEndpoint})` : "";
+      res.json({ success: true, message: `S3 bucket "${bucket}" is accessible${note}`, steps });
     } else {
-      res.status(400).json({ success: false, error: s3Error });
+      res.status(400).json({ success: false, error: s3Error, steps });
     }
     return;
   }
@@ -332,7 +342,11 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   // SFTP / CSV: no live connectivity check available
   if (isFileEngine(conn.dbEngine)) {
     await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: true, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
-    res.json({ success: true, message: "Connection saved (live connectivity check not available for this engine type)" });
+    const steps: TestStep[] = [
+      { name: "Connection Saved", status: "success", detail: "Connection details stored successfully" },
+      { name: "Live Connectivity", status: "skip", detail: "Live connectivity check is not available for SFTP/CSV connections" },
+    ];
+    res.json({ success: true, message: "Connection saved (live connectivity check not available for this engine type)", steps });
     return;
   }
 
@@ -343,15 +357,18 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     username = decrypt(conn.usernameEnc ?? "");
     password = decrypt(conn.passwordEnc ?? "");
   } catch {
-    res.status(500).json({ success: false, error: "Failed to decrypt credentials" });
+    res.status(500).json({ success: false, error: "Failed to decrypt credentials", steps: [] });
     return;
   }
 
   const host = conn.host ?? "";
   const port = conn.port ?? 5432;
   const savedSSL = conn.extraParams?.ssl === "true";
+  const steps: TestStep[] = [];
 
-  // Step 1: raw TCP check — tells us definitively if the port is reachable
+  steps.push({ name: "Credentials Decrypted", status: "success", detail: `Credentials for user "${username}" loaded successfully` });
+
+  // Step 1: raw TCP check
   const tcpReachable = await new Promise<boolean>(resolve => {
     const socket = new net.Socket();
     const done = (ok: boolean) => { socket.destroy(); resolve(ok); };
@@ -363,19 +380,37 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   });
 
   if (!tcpReachable) {
-    const err = `TCP connection to ${host}:${port} failed — the port is not reachable from this server. Ensure your database firewall/security-group allows inbound connections on port ${port} from all IPs (0.0.0.0/0) or from Replit's outbound range.`;
+    const detail = `Cannot reach ${host}:${port} — the host is unreachable or the port is blocked. Check your firewall / security group rules allow inbound TCP on port ${port}.`;
+    steps.push({ name: "TCP Connectivity", status: "fail", detail });
     await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: false, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
     await db.insert(auditLogsTable).values({
       userId: req.user!.sub, userEmail: req.user!.email,
       action: "DB_CONNECTION_TESTED",
-      details: `Tested connection: ${conn.name} — FAILED (TCP unreachable): ${err}`,
+      details: `Tested connection: ${conn.name} — FAILED (TCP unreachable)`,
       resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
     });
-    res.status(400).json({ success: false, error: err });
+    res.status(400).json({ success: false, error: detail, steps });
     return;
   }
 
-  // Step 2: Postgres protocol — try plain then SSL (or SSL then plain)
+  steps.push({ name: "TCP Connectivity", status: "success", detail: `Port ${port} on ${host} is reachable` });
+
+  // Oracle: pg driver cannot authenticate — report TCP success and stop
+  if (conn.dbEngine === "oracle") {
+    const detail = `Oracle DB requires the native oracledb driver which is not installed on this server. TCP port ${port} on ${host} is reachable — your network and firewall settings are correct. To fully verify, connect using SQL*Plus or another Oracle client from this server.`;
+    steps.push({ name: "Protocol Authentication", status: "info", detail });
+    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: false, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.sub, userEmail: req.user!.email,
+      action: "DB_CONNECTION_TESTED",
+      details: `Tested Oracle connection: ${conn.name} — TCP reachable, driver test skipped`,
+      resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
+    });
+    res.status(400).json({ success: false, error: detail, steps });
+    return;
+  }
+
+  // Step 2: DB protocol — try plain then SSL (or SSL then plain)
   async function tryConnect(withSSL: boolean): Promise<{ ok: boolean; err: string | null }> {
     const p = new Pool({
       host,
@@ -398,30 +433,41 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   }
 
   let result = await tryConnect(savedSSL);
+  let autoFixedSSL = false;
 
-  // Auto-retry with opposite SSL mode — TCP is fine so it's worth trying
   if (!result.ok) {
     const retry = await tryConnect(!savedSSL);
     if (retry.ok) {
       const newParams = { ...(conn.extraParams ?? {}), ssl: String(!savedSSL) };
       await db.update(dbConnectionsTable).set({ extraParams: newParams, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
       result = retry;
+      autoFixedSSL = true;
+      steps.push({ name: "SSL Auto-Detect", status: "info", detail: `SSL mode switched to ${!savedSSL} and saved automatically` });
     }
   }
 
   const success = result.ok;
   let error: string | null = null;
-  if (!result.ok) {
+
+  if (success) {
+    const sslNote = autoFixedSSL ? ` (SSL=${!savedSSL}, auto-detected)` : savedSSL ? " (SSL enabled)" : " (SSL disabled)";
+    steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" to database "${conn.dbName}"${sslNote}` });
+    steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 executed successfully — database is responding" });
+  } else {
     const raw = result.err ?? "Connection failed";
     const isAuth = /password|authentication|role.*does not exist|pg_hba/i.test(raw);
     const isSSL  = /ssl|tls|certificate/i.test(raw);
     if (isAuth) {
       error = `${raw} — check the username and password are correct.`;
+      steps.push({ name: "Authentication", status: "fail", detail: error });
     } else if (isSSL) {
       error = `${raw} — try toggling the SSL/TLS option on this connection.`;
+      steps.push({ name: "Authentication", status: "fail", detail: error });
     } else {
       error = raw;
+      steps.push({ name: "Authentication", status: "fail", detail: error });
     }
+    steps.push({ name: "Query Test", status: "skip", detail: "Skipped — authentication failed" });
   }
 
   await db.update(dbConnectionsTable).set({
@@ -441,9 +487,9 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   });
 
   if (success) {
-    res.json({ success: true, message: "Connection successful" });
+    res.json({ success: true, message: "Connection successful", steps });
   } else {
-    res.status(400).json({ success: false, error });
+    res.status(400).json({ success: false, error, steps });
   }
 });
 

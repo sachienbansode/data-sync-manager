@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck, Search, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck, Search, ChevronLeft, ChevronRight, Copy, CheckCircle2, AlertCircle, Info, Minus } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { toast } from "sonner";
@@ -98,6 +98,10 @@ interface RunJob {
   createdAt: string;
 }
 
+type TestStepStatus = "success" | "fail" | "info" | "skip";
+interface TestStep { name: string; status: TestStepStatus; detail: string; }
+interface TestResult { connName: string; success: boolean; steps: TestStep[]; error: string | null; message: string | null; }
+
 const apiBase = `${import.meta.env.BASE_URL}api`;
 
 export default function DbConnections() {
@@ -114,6 +118,7 @@ export default function DbConnections() {
   const [historyConn, setHistoryConn] = useState<DbConnection | null>(null);
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const [search, setSearch] = useState("");
   const [engineFilter, setEngineFilter] = useState("__all__");
@@ -273,17 +278,29 @@ export default function DbConnections() {
 
   async function testConnection(id: number) {
     setTesting(id);
+    const conn = connections.find(c => c.id === id);
     try {
       const token = getAccessToken();
       const res = await fetch(`${apiBase}/admin/db-connections/${id}/test`, {
         method: "POST", headers: { Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
-      if (data.success) toast.success("Connection successful");
-      else toast.error(`Connection failed: ${data.error}`);
+      setTestResult({
+        connName: conn?.name ?? "Connection",
+        success: data.success,
+        steps: data.steps ?? [],
+        error: data.error ?? null,
+        message: data.message ?? null,
+      });
       load();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Test failed");
+      setTestResult({
+        connName: conn?.name ?? "Connection",
+        success: false,
+        steps: [],
+        error: err instanceof Error ? err.message : "Test request failed",
+        message: null,
+      });
     } finally {
       setTesting(null);
     }
@@ -725,6 +742,82 @@ export default function DbConnections() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteId(null)}>Cancel</Button>
             <Button variant="destructive" onClick={deleteConnection}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Test Result dialog */}
+      <Dialog open={!!testResult} onOpenChange={() => setTestResult(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {testResult?.success
+                ? <CheckCircle2 className="h-5 w-5 text-green-600" />
+                : <XCircle className="h-5 w-5 text-destructive" />}
+              Connection Test — {testResult?.connName}
+            </DialogTitle>
+            <DialogDescription>
+              {testResult?.success ? "All checks passed successfully." : "One or more checks failed. See details below."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Steps */}
+          {testResult && testResult.steps.length > 0 && (
+            <div className="space-y-2 py-1">
+              {testResult.steps.map((step, i) => (
+                <div key={i} className="flex items-start gap-3 text-sm">
+                  <div className="mt-0.5 shrink-0">
+                    {step.status === "success" && <CheckCircle2 className="h-4 w-4 text-green-600" />}
+                    {step.status === "fail"    && <AlertCircle  className="h-4 w-4 text-destructive" />}
+                    {step.status === "info"    && <Info         className="h-4 w-4 text-blue-500" />}
+                    {step.status === "skip"    && <Minus        className="h-4 w-4 text-muted-foreground" />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className={`font-medium leading-tight ${
+                      step.status === "fail" ? "text-destructive" :
+                      step.status === "info" ? "text-blue-700 dark:text-blue-400" :
+                      step.status === "skip" ? "text-muted-foreground" : ""
+                    }`}>{step.name}</p>
+                    <p className="text-muted-foreground text-xs mt-0.5 leading-relaxed">{step.detail}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Copyable error box */}
+          {testResult && !testResult.success && testResult.error && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Full Error</p>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs gap-1"
+                  onClick={() => {
+                    navigator.clipboard.writeText(testResult.error ?? "");
+                    toast.success("Error copied to clipboard");
+                  }}
+                >
+                  <Copy className="h-3 w-3" /> Copy
+                </Button>
+              </div>
+              <textarea
+                readOnly
+                value={testResult.error}
+                rows={4}
+                className="w-full resize-none rounded-md border bg-muted/50 px-3 py-2 text-xs font-mono text-destructive leading-relaxed focus:outline-none"
+              />
+              <p className="text-xs text-muted-foreground">Copy this error and share it for further diagnosis.</p>
+            </div>
+          )}
+
+          {testResult?.success && testResult.message && (
+            <p className="text-sm text-green-700 dark:text-green-400 font-medium">{testResult.message}</p>
+          )}
+
+          <DialogFooter>
+            <Button onClick={() => setTestResult(null)}>Close</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -96,6 +96,9 @@ def build_sqlalchemy_url(conn: dict) -> str:
         return f"mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
     elif engine in ("mssql", "sqlserver"):
         return f"mssql+pyodbc://{user}:{password}@{host}:{port}/{database}?driver=ODBC+Driver+17+for+SQL+Server"
+    elif engine in ("oracle", "oracledb"):
+        service = database or "ORCL"
+        return f"oracle+oracledb://{user}:{password}@{host}:{port}/?service_name={service}"
     return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{database}"
 
 

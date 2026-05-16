@@ -1,6 +1,6 @@
 import { useGetDashboardSummary } from "@workspace/api-client-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, ShieldAlert, Activity, UserX, Network, GitBranch, BookOpen, LogIn } from "lucide-react";
+import { Users, ShieldAlert, Activity, UserX, Network, GitBranch, BookOpen, LogIn, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -38,10 +38,13 @@ export default function Dashboard() {
 
   const pieData = summary.usersByRole.map(r => ({ name: r.roleName, value: r.count }));
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const s = summary as any;
+
   // Build chart data filling missing days for last 7 days
   type LoginActivityItem = { date: string; successes: number; failures: number };
   const activityMap = new Map<string, LoginActivityItem>();
-  (summary.loginActivity ?? []).forEach(d => activityMap.set(d.date, d));
+  (s.loginActivity ?? []).forEach((d: LoginActivityItem) => activityMap.set(d.date, d));
 
   const chartData: LoginActivityItem[] = [];
   for (let i = 6; i >= 0; i--) {
@@ -51,6 +54,27 @@ export default function Dashboard() {
     const found = activityMap.get(key);
     chartData.push({ date: formatDate(d.toISOString()), successes: found?.successes ?? 0, failures: found?.failures ?? 0 });
   }
+
+  // Pipeline activity — fill missing days
+  type PipelineActivityItem = { date: string; completed: number; failed: number };
+  const pipelineMap = new Map<string, PipelineActivityItem>();
+  (s.pipelineActivity ?? []).forEach((d: PipelineActivityItem) => pipelineMap.set(d.date, d));
+  const pipelineChartData: PipelineActivityItem[] = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const found = pipelineMap.get(key);
+    pipelineChartData.push({ date: formatDate(d.toISOString()), completed: found?.completed ?? 0, failed: found?.failed ?? 0 });
+  }
+
+  // Pipeline status totals
+  type PipelineJobStat = { status: string; count: number };
+  const pipelineStats: PipelineJobStat[] = s.pipelineJobStats ?? [];
+  const pipelineTotal = pipelineStats.reduce((a: number, b: PipelineJobStat) => a + b.count, 0);
+  const pipelineSuccess = pipelineStats.find((x: PipelineJobStat) => x.status === "success")?.count ?? 0;
+  const pipelineFailed = pipelineStats.find((x: PipelineJobStat) => x.status === "failed")?.count ?? 0;
+  const pipelineRunning = pipelineStats.find((x: PipelineJobStat) => x.status === "running")?.count ?? 0;
 
   const statCards = [
     { label: "Total Users", value: summary.totalUsers, icon: Users, sub: null },
@@ -90,17 +114,106 @@ export default function Dashboard() {
         ))}
       </div>
 
+      {/* Pipeline analytics row */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        {/* Login activity bar chart */}
-        <Card className="col-span-4">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
+        <Card className="lg:col-span-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GitBranch className="h-4 w-4 text-primary" />
+              Pipeline Runs (7 Days)
+            </CardTitle>
+            <CardDescription>Daily completed and failed pipeline job counts.</CardDescription>
+          </CardHeader>
+          <CardContent className="h-[220px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={pipelineChartData} margin={{ top: 0, right: 8, left: -20, bottom: 0 }} barSize={14}>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
+                <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))", fontSize: 12 }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="completed" name="Completed" fill="hsl(var(--chart-2))" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="failed" name="Failed" fill="hsl(var(--destructive))" radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        <Card className="lg:col-span-3">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Pipeline Health</CardTitle>
+            <CardDescription>All-time job status breakdown.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {pipelineTotal === 0 ? (
+              <div className="h-[180px] flex flex-col items-center justify-center text-muted-foreground text-sm gap-2">
+                <GitBranch className="h-8 w-8 opacity-20" />
+                No pipeline jobs yet
+              </div>
+            ) : (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Total Runs</span>
+                  <span className="text-2xl font-bold">{pipelineTotal}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+                  <div className="flex-1 bg-muted rounded-full h-2">
+                    <div
+                      className="bg-green-500 h-2 rounded-full transition-all"
+                      style={{ width: `${pipelineTotal > 0 ? (pipelineSuccess / pipelineTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium w-8 text-right">{pipelineSuccess}</span>
+                  <span className="text-xs text-muted-foreground">Success</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-destructive shrink-0" />
+                  <div className="flex-1 bg-muted rounded-full h-2">
+                    <div
+                      className="bg-destructive h-2 rounded-full transition-all"
+                      style={{ width: `${pipelineTotal > 0 ? (pipelineFailed / pipelineTotal) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium w-8 text-right">{pipelineFailed}</span>
+                  <span className="text-xs text-muted-foreground">Failed</span>
+                </div>
+                {pipelineRunning > 0 && (
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
+                    <div className="flex-1 bg-muted rounded-full h-2">
+                      <div
+                        className="bg-yellow-500 h-2 rounded-full transition-all"
+                        style={{ width: `${(pipelineRunning / pipelineTotal) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-sm font-medium w-8 text-right">{pipelineRunning}</span>
+                    <span className="text-xs text-muted-foreground">Running</span>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground pt-1">
+                  Success rate: <span className="font-semibold text-foreground">{pipelineTotal > 0 ? Math.round((pipelineSuccess / pipelineTotal) * 100) : 0}%</span>
+                </p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Login analytics + users by role row */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="lg:col-span-4">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
               <LogIn className="h-4 w-4 text-primary" />
               Login Activity (7 Days)
             </CardTitle>
             <CardDescription>Daily successful and failed login attempts.</CardDescription>
           </CardHeader>
-          <CardContent className="h-[260px]">
+          <CardContent className="h-[200px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} margin={{ top: 0, right: 8, left: -20, bottom: 0 }} barSize={14}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
@@ -119,16 +232,16 @@ export default function Dashboard() {
         </Card>
 
         {/* Users by role */}
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Users by Role</CardTitle>
+        <Card className="lg:col-span-3">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Users by Role</CardTitle>
             <CardDescription>Distribution of roles across the platform.</CardDescription>
           </CardHeader>
-          <CardContent className="h-[260px]">
+          <CardContent className="h-[200px]">
             {pieData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={5} dataKey="value">
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={50} outerRadius={68} paddingAngle={5} dataKey="value">
                     {pieData.map((_, index) => (
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
@@ -145,17 +258,17 @@ export default function Dashboard() {
       </div>
 
       {/* Recent logins compact */}
-      {(summary.recentLogins as unknown[]).length > 0 && (
+      {((s.recentLogins ?? []) as unknown[]).length > 0 && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base flex items-center gap-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 font-medium">
               <LogIn className="h-4 w-4" />
               Recent Logins
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-2">
-              {(summary.recentLogins as Array<{ id: number; userEmail: string; action: string; ipAddress: string; createdAt: string }>).map((log) => {
+            <div className="space-y-1.5">
+              {(s.recentLogins as Array<{ id: number; userEmail: string; action: string; ipAddress: string; createdAt: string }>).map((log) => {
                 const meta = ACTION_META[log.action] ?? { label: log.action, variant: "outline" as const };
                 return (
                   <div key={log.id} className="flex items-center justify-between text-sm gap-3">

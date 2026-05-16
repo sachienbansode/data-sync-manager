@@ -107,13 +107,19 @@ const LOAD_TYPE_OPTIONS = [
 ] as const;
 type LoadType = "full_load" | "incremental";
 
+function splitToScripts(sql: string | null | undefined): string[] {
+  if (!sql?.trim()) return [""];
+  const parts = sql.split(";").map(s => s.trim()).filter(Boolean);
+  return parts.length > 0 ? parts : [""];
+}
+
 const EMPTY_FORM = {
   name: "", description: "",
   sourceObjectId: "__none__",
   destObjectId: "__none__",
   loadType: "full_load" as LoadType,
-  preSqlCommand: "",
-  postSqlCommand: "",
+  preSqlScripts: [""] as string[],
+  postSqlScripts: [""] as string[],
   conflictColumns: "",
   watermarkColumn: "",
   scheduleEnabled: false, scheduleCron: "",
@@ -183,8 +189,8 @@ export default function Workflow() {
       sourceObjectId: p.sourceObjectId ? String(p.sourceObjectId) : "__none__",
       destObjectId: p.destObjectId ? String(p.destObjectId) : "__none__",
       loadType: (p.loadType as LoadType) ?? "full_load",
-      preSqlCommand: p.preSqlCommand ?? "",
-      postSqlCommand: p.postSqlCommand ?? "",
+      preSqlScripts: splitToScripts(p.preSqlCommand),
+      postSqlScripts: splitToScripts(p.postSqlCommand),
       conflictColumns: p.conflictColumns ?? "",
       watermarkColumn: p.watermarkColumn ?? "",
       scheduleEnabled: p.scheduleEnabled, scheduleCron: p.scheduleCron ?? "",
@@ -216,8 +222,8 @@ export default function Workflow() {
         sourceObjectId: form.sourceObjectId !== "__none__" ? parseInt(form.sourceObjectId) : null,
         destObjectId: form.destObjectId !== "__none__" ? parseInt(form.destObjectId) : null,
         loadType: form.loadType,
-        preSqlCommand: form.preSqlCommand.trim() || undefined,
-        postSqlCommand: form.postSqlCommand.trim() || undefined,
+        preSqlCommand: form.preSqlScripts.filter(s => s.trim()).join(";\n").trim() || undefined,
+        postSqlCommand: form.postSqlScripts.filter(s => s.trim()).join(";\n").trim() || undefined,
         conflictColumns: form.conflictColumns.trim() || undefined,
         watermarkColumn: form.watermarkColumn.trim() || undefined,
         scheduleEnabled: form.scheduleEnabled,
@@ -646,27 +652,92 @@ export default function Workflow() {
                 </p>
               </div>
 
-              <div className="space-y-1">
-                <Label>Pre-Load SQL <span className="text-xs text-muted-foreground font-normal">(optional — runs on destination before data transfer)</span></Label>
-                <Textarea
-                  value={form.preSqlCommand}
-                  onChange={e => setForm(f => ({ ...f, preSqlCommand: e.target.value }))}
-                  placeholder={form.loadType === "full_load" ? "TRUNCATE TABLE target_table;" : "DELETE FROM target_table WHERE updated_at < NOW() - INTERVAL '90 days';"}
-                  className="font-mono text-xs resize-none"
-                  rows={3}
-                />
-                <p className="text-xs text-muted-foreground">No write operations will be performed on the source connection.</p>
+              {/* Pre-Load SQL — multiple script blocks */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Pre-Load SQL <span className="text-xs text-muted-foreground font-normal">(optional — runs on destination before data transfer)</span></Label>
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    className="h-6 text-xs gap-1 px-2"
+                    onClick={() => setForm(f => ({ ...f, preSqlScripts: [...f.preSqlScripts, ""] }))}
+                  >
+                    <Plus className="h-3 w-3" /> Add Script
+                  </Button>
+                </div>
+                {form.preSqlScripts.map((script, idx) => (
+                  <div key={idx} className="flex gap-1.5 items-start">
+                    <div className="flex-1 space-y-0.5">
+                      {form.preSqlScripts.length > 1 && (
+                        <p className="text-[10px] text-muted-foreground font-mono pl-1">Script {idx + 1}</p>
+                      )}
+                      <Textarea
+                        value={script}
+                        onChange={e => setForm(f => {
+                          const arr = [...f.preSqlScripts];
+                          arr[idx] = e.target.value;
+                          return { ...f, preSqlScripts: arr };
+                        })}
+                        placeholder={idx === 0 && form.loadType === "full_load" ? "TRUNCATE TABLE target_table" : "DELETE FROM target_table WHERE updated_at < NOW() - INTERVAL '90 days'"}
+                        className="font-mono text-xs resize-none"
+                        rows={3}
+                      />
+                    </div>
+                    {form.preSqlScripts.length > 1 && (
+                      <Button
+                        type="button" variant="ghost" size="icon"
+                        className="h-7 w-7 shrink-0 mt-5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setForm(f => ({ ...f, preSqlScripts: f.preSqlScripts.filter((_, i) => i !== idx) }))}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">Each script is one SQL statement. No write operations will be performed on the source connection.</p>
               </div>
 
-              <div className="space-y-1">
-                <Label>Post-Load SQL <span className="text-xs text-muted-foreground font-normal">(optional — runs on destination after data transfer)</span></Label>
-                <Textarea
-                  value={form.postSqlCommand}
-                  onChange={e => setForm(f => ({ ...f, postSqlCommand: e.target.value }))}
-                  placeholder="ANALYZE target_table; UPDATE load_log SET status = 'done', loaded_at = NOW() WHERE pipeline_id = 1;"
-                  className="font-mono text-xs resize-none"
-                  rows={3}
-                />
+              {/* Post-Load SQL — multiple script blocks */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Post-Load SQL <span className="text-xs text-muted-foreground font-normal">(optional — runs on destination after data transfer)</span></Label>
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    className="h-6 text-xs gap-1 px-2"
+                    onClick={() => setForm(f => ({ ...f, postSqlScripts: [...f.postSqlScripts, ""] }))}
+                  >
+                    <Plus className="h-3 w-3" /> Add Script
+                  </Button>
+                </div>
+                {form.postSqlScripts.map((script, idx) => (
+                  <div key={idx} className="flex gap-1.5 items-start">
+                    <div className="flex-1 space-y-0.5">
+                      {form.postSqlScripts.length > 1 && (
+                        <p className="text-[10px] text-muted-foreground font-mono pl-1">Script {idx + 1}</p>
+                      )}
+                      <Textarea
+                        value={script}
+                        onChange={e => setForm(f => {
+                          const arr = [...f.postSqlScripts];
+                          arr[idx] = e.target.value;
+                          return { ...f, postSqlScripts: arr };
+                        })}
+                        placeholder={idx === 0 ? "ANALYZE target_table" : "UPDATE load_log SET status = 'done', loaded_at = NOW() WHERE pipeline_id = 1"}
+                        className="font-mono text-xs resize-none"
+                        rows={3}
+                      />
+                    </div>
+                    {form.postSqlScripts.length > 1 && (
+                      <Button
+                        type="button" variant="ghost" size="icon"
+                        className="h-7 w-7 shrink-0 mt-5 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => setForm(f => ({ ...f, postSqlScripts: f.postSqlScripts.filter((_, i) => i !== idx) }))}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground">Each script runs after the data transfer completes.</p>
               </div>
 
               {form.loadType === "incremental" && (

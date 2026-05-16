@@ -35,6 +35,7 @@ import DocsViewer from "@/pages/docs-viewer";
 import DocsAdmin from "@/pages/docs-admin";
 import About from "@/pages/about";
 import UrlShortener from "@/pages/url-shortener";
+import DataPreview from "@/pages/data-preview";
 import ShortDomains from "@/pages/admin/short-domains";
 import Campaigns from "@/pages/email-hub/campaigns";
 import CampaignDetail from "@/pages/email-hub/campaign-detail";
@@ -158,6 +159,10 @@ function Router() {
       </Route>
       <Route path="/admin/comm-settings">
         <ProtectedRoute component={CommSettings} path="/admin/comm-settings" requireRole="Admin" />
+      </Route>
+
+      <Route path="/data-preview">
+        <ProtectedRoute component={DataPreview} path="/data-preview" requireRole="Admin" />
       </Route>
 
       <Route path="/auth/callback" component={AuthCallback} />

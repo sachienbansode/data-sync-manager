@@ -224,7 +224,12 @@ export default function UrlShortener() {
 
   function copyUrl(row: ShortUrl) { clipboardCopy(getShortUrl(row), "Copied to clipboard"); }
 
-  function formatDate(d: string | null) { return d ? new Date(d).toLocaleDateString() : "—"; }
+  function formatDate(d: string | null) {
+    if (!d) return "—";
+    const datePart = (typeof d === "string" ? d : new Date(d).toISOString()).slice(0, 10);
+    const [y, m, day] = datePart.split("-").map(Number);
+    return new Date(y, m - 1, day).toLocaleDateString();
+  }
 
   function getStatus(row: ShortUrl) {
     if (!row.isActive) return "Inactive";

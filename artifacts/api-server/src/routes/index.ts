@@ -25,6 +25,7 @@ import commSettingsRouter from "./comm-settings";
 import commTemplatesRouter from "./comm-templates";
 import commCampaignsRouter, { initCommScheduler } from "./comm-campaigns";
 import commWebhookRouter from "./comm-webhook";
+import dataPreviewRouter from "./data-preview";
 
 const router: IRouter = Router();
 
@@ -54,6 +55,7 @@ router.use(commSettingsRouter);
 router.use(commTemplatesRouter);
 router.use(commCampaignsRouter);
 router.use(commWebhookRouter);
+router.use(dataPreviewRouter);
 
 initCommScheduler();
 

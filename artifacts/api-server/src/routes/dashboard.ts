@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, sql, desc, and, gte, lte } from "drizzle-orm";
-import { db, usersTable, rolesTable, auditLogsTable, dbConnectionsTable, dataPipelinesTable, apiApplicationsTable } from "@workspace/db";
+import { db, usersTable, rolesTable, auditLogsTable, dbConnectionsTable, dataPipelinesTable, dataJobsTable, apiApplicationsTable } from "@workspace/db";
 import { GetAuditLogQueryParams } from "@workspace/api-zod";
 import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 
@@ -64,6 +64,31 @@ router.get("/dashboard/summary", authenticate, requirePageAccess("/dashboard"), 
     .orderBy(desc(auditLogsTable.createdAt))
     .limit(10);
 
+  // Pipeline job status breakdown (all-time)
+  const pipelineJobStats = await db
+    .select({
+      status: dataJobsTable.status,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(dataJobsTable)
+    .where(sql`${dataJobsTable.type} = 'pipeline'`)
+    .groupBy(dataJobsTable.status);
+
+  // Pipeline job activity last 7 days
+  const pipelineActivity = await db
+    .select({
+      date: sql<string>`date_trunc('day', ${dataJobsTable.createdAt})::date::text`,
+      completed: sql<number>`count(*) filter (where ${dataJobsTable.status} = 'success')::int`,
+      failed: sql<number>`count(*) filter (where ${dataJobsTable.status} = 'failed')::int`,
+    })
+    .from(dataJobsTable)
+    .where(and(
+      gte(dataJobsTable.createdAt, sevenDaysAgo),
+      sql`${dataJobsTable.type} = 'pipeline'`,
+    ))
+    .groupBy(sql`date_trunc('day', ${dataJobsTable.createdAt})::date`)
+    .orderBy(sql`date_trunc('day', ${dataJobsTable.createdAt})::date`);
+
   res.json({
     totalUsers: totals?.total ?? 0,
     activeUsers: totals?.active ?? 0,
@@ -75,6 +100,8 @@ router.get("/dashboard/summary", authenticate, requirePageAccess("/dashboard"), 
     usersByRole,
     loginActivity,
     recentLogins,
+    pipelineJobStats,
+    pipelineActivity,
   });
 });
 

@@ -6,7 +6,7 @@ import {
   Activity, Mail, Settings, ChevronDown, ChevronRight, Database,
   GitBranch, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
   Type, FileType, LogIn, Info, Layers, Table2, History, Link2,
-  Megaphone, Send,
+  Megaphone, Send, ScanSearch,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -59,6 +59,7 @@ const dataPipelineGroup: NavGroup = {
     { href: "/admin/data-objects", label: "Step 2: Data Objects", icon: Table2 },
     { href: "/workflow", label: "Step 3: Pipelines", icon: GitBranch },
     { href: "/workflow/jobs", label: "Job History", icon: History },
+    { href: "/data-preview", label: "Data Preview", icon: ScanSearch },
   ],
 };
 

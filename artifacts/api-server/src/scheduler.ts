@@ -154,10 +154,11 @@ function buildSuccessHtml(
 
 
 /** Resolve the pipeline_worker.py path at runtime.
- *  The build script copies it to dist/lib/, and the server always runs from
- *  the artifacts/api-server directory, so process.cwd()/dist/lib/ is reliable. */
+ *  Uses __dirname (injected by the build banner) so the path is always correct
+ *  regardless of the working directory PM2 uses to launch the process.
+ *  __dirname = .../artifacts/api-server/dist/  →  lib/pipeline_worker.py sits beside it. */
 function getWorkerPath(): string {
-  return pathResolve(process.cwd(), "dist", "lib", "pipeline_worker.py");
+  return pathResolve(__dirname, "lib", "pipeline_worker.py");
 }
 
 export interface PipelineRunResult {

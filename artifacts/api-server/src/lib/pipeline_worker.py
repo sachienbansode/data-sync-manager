@@ -3,7 +3,9 @@
 Pipeline Worker — high-performance streaming ETL.
 
 Architecture:
-  Source  → server-side named cursor (PostgreSQL) / chunked SQLAlchemy (others)
+  Source  → server-side named cursor        (PostgreSQL)
+           → native oracledb thin cursor    (Oracle  — no Instant Client required)
+           → chunked SQLAlchemy + pandas    (MySQL / MSSQL / others)
   Insert  → COPY via StringIO for full_load  (fastest, no row-by-row overhead)
            → execute_values + ON CONFLICT DO UPDATE for incremental upserts
   Safety  → watermark persisted to /tmp after every committed batch
@@ -167,6 +169,7 @@ def rows_to_copy_buffer(rows: list, columns: list) -> io.StringIO:
     Convert row dicts to a tab-delimited StringIO buffer for:
       COPY table (col1, col2, ...) FROM STDIN WITH (FORMAT TEXT, NULL '\\N')
     NULL values become \\N; special chars are escaped per PostgreSQL TEXT format.
+    bytes/bytearray (e.g. Oracle BLOB) are written as PostgreSQL hex-escape \\x<hex>.
     """
     buf = io.StringIO()
     for row in rows:
@@ -175,6 +178,9 @@ def rows_to_copy_buffer(rows: list, columns: list) -> io.StringIO:
             val = row.get(col)
             if val is None:
                 parts.append("\\N")
+            elif isinstance(val, (bytes, bytearray)):
+                # PostgreSQL TEXT-format COPY: bytea hex notation
+                parts.append("\\\\x" + val.hex())
             else:
                 s = (
                     str(val)
@@ -441,8 +447,77 @@ def main() -> None:
             src_conn.close()
             log(f"[SRC] Source cursor closed")
 
+        elif src_engine_type in ("oracle", "oracledb"):
+            # ── Oracle source: native oracledb thin (no Instant Client needed) ──
+            try:
+                import oracledb
+            except ImportError:
+                fail("Missing dependency: oracledb.  Run: pip install oracledb")
+
+            # Fetch LOBs as plain Python str / bytes — avoids LOB object reads
+            oracledb.defaults.fetch_lobs = False
+
+            ora_host    = (src.get("host") or "localhost").strip().split("@")[-1]
+            ora_port    = int(src.get("port") or 1521)
+            ora_service = (src.get("database") or "ORCL").strip()
+            ora_user    = (src.get("username") or "").strip()
+            ora_pass    = (src.get("password") or "").strip()
+            ora_dsn     = f"{ora_host}:{ora_port}/{ora_service}"
+
+            log(f"[SRC] Oracle (oracledb thin) {ora_user}@{ora_dsn}")
+            log(f"  Query: {source_query[:200]}{'…' if len(source_query) > 200 else ''}")
+
+            src_ora_conn = oracledb.connect(user=ora_user, password=ora_pass, dsn=ora_dsn)
+            src_ora_cur  = src_ora_conn.cursor()
+            src_ora_cur.arraysize = chunk_size
+            src_ora_cur.execute(source_query)
+
+            # Oracle returns column names in UPPER CASE; lowercase to match PG convention
+            src_col_names = [col[0].lower() for col in src_ora_cur.description]
+            log(f"  Source columns ({len(src_col_names)}): {src_col_names}")
+
+            while True:
+                raw_rows = src_ora_cur.fetchmany(chunk_size)
+                if not raw_rows:
+                    break
+                batch_num += 1
+                row_dicts = [dict(zip(src_col_names, row)) for row in raw_rows]
+
+                if field_mappings:
+                    row_dicts = apply_field_mappings(row_dicts, field_mappings)
+
+                if write_cols is None:
+                    write_cols = [c for c in row_dicts[0].keys() if c in dst_all_cols] if row_dicts else []
+                    if not write_cols:
+                        fail("No matching columns found between source (after mappings) and destination table")
+                    log(f"  Write columns ({len(write_cols)}): {write_cols}")
+
+                if watermark_col:
+                    wm_col_check = watermark_col if watermark_col in (row_dicts[0] if row_dicts else {}) else None
+                    if wm_col_check:
+                        new_watermark = update_watermark(row_dicts, wm_col_check, new_watermark)
+
+                total_source += len(row_dicts)
+                filtered = [{k: v for k, v in r.items() if k in write_cols} for r in row_dicts]
+
+                if dst_is_pg:
+                    write_pg_batch(dst_cur, dest_target, write_cols, filtered, load_type, conflict_col_list, chunk_size)
+                    dst_conn.commit()
+                else:
+                    write_sa_batch(dst_sa_engine, dst_sa_table, filtered)
+
+                total_inserted += len(filtered)
+                log(f"  Batch #{batch_num}: src={len(row_dicts):,} dst={len(filtered):,} (totals src={total_source:,} dst={total_inserted:,})")
+
+                if pipeline_id and new_watermark:
+                    save_watermark(pipeline_id, new_watermark)
+
+            src_ora_cur.close()
+            src_ora_conn.close()
+            log(f"[SRC] Oracle cursor closed")
+
         else:
-            # ── Non-PostgreSQL source: chunked SQLAlchemy reads ────────────────
+            # ── Other non-PG sources (MySQL, MSSQL): chunked SQLAlchemy reads ───
             from sqlalchemy import create_engine as sa_src_fn, text as sa_text
             src_sa_engine = sa_src_fn(build_sqlalchemy_url(src), pool_pre_ping=True)
             log(f"[SRC] Streaming via SQLAlchemy chunks (chunk_size={chunk_size})")

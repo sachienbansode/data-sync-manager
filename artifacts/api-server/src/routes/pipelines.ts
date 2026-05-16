@@ -227,26 +227,86 @@ router.put("/admin/pipelines/:id/mappings", authenticate, requireRole("Admin"), 
   res.json(saved);
 });
 
-// ── Shared helper: resolve columns from a connection object or legacy conn+query ──────────────
+// ── Shared helper: resolve columns — engine-aware ────────────────────────────
 async function resolveColumns(connId: number, query: string): Promise<string[]> {
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, connId));
   if (!conn) throw new Error("Connection not found");
   loadEncryptionKey();
   const user = conn.usernameEnc ? decrypt(conn.usernameEnc) : "";
   const pass = conn.passwordEnc ? decrypt(conn.passwordEnc) : "";
-  const useSSL = (conn.extraParams as Record<string, string> | null)?.ssl === "true";
-  const pool = new Pool({
-    host: conn.host ?? undefined, port: conn.port ?? 5432,
-    database: conn.dbName ?? undefined, user: user || undefined, password: pass || undefined,
-    connectionTimeoutMillis: 8000, max: 1,
-    ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
-  });
-  try {
-    const result = await pool.query(`SELECT * FROM (${query}) _sub LIMIT 0`);
-    return result.fields.map(f => f.name);
-  } finally {
-    await pool.end().catch(() => {});
+  const engine = (conn.dbEngine ?? "postgresql").toLowerCase();
+
+  // ── PostgreSQL ──────────────────────────────────────────────────────────────
+  if (engine === "postgresql" || engine === "postgres") {
+    const useSSL = (conn.extraParams as Record<string, string> | null)?.ssl === "true";
+    const pool = new Pool({
+      host: conn.host ?? undefined, port: conn.port ?? 5432,
+      database: conn.dbName ?? undefined, user: user || undefined, password: pass || undefined,
+      connectionTimeoutMillis: 8000, max: 1,
+      ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
+    });
+    try {
+      const result = await pool.query(`SELECT * FROM (${query}) _col_meta LIMIT 0`);
+      return result.fields.map(f => f.name);
+    } finally {
+      await pool.end().catch(() => {});
+    }
   }
+
+  // ── MySQL ───────────────────────────────────────────────────────────────────
+  if (engine === "mysql") {
+    const mysql2 = await import("mysql2/promise");
+    const mysqlConn = await mysql2.createConnection({
+      host: conn.host ?? "localhost", port: conn.port ?? 3306,
+      database: conn.dbName ?? undefined, user, password: pass,
+      connectTimeout: 8000,
+    });
+    try {
+      const [, fields] = await mysqlConn.query(`SELECT * FROM (${query}) _col_meta WHERE 1=0`);
+      return (fields as { name: string }[]).map(f => f.name);
+    } finally {
+      await mysqlConn.end().catch(() => {});
+    }
+  }
+
+  // ── MSSQL ───────────────────────────────────────────────────────────────────
+  if (engine === "mssql" || engine === "sqlserver") {
+    const mssql = await import("mssql");
+    const pool = await mssql.connect({
+      server: conn.host ?? "localhost", port: conn.port ?? 1433,
+      database: conn.dbName ?? undefined, user, password: pass,
+      options: { trustServerCertificate: true, connectTimeout: 8000 },
+    } as Parameters<typeof mssql.connect>[0]);
+    try {
+      const result = await pool.request().query(`SELECT TOP 0 * FROM (${query}) AS _col_meta`);
+      return Object.keys(result.recordset.columns ?? {});
+    } finally {
+      await pool.close().catch(() => {});
+    }
+  }
+
+  // ── Oracle ──────────────────────────────────────────────────────────────────
+  if (engine === "oracle" || engine === "oracledb") {
+    const oracledb = await import("oracledb");
+    const host = (conn.host ?? "localhost").split("@").pop()!;
+    const port = conn.port ?? 1521;
+    const service = conn.dbName ?? "ORCL";
+    const oraConn = await oracledb.getConnection({
+      user, password: pass,
+      connectString: `${host}:${port}/${service}`,
+    });
+    try {
+      const result = await oraConn.execute(
+        `SELECT * FROM (${query}) _col_meta WHERE 1=0`,
+        [], { outFormat: oracledb.OUT_FORMAT_OBJECT },
+      );
+      return (result.metaData ?? []).map((m: { name: string }) => m.name.toLowerCase());
+    } finally {
+      await oraConn.close().catch(() => {});
+    }
+  }
+
+  throw new Error(`Column introspection not supported for engine: ${engine}`);
 }
 
 // GET /api/admin/pipelines/:id/source-columns — fetch column names from source for mapping UI

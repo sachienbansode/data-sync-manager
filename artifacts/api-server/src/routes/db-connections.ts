@@ -395,18 +395,54 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
 
   steps.push({ name: "TCP Connectivity", status: "success", detail: `Port ${port} on ${host} is reachable` });
 
-  // Oracle: pg driver cannot authenticate — report TCP success and stop
+  // Oracle: use oracledb thin mode (no Instant Client needed)
   if (conn.dbEngine === "oracle") {
-    const detail = `Oracle DB requires the native oracledb driver which is not installed on this server. TCP port ${port} on ${host} is reachable — your network and firewall settings are correct. To fully verify, connect using SQL*Plus or another Oracle client from this server.`;
-    steps.push({ name: "Protocol Authentication", status: "info", detail });
-    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: false, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+    let oracleSuccess = false;
+    let oracleError: string | null = null;
+    try {
+      const oracledb = (await import("oracledb")).default;
+      // Thin mode works without Oracle Instant Client
+      oracledb.initOracleClient = () => {}; // no-op guard — keep thin
+      const connectString = `${host}:${port}/${conn.dbName ?? ""}`;
+      const connection = await oracledb.getConnection({
+        user: username,
+        password,
+        connectString,
+        privilege: 0,
+      });
+      try {
+        await connection.execute("SELECT 1 FROM DUAL");
+        oracleSuccess = true;
+        steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" to ${connectString}` });
+        steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 FROM DUAL executed successfully — Oracle DB is responding" });
+      } finally {
+        await connection.close().catch(() => {});
+      }
+    } catch (e: unknown) {
+      oracleError = e instanceof Error ? e.message : "Oracle connection failed";
+      const isAuth = /ORA-01017|invalid username|password/i.test(oracleError);
+      const isSvc  = /ORA-12514|ORA-12505|service.*not.*found|listener.*does not/i.test(oracleError);
+      if (isAuth) {
+        steps.push({ name: "Authentication", status: "fail", detail: `${oracleError} — check the username and password are correct.` });
+      } else if (isSvc) {
+        steps.push({ name: "Authentication", status: "fail", detail: `${oracleError} — check the Database Name field matches the Oracle service name or SID.` });
+      } else {
+        steps.push({ name: "Authentication", status: "fail", detail: oracleError });
+      }
+      steps.push({ name: "Query Test", status: "skip", detail: "Skipped — connection failed" });
+    }
+    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: oracleSuccess, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
     await db.insert(auditLogsTable).values({
       userId: req.user!.sub, userEmail: req.user!.email,
       action: "DB_CONNECTION_TESTED",
-      details: `Tested Oracle connection: ${conn.name} — TCP reachable, driver test skipped`,
+      details: `Tested Oracle connection: ${conn.name} — ${oracleSuccess ? "SUCCESS" : `FAILED: ${oracleError}`}`,
       resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
     });
-    res.status(400).json({ success: false, error: detail, steps });
+    if (oracleSuccess) {
+      res.json({ success: true, message: "Oracle connection successful", steps });
+    } else {
+      res.status(400).json({ success: false, error: oracleError, steps });
+    }
     return;
   }
 

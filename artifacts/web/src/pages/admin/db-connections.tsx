@@ -119,6 +119,8 @@ export default function DbConnections() {
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [testResult, setTestResult] = useState<TestResult | null>(null);
+  const [testDialogOpen, setTestDialogOpen] = useState(false);
+  const [testConnName, setTestConnName] = useState("");
 
   const [search, setSearch] = useState("");
   const [engineFilter, setEngineFilter] = useState("__all__");
@@ -279,6 +281,10 @@ export default function DbConnections() {
   async function testConnection(id: number) {
     setTesting(id);
     const conn = connections.find(c => c.id === id);
+    const name = conn?.name ?? "Connection";
+    setTestConnName(name);
+    setTestResult(null);
+    setTestDialogOpen(true);
     try {
       const token = getAccessToken();
       const res = await fetch(`${apiBase}/admin/db-connections/${id}/test`, {
@@ -286,7 +292,7 @@ export default function DbConnections() {
       });
       const data = await res.json();
       setTestResult({
-        connName: conn?.name ?? "Connection",
+        connName: name,
         success: data.success,
         steps: data.steps ?? [],
         error: data.error ?? null,
@@ -295,7 +301,7 @@ export default function DbConnections() {
       load();
     } catch (err: unknown) {
       setTestResult({
-        connName: conn?.name ?? "Connection",
+        connName: name,
         success: false,
         steps: [],
         error: err instanceof Error ? err.message : "Test request failed",
@@ -747,19 +753,37 @@ export default function DbConnections() {
       </Dialog>
 
       {/* Test Result dialog */}
-      <Dialog open={!!testResult} onOpenChange={() => setTestResult(null)}>
+      <Dialog open={testDialogOpen} onOpenChange={v => { if (!v) { setTestDialogOpen(false); setTestResult(null); } }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              {testResult?.success
-                ? <CheckCircle2 className="h-5 w-5 text-green-600" />
-                : <XCircle className="h-5 w-5 text-destructive" />}
-              Connection Test — {testResult?.connName}
+              {!testResult
+                ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                : testResult.success
+                  ? <CheckCircle2 className="h-5 w-5 text-green-600" />
+                  : <XCircle className="h-5 w-5 text-destructive" />}
+              Connection Test — {testConnName}
             </DialogTitle>
             <DialogDescription>
-              {testResult?.success ? "All checks passed successfully." : "One or more checks failed. See details below."}
+              {!testResult
+                ? "Running connectivity checks, please wait…"
+                : testResult.success
+                  ? "All checks passed successfully."
+                  : "One or more checks failed. See details below."}
             </DialogDescription>
           </DialogHeader>
+
+          {/* Loading state */}
+          {!testResult && (
+            <div className="space-y-3 py-2">
+              {["Decrypting credentials", "Checking TCP connectivity", "Authenticating", "Running query test"].map((s, i) => (
+                <div key={i} className="flex items-center gap-3 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  <span>{s}…</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Steps */}
           {testResult && testResult.steps.length > 0 && (
@@ -791,13 +815,8 @@ export default function DbConnections() {
               <div className="flex items-center justify-between">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Full Error</p>
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs gap-1"
-                  onClick={() => {
-                    navigator.clipboard.writeText(testResult.error ?? "");
-                    toast.success("Error copied to clipboard");
-                  }}
+                  variant="ghost" size="sm" className="h-6 px-2 text-xs gap-1"
+                  onClick={() => { navigator.clipboard.writeText(testResult.error ?? ""); toast.success("Error copied to clipboard"); }}
                 >
                   <Copy className="h-3 w-3" /> Copy
                 </Button>
@@ -817,7 +836,9 @@ export default function DbConnections() {
           )}
 
           <DialogFooter>
-            <Button onClick={() => setTestResult(null)}>Close</Button>
+            <Button onClick={() => { setTestDialogOpen(false); setTestResult(null); }} disabled={!testResult}>
+              {!testResult ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Testing…</> : "Close"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

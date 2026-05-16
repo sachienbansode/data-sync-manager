@@ -1,0 +1,63 @@
+# 4. Restart the running process to load the new build
+pm2 restart 0
+remote: Enumerating objects: 54, done.
+remote: Counting objects: 100% (54/54), done.
+remote: Compressing objects: 100% (7/7), done.
+remote: Total 35 (delta 28), reused 35 (delta 28), pack-reused 0 (from 0)
+Unpacking objects: 100% (35/35), 13.29 KiB | 1.11 MiB/s, done.
+From https://github.com/sachienbansode/data-sync-manager
+ * branch            main       -> FETCH_HEAD
+   f45dd0c..bba7a98  main       -> origin/main
+Updating f45dd0c..bba7a98
+error: Your local changes to the following files would be overwritten by merge:
+        artifacts/api-server/src/lib/pipeline_worker.py
+        artifacts/api-server/src/routes/dashboard.ts
+        artifacts/api-server/src/routes/index.ts
+        artifacts/api-server/src/routes/pipelines.ts
+        artifacts/web/src/App.tsx
+        artifacts/web/src/components/layout.tsx
+        artifacts/web/src/pages/dashboard.tsx
+        artifacts/web/src/pages/url-shortener.tsx
+        artifacts/web/src/pages/workflow.tsx
+Please commit your changes or stash them before you merge.
+error: The following untracked working tree files would be overwritten by merge:
+        artifacts/api-server/src/routes/data-preview.ts
+        artifacts/web/src/pages/data-preview.tsx
+Please move or remove them before you merge.
+Aborting
+
+> @workspace/api-server@0.0.0 build /home/ubuntu/ananta-platform/artifacts/api-server
+> node ./build.mjs
+
+
+  dist/index.mjs                       4.9mb ⚠️
+  dist/pino-worker.mjs               153.4kb
+  dist/pino-file.mjs                 142.1kb
+  dist/pino-pretty.mjs               114.6kb
+  dist/thread-stream-worker.mjs        7.3kb
+  dist/index.mjs.map                   8.8mb
+  dist/pino-worker.mjs.map           256.9kb
+  dist/pino-file.mjs.map             229.0kb
+  dist/pino-pretty.mjs.map           203.9kb
+  dist/thread-stream-worker.mjs.map   12.0kb
+
+⚡ Done in 814ms
+
+> @workspace/web@0.0.0 build /home/ubuntu/ananta-platform/artifacts/web
+> vite build --config vite.config.ts
+
+failed to load config from /home/ubuntu/ananta-platform/artifacts/web/vite.config.ts
+error during build:
+Error: PORT environment variable is required but was not provided.
+    at file:///home/ubuntu/ananta-platform/artifacts/web/node_modules/.vite-temp/vite.config.ts.timestamp-1778958548269-798598d581273.mjs:10:9
+    at ModuleJob.run (node:internal/modules/esm/module_job:325:25)
+    at async ModuleLoader.import (node:internal/modules/esm/loader:606:24)
+    at async loadConfigFromBundledFile (file:///home/ubuntu/ananta-platform/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35920:12)
+    at async bundleAndLoadConfigFile (file:///home/ubuntu/ananta-platform/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35808:17)
+    at async loadConfigFromFile (file:///home/ubuntu/ananta-platform/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35775:42)
+    at async resolveConfig (file:///home/ubuntu/ananta-platform/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:35424:22)
+    at async createBuilder (file:///home/ubuntu/ananta-platform/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/chunks/config.js:33879:19)
+    at async CAC.<anonymous> (file:///home/ubuntu/ananta-platform/node_modules/.pnpm/vite@7.3.2_@types+node@25.3.5_jiti@2.6.1_lightningcss@1.31.1_tsx@4.21.0_yaml@2.8.2/node_modules/vite/dist/node/cli.js:629:10)
+/home/ubuntu/ananta-platform/artifacts/web:
+ ERR_PNPM_RECURSIVE_RUN_FIRST_FAIL  @workspace/web@0.0.0 build: `vite build --config vite.config.ts`
+Exit status 1

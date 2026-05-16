@@ -446,7 +446,112 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
     return;
   }
 
-  // Step 2: DB protocol — try plain then SSL (or SSL then plain)
+  // MySQL
+  if (conn.dbEngine === "mysql") {
+    let mysqlSuccess = false;
+    let mysqlError: string | null = null;
+    try {
+      const mysql = await import("mysql2/promise");
+      const connection = await mysql.createConnection({
+        host,
+        port,
+        database: conn.dbName ?? undefined,
+        user: username,
+        password,
+        connectTimeout: 10000,
+        ...(savedSSL ? { ssl: {} } : {}),
+      });
+      try {
+        await connection.query("SELECT 1");
+        mysqlSuccess = true;
+        steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" to database "${conn.dbName}"` });
+        steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 executed successfully — MySQL is responding" });
+      } finally {
+        await connection.end().catch(() => {});
+      }
+    } catch (e: unknown) {
+      mysqlError = e instanceof Error ? e.message : "MySQL connection failed";
+      const isAuth = /access denied|ER_ACCESS_DENIED/i.test(mysqlError);
+      const isSSL  = /ssl|tls/i.test(mysqlError);
+      if (isAuth) {
+        steps.push({ name: "Authentication", status: "fail", detail: `${mysqlError} — check the username and password are correct.` });
+      } else if (isSSL) {
+        steps.push({ name: "Authentication", status: "fail", detail: `${mysqlError} — try toggling the SSL/TLS option.` });
+      } else {
+        steps.push({ name: "Authentication", status: "fail", detail: mysqlError });
+      }
+      steps.push({ name: "Query Test", status: "skip", detail: "Skipped — connection failed" });
+    }
+    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: mysqlSuccess, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.sub, userEmail: req.user!.email,
+      action: "DB_CONNECTION_TESTED",
+      details: `Tested MySQL connection: ${conn.name} — ${mysqlSuccess ? "SUCCESS" : `FAILED: ${mysqlError}`}`,
+      resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
+    });
+    if (mysqlSuccess) {
+      res.json({ success: true, message: "MySQL connection successful", steps });
+    } else {
+      res.status(400).json({ success: false, error: mysqlError, steps });
+    }
+    return;
+  }
+
+  // MS SQL Server
+  if (conn.dbEngine === "mssql") {
+    let mssqlSuccess = false;
+    let mssqlError: string | null = null;
+    try {
+      const mssql = await import("mssql");
+      const pool = await mssql.connect({
+        server: host,
+        port,
+        database: conn.dbName ?? undefined,
+        user: username,
+        password,
+        options: {
+          encrypt: savedSSL,
+          trustServerCertificate: !savedSSL,
+          connectTimeout: 10000,
+        },
+      });
+      try {
+        await pool.request().query("SELECT 1 AS ok");
+        mssqlSuccess = true;
+        steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" to database "${conn.dbName}"` });
+        steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 executed successfully — SQL Server is responding" });
+      } finally {
+        await pool.close().catch(() => {});
+      }
+    } catch (e: unknown) {
+      mssqlError = e instanceof Error ? e.message : "SQL Server connection failed";
+      const isAuth = /login failed|incorrect.*password|18456/i.test(mssqlError);
+      const isSSL  = /ssl|tls|certificate/i.test(mssqlError);
+      if (isAuth) {
+        steps.push({ name: "Authentication", status: "fail", detail: `${mssqlError} — check the username and password are correct.` });
+      } else if (isSSL) {
+        steps.push({ name: "Authentication", status: "fail", detail: `${mssqlError} — try toggling the SSL/TLS option.` });
+      } else {
+        steps.push({ name: "Authentication", status: "fail", detail: mssqlError });
+      }
+      steps.push({ name: "Query Test", status: "skip", detail: "Skipped — connection failed" });
+    }
+    await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: mssqlSuccess, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+    await db.insert(auditLogsTable).values({
+      userId: req.user!.sub, userEmail: req.user!.email,
+      action: "DB_CONNECTION_TESTED",
+      details: `Tested MSSQL connection: ${conn.name} — ${mssqlSuccess ? "SUCCESS" : `FAILED: ${mssqlError}`}`,
+      resourceType: "db_connection", resourceId: String(id), ipAddress: getIp(req),
+    });
+    if (mssqlSuccess) {
+      res.json({ success: true, message: "SQL Server connection successful", steps });
+    } else {
+      res.status(400).json({ success: false, error: mssqlError, steps });
+    }
+    return;
+  }
+
+  // PostgreSQL — try plain then SSL (or SSL then plain)
   async function tryConnect(withSSL: boolean): Promise<{ ok: boolean; err: string | null }> {
     const p = new Pool({
       host,

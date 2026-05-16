@@ -408,7 +408,6 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
         user: username,
         password,
         connectString,
-        privilege: 0,
       });
       try {
         await connection.execute("SELECT 1 FROM DUAL");

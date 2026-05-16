@@ -36,6 +36,9 @@ export const dbConnectionsTable = pgTable("db_connections", {
   /** Legacy: Local file path where transformed CSV output is written (kept for compat) */
   outputFilePath: text("output_file_path"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
+  /** When true, this connection may be used for INSERT/UPDATE/DELETE/TRUNCATE/ALTER.
+   *  When false (default), any DML/DDL query via this connection is rejected. */
+  allowWrites: boolean("allow_writes").notNull().default(false),
   lastTestedAt: timestamp("last_tested_at", { withTimezone: true }),
   lastTestSuccess: boolean("last_test_success"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

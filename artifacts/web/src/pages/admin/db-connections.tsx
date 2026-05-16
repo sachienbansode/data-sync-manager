@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck, Search, ChevronLeft, ChevronRight, Copy, CheckCircle2, AlertCircle, Info, Minus } from "lucide-react";
+import { Loader2, Plus, Pencil, Trash2, CheckCircle, XCircle, Wifi, Database, Server, Cloud, FolderOpen, History, CalendarClock, User, ShieldCheck, Search, ChevronLeft, ChevronRight, Copy, CheckCircle2, AlertCircle, Info, Minus, Lock, PenLine } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { formatDate, formatDateTime } from "@/lib/date";
 import { toast } from "sonner";
@@ -29,6 +29,7 @@ interface DbConnection {
   extraParams: Record<string, string> | null;
   fetchQuery: string | null;
   outputFilePath: string | null;
+  allowWrites: boolean;
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
@@ -50,6 +51,7 @@ const EMPTY_FORM = {
   host: "", port: "5432", dbName: "", schemaName: "public",
   username: "", password: "",
   ssl: false,
+  allowWrites: false,
   // S3
   bucket: "", region: "", s3Prefix: "", accessKeyId: "", secretAccessKey: "",
   // SFTP
@@ -184,6 +186,7 @@ export default function DbConnections() {
       dbName: c.dbName ?? "", schemaName: c.schemaName ?? "public",
       username: "", password: "",
       ssl: ep.ssl === "true",
+      allowWrites: c.allowWrites ?? false,
       bucket: ep.bucket ?? "", region: ep.region ?? "", s3Prefix: ep.s3Prefix ?? "",
       accessKeyId: "", secretAccessKey: "",
       remotePath: ep.remotePath ?? "", privateKey: "",
@@ -228,6 +231,7 @@ export default function DbConnections() {
       const body: Record<string, unknown> = {
         name: form.name, type: form.type, dbEngine: form.dbEngine,
         extraParams: Object.keys(extraParams).length > 0 ? extraParams : undefined,
+        allowWrites: form.allowWrites,
       };
       if (isDbEngine || isSftp) {
         if (form.host) body.host = form.host;
@@ -428,6 +432,9 @@ export default function DbConnections() {
                           <Badge variant="outline" className="text-xs">
                             {appTypes.find(t => t.slug === c.type)?.name ?? c.type}
                           </Badge>
+                          {c.allowWrites
+                            ? <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><PenLine className="h-3 w-3" /> Read+Write</span>
+                            : <span className="flex items-center gap-1 text-xs text-muted-foreground"><Lock className="h-3 w-3" /> Read Only</span>}
                           {c.lastTestedAt && (
                             c.lastTestSuccess
                               ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3 w-3" /> Connected</span>
@@ -667,6 +674,24 @@ export default function DbConnections() {
                 <Input value={form.filePath} onChange={e => setForm(f => ({ ...f, filePath: e.target.value }))} placeholder="/mnt/data/export.csv" />
               </div>
             )}
+
+            {/* Allow Writes toggle — shown for all connection types */}
+            <div className="flex items-center justify-between rounded-lg border px-4 py-3">
+              <div className="flex items-center gap-2">
+                {form.allowWrites
+                  ? <PenLine className="h-4 w-4 text-amber-500" />
+                  : <Lock className="h-4 w-4 text-muted-foreground" />}
+                <div>
+                  <p className="text-sm font-medium">Allow Data Writes (DML)</p>
+                  <p className="text-xs text-muted-foreground">
+                    {form.allowWrites
+                      ? "Connection can execute INSERT, UPDATE, DELETE, TRUNCATE and ALTER statements."
+                      : "Read-only — only SELECT queries are permitted on this connection."}
+                  </p>
+                </div>
+              </div>
+              <Switch checked={form.allowWrites} onCheckedChange={v => setForm(f => ({ ...f, allowWrites: v }))} />
+            </div>
 
             {/* BackOffice workflow fields */}
             {form.type === "backoffice" && (

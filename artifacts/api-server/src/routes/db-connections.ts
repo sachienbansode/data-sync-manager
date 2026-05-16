@@ -26,6 +26,7 @@ function safeRow(r: typeof dbConnectionsTable.$inferSelect) {
     extraParams: r.extraParams,
     fetchQuery: r.fetchQuery,
     outputFilePath: r.outputFilePath,
+    allowWrites: r.allowWrites,
     createdBy: r.createdBy,
     lastTestedAt: r.lastTestedAt,
     lastTestSuccess: r.lastTestSuccess,
@@ -117,11 +118,12 @@ router.get("/admin/aws-regions", authenticate, async (_req, res) => {
 router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (req, res) => {
   const {
     name, type, dbEngine, host, port, dbName, schemaName, username, password, extraParams,
-    fetchQuery, outputFilePath,
+    fetchQuery, outputFilePath, allowWrites,
   } = req.body as {
     name: string; type: string; dbEngine?: string; host?: string; port?: number;
     dbName?: string; schemaName?: string; username?: string; password?: string;
     extraParams?: Record<string, string>; fetchQuery?: string; outputFilePath?: string;
+    allowWrites?: boolean;
   };
 
   if (!name || !type) {
@@ -155,6 +157,7 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
     extraParams: extraParams ?? null,
     fetchQuery: fetchQuery ?? null,
     outputFilePath: outputFilePath ?? null,
+    allowWrites: allowWrites ?? false,
     createdBy: req.user!.sub,
   }).returning();
 
@@ -174,10 +177,11 @@ router.post("/admin/db-connections", authenticate, requireRole("Admin"), async (
 // PUT /api/admin/db-connections/:id
 router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), async (req, res) => {
   const id = parseInt(String(req.params.id));
-  const { name, type, dbEngine, host, port, dbName, schemaName, username, password, extraParams, fetchQuery, outputFilePath } = req.body as {
+  const { name, type, dbEngine, host, port, dbName, schemaName, username, password, extraParams, fetchQuery, outputFilePath, allowWrites } = req.body as {
     name?: string; type?: string; dbEngine?: string; host?: string; port?: number;
     dbName?: string; schemaName?: string; username?: string; password?: string;
     extraParams?: Record<string, string>; fetchQuery?: string | null; outputFilePath?: string | null;
+    allowWrites?: boolean;
   };
 
   const [existing] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, id));
@@ -200,6 +204,7 @@ router.put("/admin/db-connections/:id", authenticate, requireRole("Admin"), asyn
   if (extraParams !== undefined) updates.extraParams = extraParams;
   if (fetchQuery !== undefined) updates.fetchQuery = fetchQuery ?? null;
   if (outputFilePath !== undefined) updates.outputFilePath = outputFilePath ?? null;
+  if (allowWrites !== undefined) updates.allowWrites = allowWrites;
 
   const [updated] = await db.update(dbConnectionsTable).set(updates).where(eq(dbConnectionsTable.id, id)).returning();
 

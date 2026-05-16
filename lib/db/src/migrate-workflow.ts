@@ -74,6 +74,9 @@ async function main() {
 
     -- Consecutive failure tracking for scheduled fetches (Task #18)
     ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS schedule_consecutive_failures INTEGER NOT NULL DEFAULT 0;
+
+    -- Write-access control: connections are read-only by default
+    ALTER TABLE db_connections ADD COLUMN IF NOT EXISTS allow_writes BOOLEAN NOT NULL DEFAULT false;
   `);
 
   console.log("Workflow tables created successfully");

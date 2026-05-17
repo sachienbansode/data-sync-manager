@@ -11,7 +11,7 @@ if [ -f "$REQUIREMENTS" ]; then
   if [ ! -d "$VENV_DIR" ]; then
     python3 -m venv "$VENV_DIR"
   fi
-  "$VENV_DIR/bin/pip" install --quiet -r "$REQUIREMENTS" && echo "  Python packages OK."
+  "$VENV_DIR/bin/pip" install --quiet --no-cache-dir -r "$REQUIREMENTS" && echo "  Python packages OK."
 fi
 
 pnpm --filter db push

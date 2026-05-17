@@ -89,8 +89,8 @@ if [ ! -d "$VENV_DIR" ]; then
 else
   echo "  Virtualenv already exists."
 fi
-"$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet -r "$APP_DIR/artifacts/api-server/src/lib/requirements.txt"
+"$VENV_DIR/bin/pip" install --quiet --no-cache-dir --upgrade pip
+"$VENV_DIR/bin/pip" install --quiet --no-cache-dir -r "$APP_DIR/artifacts/api-server/src/lib/requirements.txt"
 echo "  Python packages installed into virtualenv."
 
 # ── 7. .env.production (create template on first deploy, never overwrite) ────

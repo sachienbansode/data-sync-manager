@@ -20,6 +20,7 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   adminOnly?: boolean;
+  permissionPath?: string;
 }
 interface NavGroup {
   label: string;
@@ -30,15 +31,15 @@ interface NavGroup {
 const topNavItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/about", label: "About", icon: Info },
-  { href: "/links", label: "URL Shortener", icon: Link2 },
+  { href: "/links", label: "URL Shortener", icon: Link2, permissionPath: "/url-shortener" },
 ];
 
 const commHubGroup: NavGroup = {
   label: "Communication HUB",
   icon: Megaphone,
   items: [
-    { href: "/hub/camp", label: "Campaigns", icon: Send },
-    { href: "/hub/tpl", label: "Email Templates", icon: FileText },
+    { href: "/hub/camp", label: "Campaigns", icon: Send, permissionPath: "/email-hub/campaigns" },
+    { href: "/hub/tpl", label: "Email Templates", icon: FileText, permissionPath: "/email-hub/templates" },
   ],
 };
 
@@ -55,11 +56,11 @@ const dataPipelineGroup: NavGroup = {
   label: "Data Pipeline",
   icon: ServerCog,
   items: [
-    { href: "/a/conn", label: "Step 1: Connections", icon: Network },
-    { href: "/a/dobj", label: "Step 2: Data Objects", icon: Table2 },
-    { href: "/pipe", label: "Step 3: Pipelines", icon: GitBranch },
-    { href: "/pipe/jobs", label: "Job History", icon: History },
-    { href: "/preview", label: "Data Preview", icon: ScanSearch },
+    { href: "/a/conn", label: "Step 1: Connections", icon: Network, permissionPath: "/admin/db-connections" },
+    { href: "/a/dobj", label: "Step 2: Data Objects", icon: Table2, permissionPath: "/admin/data-objects" },
+    { href: "/pipe", label: "Step 3: Pipelines", icon: GitBranch, permissionPath: "/workflow" },
+    { href: "/pipe/jobs", label: "Job History", icon: History, permissionPath: "/workflow/jobs" },
+    { href: "/preview", label: "Data Preview", icon: ScanSearch, permissionPath: "/data-preview" },
   ],
 };
 
@@ -76,29 +77,29 @@ const adminGroups: NavGroup[] = [
     label: "Security & Audit",
     icon: Eye,
     items: [
-      { href: "/audit", label: "Audit Log", icon: FileText },
-      { href: "/a/logins", label: "Login Report", icon: LogIn },
-      { href: "/a/pii", label: "PII Permissions", icon: Database },
+      { href: "/audit", label: "Audit Log", icon: FileText, permissionPath: "/audit-log" },
+      { href: "/a/logins", label: "Login Report", icon: LogIn, permissionPath: "/admin/login-report" },
+      { href: "/a/pii", label: "PII Permissions", icon: Database, permissionPath: "/admin/pii-permissions" },
     ],
   },
   {
     label: "Email & Messaging",
     icon: Mail,
     items: [
-      { href: "/a/smtp", label: "SMTP Settings", icon: Mail },
-      { href: "/a/etpl", label: "System Templates", icon: FileText },
-      { href: "/a/comms", label: "Bulk Email (Netcore)", icon: Megaphone },
+      { href: "/a/smtp", label: "SMTP Settings", icon: Mail, permissionPath: "/admin/email-settings" },
+      { href: "/a/etpl", label: "System Templates", icon: FileText, permissionPath: "/admin/email-templates" },
+      { href: "/a/comms", label: "Bulk Email (Netcore)", icon: Megaphone, permissionPath: "/admin/comm-settings" },
     ],
   },
   {
     label: "Settings",
     icon: Settings,
     items: [
-      { href: "/a/cfg", label: "App Settings", icon: Settings },
-      { href: "/a/font", label: "Font Settings", icon: Type },
-      { href: "/a/ftype", label: "Allowed File Types", icon: FileType },
-      { href: "/a/appt", label: "Application Types", icon: Layers },
-      { href: "/a/dom", label: "Domain Registrations", icon: Link2 },
+      { href: "/a/cfg", label: "App Settings", icon: Settings, permissionPath: "/admin/app-settings" },
+      { href: "/a/font", label: "Font Settings", icon: Type, permissionPath: "/admin/font-settings" },
+      { href: "/a/ftype", label: "Allowed File Types", icon: FileType, permissionPath: "/admin/allowed-file-types" },
+      { href: "/a/appt", label: "Application Types", icon: Layers, permissionPath: "/admin/application-types" },
+      { href: "/a/dom", label: "Domain Registrations", icon: Link2, permissionPath: "/admin/short-domains" },
     ],
   },
 ];
@@ -125,7 +126,7 @@ function CollapsibleGroup({ group, location, onNav, isAdmin, checkPermission, in
 }) {
   const visibleItems = group.items.filter(item => {
     if (item.adminOnly) return isAdmin;
-    return checkPermission(item.href);
+    return checkPermission(item.permissionPath ?? item.href);
   });
   if (visibleItems.length === 0) return null;
 
@@ -185,7 +186,7 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
 
   const filteredTop = topNavItems.filter(item => {
     if (item.href === "/about") return true;
-    return checkPermission(item.href);
+    return checkPermission(item.permissionPath ?? item.href);
   });
 
   return (

@@ -35,6 +35,7 @@ router.get("/admin/app-settings", async (_req, res): Promise<void> => {
     menuFontSize: cfg.menuFontSize,
     bodyFontSize: cfg.bodyFontSize,
     headingFontSize: cfg.headingFontSize,
+    piiPreviewEnabled: cfg.piiPreviewEnabled,
     updatedAt: cfg.updatedAt,
   });
 });
@@ -71,6 +72,32 @@ router.put("/admin/app-settings", authenticate, requireRole("Admin"), async (req
   });
 
   res.json({ success: true, id: cfg.id, appName: appName.trim() });
+});
+
+// GET /admin/pii-preview-settings
+router.get("/admin/pii-preview-settings", authenticate, requireRole("Admin"), async (_req, res): Promise<void> => {
+  const cfg = await getOrCreateSettings();
+  res.json({ piiPreviewEnabled: cfg.piiPreviewEnabled });
+});
+
+// PUT /admin/pii-preview-settings — toggle PII masking in Data Preview
+router.put("/admin/pii-preview-settings", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+  const { piiPreviewEnabled } = req.body as { piiPreviewEnabled?: boolean };
+  if (typeof piiPreviewEnabled !== "boolean") {
+    res.status(400).json({ error: "piiPreviewEnabled must be a boolean" }); return;
+  }
+  await getOrCreateSettings();
+  await db.update(appSettingsTable).set({ piiPreviewEnabled });
+
+  const user = (req as Express.Request & { user?: { id: number; email: string } }).user;
+  await db.insert(auditLogsTable).values({
+    userId: user?.id ?? null, userEmail: user?.email ?? null,
+    action: "PII_PREVIEW_SETTINGS_UPDATED",
+    details: `PII masking in Data Preview: ${piiPreviewEnabled ? "ENABLED" : "DISABLED"}`,
+    ipAddress: req.ip ?? null,
+  });
+
+  res.json({ success: true, piiPreviewEnabled });
 });
 
 // GET /admin/font-settings

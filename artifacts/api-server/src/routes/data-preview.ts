@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import pg from "pg";
-import { db, dbConnectionsTable } from "@workspace/db";
+import { db, dbConnectionsTable, appSettingsTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { decrypt, loadEncryptionKey } from "../lib/crypto";
 
@@ -13,12 +13,14 @@ const MAX_ROWS = 50;
 // ── PII column detection by name pattern ─────────────────────────────────────
 interface PiiPattern { re: RegExp; type: string; }
 const PII_PATTERNS: PiiPattern[] = [
-  { re: /\b(phone|mobile|mob|cell|contact_no|phone_no|phone_number|mob_no|telephone)\b/i, type: "phone" },
-  { re: /\b(email|email_id|email_address|counterparty_email|mail)\b/i,                   type: "email" },
-  { re: /\b(pan|pan_no|pan_number|pan_card)\b/i,                                         type: "pan" },
-  { re: /\b(bank_account|account_no|account_number|acc_no|acct_no|bank_acc|ifsc)\b/i,    type: "bank_account" },
-  { re: /\b(national_id|aadhar|aadhaar|aadhar_no|aadhaar_no|ssn|nid|voter_id)\b/i,      type: "national_id" },
-  { re: /\b(address|addr|street|residence|city_addr)\b/i,                                type: "address" },
+  { re: /\b(phone|mobile|mob|cell|contact_no|phone_no|phone_number|mob_no|telephone|contact)\b/i, type: "phone" },
+  { re: /\b(email|email_id|email_address|counterparty_email|mail)\b/i,                            type: "email" },
+  { re: /\b(pan|pan_no|pan_number|pan_card)\b/i,                                                  type: "pan" },
+  { re: /\b(bank_account|account_no|account_number|acc_no|acct_no|bank_acc|ifsc)\b/i,             type: "bank_account" },
+  { re: /\b(national_id|aadhar|aadhaar|aadhar_no|aadhaar_no|ssn|nid|voter_id)\b/i,               type: "national_id" },
+  { re: /\b(address|addr|street|residence|city_addr)\b/i,                                         type: "address" },
+  { re: /\b(name|full_name|first_name|last_name|fname|lname|customer_name|client_name)\b/i,       type: "name" },
+  { re: /\b(dob|date_of_birth|birth_date|birthdate)\b/i,                                          type: "dob" },
 ];
 
 function detectPiiType(colName: string): string | null {
@@ -32,6 +34,7 @@ function maskValue(raw: string, piiType: string): string {
   if (!raw) return raw;
   switch (piiType) {
     case "phone":
+      // Show first 3 digits, mask rest: 987•••••••
       return raw.slice(0, 3) + "•".repeat(Math.max(0, raw.length - 3));
     case "email": {
       const at = raw.indexOf("@");
@@ -41,11 +44,23 @@ function maskValue(raw: string, piiType: string): string {
       return (local.slice(0, 2) + "••••") + "@" + domain;
     }
     case "pan":
+      // Indian PAN: AAAAA9999A (10 chars) — show first 5 + last 1, mask 4 digits
+      if (raw.length === 10) {
+        return raw.slice(0, 5) + "••••" + raw.slice(-1);
+      }
+      return raw.slice(0, 3) + "•".repeat(Math.max(0, raw.length - 4)) + raw.slice(-1);
     case "bank_account":
     case "national_id":
+      // Show last 4 digits only: ••••1234
       return "••••" + raw.slice(-4);
     case "address":
       return raw.length <= 8 ? "•".repeat(raw.length) : raw.slice(0, 6) + "•••";
+    case "name":
+      // Show first char + mask rest: A•••••
+      return raw.slice(0, 1) + "•".repeat(Math.max(0, raw.length - 1));
+    case "dob":
+      // Show year only: ••••-••-1990 → mask day/month
+      return "••/••/" + raw.slice(-4);
     default:
       if (raw.length <= 4) return "•".repeat(raw.length);
       return raw.slice(0, 2) + "•".repeat(raw.length - 4) + raw.slice(-2);
@@ -89,6 +104,10 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
 
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, connectionId));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
+
+  // Read PII preview setting from app settings
+  const [appCfg] = await db.select().from(appSettingsTable).limit(1);
+  const piiMaskingEnabled = appCfg?.piiPreviewEnabled ?? true;
 
   loadEncryptionKey();
   let username: string, password: string;
@@ -163,7 +182,8 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
       }
 
     } else if (engine === "oracle" || engine === "oracledb") {
-      const oracledb = await import("oracledb");
+      // Use .default — oracledb is a CJS module; dynamic import wraps it
+      const oracledb = (await import("oracledb")).default;
       const connection = await oracledb.getConnection({
         user: username,
         password,
@@ -181,19 +201,22 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
       res.status(400).json({ error: `Engine "${engine}" is not supported for data preview` }); return;
     }
 
-    // Detect PII columns and apply partial masking
+    // Detect PII columns — always identify them so UI can show badges
     const piiMap: Record<string, string> = {};
     for (const col of columns) {
       const t = detectPiiType(col);
       if (t) piiMap[col] = t;
     }
-    const maskedRows = applyMasking(rows, piiMap);
+
+    // Apply masking only when admin has enabled PII protection
+    const finalRows = piiMaskingEnabled ? applyMasking(rows, piiMap) : rows;
 
     res.json({
       columns,
-      rows: maskedRows,
-      rowCount: maskedRows.length,
+      rows: finalRows,
+      rowCount: finalRows.length,
       piiColumns: Object.keys(piiMap),
+      piiMaskingEnabled,
     });
 
   } catch (err: unknown) {

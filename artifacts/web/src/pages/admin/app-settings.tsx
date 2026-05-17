@@ -7,8 +7,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Building2, ImageIcon, Loader2, Upload, X } from "lucide-react";
+import { Building2, ImageIcon, Loader2, ShieldAlert, Upload, X } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const settingsSchema = z.object({
@@ -36,6 +38,18 @@ export default function AppSettings() {
   const { data: cfg, isLoading } = useQuery({
     queryKey: ["app-settings"],
     queryFn: () => apiFetch("/admin/app-settings"),
+  });
+
+  const piiToggleMutation = useMutation({
+    mutationFn: (enabled: boolean) => apiFetch("/admin/pii-preview-settings", {
+      method: "PUT",
+      body: JSON.stringify({ piiPreviewEnabled: enabled }),
+    }),
+    onSuccess: (result) => {
+      toast.success(`PII masking ${result.piiPreviewEnabled ? "enabled" : "disabled"} in Data Preview`);
+      queryClient.invalidateQueries({ queryKey: ["app-settings"] });
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   const form = useForm<SettingsForm>({
@@ -136,6 +150,41 @@ export default function AppSettings() {
               </Button>
             </form>
           </Form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-primary" />
+            <CardTitle>Data Preview — PII Protection</CardTitle>
+          </div>
+          <CardDescription>
+            When enabled, sensitive columns (phone, email, PAN, bank account, etc.) are automatically detected and partially masked in the Data Preview. Masking also applies to CSV exports.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-0.5">
+              <Label className="text-base font-medium">Mask PII in Data Preview</Label>
+              <p className="text-sm text-muted-foreground">
+                {cfg?.piiPreviewEnabled
+                  ? "PII columns are being masked — users see partial values only."
+                  : "PII columns are visible — users see full raw values."}
+              </p>
+            </div>
+            <Switch
+              checked={cfg?.piiPreviewEnabled ?? true}
+              disabled={piiToggleMutation.isPending || isLoading}
+              onCheckedChange={(checked) => piiToggleMutation.mutate(checked)}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+            <div className="rounded-md bg-muted px-3 py-2"><span className="font-medium">Phone</span> — 987•••••••</div>
+            <div className="rounded-md bg-muted px-3 py-2"><span className="font-medium">Email</span> — jo••••@gmail.com</div>
+            <div className="rounded-md bg-muted px-3 py-2"><span className="font-medium">PAN</span> — ABCPF••••K</div>
+            <div className="rounded-md bg-muted px-3 py-2"><span className="font-medium">Bank / National ID</span> — ••••1234</div>
+          </div>
         </CardContent>
       </Card>
 

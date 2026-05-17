@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean } from "drizzle-orm/pg-core";
 
 export const appSettingsTable = pgTable("app_settings", {
   id: serial("id").primaryKey(),
@@ -13,6 +13,8 @@ export const appSettingsTable = pgTable("app_settings", {
   bodyFontSize: text("body_font_size").notNull().default("14"),
   /** Font size in px for page headings */
   headingFontSize: text("heading_font_size").notNull().default("24"),
+  /** Whether PII columns are masked in Data Preview (admin-controlled) */
+  piiPreviewEnabled: boolean("pii_preview_enabled").notNull().default(true),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
 

@@ -39,6 +39,7 @@ externalPort = 3001
 
 [userenv.shared]
 PII_ENCRYPTION_KEY = "5742b798575949c18b012b522a74a8b4f29df9fcb47ea05b85c2cdce3ddc4b90"
+PYTHON_BIN = "python3"
 
 [nix]
 channel = "stable-25_05"

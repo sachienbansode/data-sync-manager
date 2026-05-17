@@ -300,7 +300,7 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   const workerPath = getWorkerPath();
 
   return new Promise((resolvePromise) => {
-    const child = spawn("/home/ubuntu/etl_env/bin/python3", [workerPath], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.env["PYTHON_BIN"] ?? "/home/ubuntu/etl_env/bin/python3", [workerPath], { stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.write(JSON.stringify(workerConfig));
     child.stdin.end();
 

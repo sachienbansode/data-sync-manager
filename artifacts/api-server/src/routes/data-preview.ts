@@ -72,8 +72,17 @@ function maskValue(raw: string, piiType: string): string {
     case "address":
       if (n <= 8) return s.slice(0, 3) + "XXXX";
       return s.slice(0, 6) + "XXXX";
-    case "dob":
-      return "XX/XX/" + s.slice(-4);
+    case "dob": {
+      // ISO format: YYYY-MM-DD  (PostgreSQL default)
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 4) + "-XX-XX";
+      // DD/MM/YYYY or DD-MM-YYYY
+      if (/^\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(s)) {
+        const sep = s[2];
+        return `XX${sep}XX${sep}` + s.slice(-4);
+      }
+      // fallback: mask all but last 4 chars (year)
+      return "XX-XX-" + s.slice(-4);
+    }
     default: {
       const head = Math.max(2, Math.floor(n * 0.30));
       const tail = Math.max(1, Math.floor(n * 0.15));

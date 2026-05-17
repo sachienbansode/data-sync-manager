@@ -266,7 +266,7 @@ export default function DataPreview() {
                       {pagedRows.map((row, ri) => (
                         <TableRow
                           key={ri}
-                          className={ri % 2 === 0 ? "bg-background" : "bg-muted/40"}
+                          className={ri % 2 === 0 ? "bg-background hover:bg-muted/30" : "bg-muted/60 hover:bg-muted/80"}
                         >
                           {result.columns.map(col => (
                             <TableCell

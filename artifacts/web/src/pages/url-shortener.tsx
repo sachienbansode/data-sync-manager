@@ -17,7 +17,7 @@ import { getAccessToken } from "@/lib/auth";
 import {
   Plus, Copy, Trash2, BarChart2, ExternalLink, Globe, Monitor,
   Smartphone, Chrome, Edit, Download, Search, ChevronLeft, ChevronRight,
-  QrCode, Key, Eye, EyeOff, Activity, User, Clock, Code,
+  QrCode, Key, Eye, EyeOff, Activity, User, Clock, Code, Loader2,
 } from "lucide-react";
 
 const BASE = import.meta.env.BASE_URL;
@@ -136,7 +136,7 @@ export default function UrlShortener() {
   /* Queries */
   const { data: urls = [], isLoading } = useQuery<ShortUrl[]>({ queryKey: ["short-urls"], queryFn: () => apiFetch("/short-urls") });
   const { data: domains = [] } = useQuery<ShortDomain[]>({ queryKey: ["short-domains"], queryFn: () => apiFetch("/short-domains") });
-  const { data: analytics } = useQuery<AnalyticsData>({ queryKey: ["short-url-analytics", analyticsId], queryFn: () => apiFetch(`/short-urls/${analyticsId}/analytics`), enabled: analyticsId !== null });
+  const { data: analytics, isLoading: analyticsLoading, isError: analyticsError } = useQuery<AnalyticsData>({ queryKey: ["short-url-analytics", analyticsId], queryFn: () => apiFetch(`/short-urls/${analyticsId}/analytics`), enabled: analyticsId !== null });
   const { data: apiKeys = [], isLoading: keysLoading } = useQuery<ApiKey[]>({ queryKey: ["api-keys"], queryFn: () => apiFetch("/api-keys") });
 
   const verifiedDomains = domains.filter(d => d.isVerified);
@@ -309,7 +309,17 @@ export default function UrlShortener() {
           </div>
 
           {/* Analytics view */}
-          {analyticsId !== null && analytics ? (
+          {analyticsId !== null && analyticsLoading ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-3 text-muted-foreground">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm">Loading analytics…</p>
+            </div>
+          ) : analyticsId !== null && analyticsError ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground">
+              <p className="text-sm text-destructive">Failed to load analytics. Please try again.</p>
+              <Button variant="outline" size="sm" onClick={() => { setAnalyticsId(null); setAnalyticsPage(1); }}>← Back to list</Button>
+            </div>
+          ) : analyticsId !== null && analytics ? (
             <div className="space-y-4">
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <div className="flex items-center gap-3">

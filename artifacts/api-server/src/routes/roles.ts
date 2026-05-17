@@ -22,6 +22,7 @@ export const ALL_PAGES = [
   { path: "/workflow/jobs", name: "Workflow Jobs" },
   { path: "/admin/db-connections", name: "DB Connections" },
   { path: "/admin/field-mappings", name: "Field Mappings" },
+  { path: "/data-preview", name: "Data Preview" },
   { path: "/admin/email-settings", name: "Email Settings" },
   { path: "/admin/app-settings", name: "App Settings" },
   { path: "/admin/font-settings", name: "Font Settings" },
@@ -37,6 +38,25 @@ export const ALL_PAGES = [
   { path: "/email-hub/templates", name: "Email Templates (Bulk)" },
   { path: "/admin/comm-settings", name: "Bulk Email Settings" },
 ];
+
+/**
+ * Auto-sync: ensure every role has a page_permissions row for every page in
+ * ALL_PAGES. Called at server startup so newly added pages are never missing
+ * from existing roles. Safe to run on every boot (uses onConflictDoNothing).
+ */
+export async function syncPagePermissionsForAllRoles(): Promise<void> {
+  const roles = await db.select({ id: rolesTable.id }).from(rolesTable);
+  if (roles.length === 0) return;
+  const rows = roles.flatMap(role =>
+    ALL_PAGES.map(p => ({
+      roleId: role.id,
+      pagePath: p.path,
+      pageName: p.name,
+      canAccess: false,
+    }))
+  );
+  await db.insert(pagePermissionsTable).values(rows).onConflictDoNothing();
+}
 
 const CreateRoleBody = z.object({
   name: z.string().min(1).max(60),

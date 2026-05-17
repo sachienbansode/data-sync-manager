@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler } from "./scheduler";
+import { syncPagePermissionsForAllRoles } from "./routes/roles";
 
 const rawPort = process.env["PORT"];
 
@@ -53,6 +54,13 @@ app.listen(port, (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Auto-sync RBAC page permissions — ensures every role has a row for every
+  // page in ALL_PAGES. New pages added to ALL_PAGES will be seeded with
+  // canAccess=false for all existing roles on the next server start.
+  syncPagePermissionsForAllRoles()
+    .then(() => logger.info("RBAC page permissions synced"))
+    .catch((e) => logger.error({ err: e }, "RBAC page permission sync failed"));
 
   // Small initial delay so the pool can establish its first connection
   // before the scheduler fires its first query.

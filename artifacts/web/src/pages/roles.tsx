@@ -70,10 +70,11 @@ function useAllPages() {
 }
 
 const PAGE_GROUPS: Record<string, string[]> = {
-  "Core":        ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
-  "Data Pipeline": ["/admin/db-connections", "/admin/data-objects", "/workflow", "/workflow/jobs"],
-  "Settings":    ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/application-types", "/admin/field-mappings", "/admin/pii-permissions", "/pii-records"],
-  "Other":       ["/docs"],
+  "Core":             ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
+  "Data Pipeline":    ["/admin/db-connections", "/admin/data-objects", "/workflow", "/workflow/jobs", "/data-preview", "/admin/field-mappings"],
+  "Communication HUB": ["/email-hub/campaigns", "/email-hub/templates", "/admin/comm-settings"],
+  "Tools":            ["/url-shortener", "/admin/short-domains", "/docs"],
+  "Settings":         ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/application-types", "/admin/pii-permissions", "/pii-records"],
 };
 function groupPages(pages: PageItem[]): Array<{ group: string; pages: PageItem[] }> {
   const result: Array<{ group: string; pages: PageItem[] }> = [];

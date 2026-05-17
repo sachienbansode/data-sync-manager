@@ -161,13 +161,6 @@ function getWorkerPath(): string {
   return pathResolve(__dirname, "lib", "pipeline_worker.py");
 }
 
-/** Return the Python binary to use for running the pipeline worker.
- *  On AWS, set PYTHON_BIN=/home/ubuntu/ananta-platform/venv/bin/python3
- *  in .env.production so the virtualenv packages (sqlalchemy, oracledb etc.) are used.
- *  Falls back to "python3" for local / Replit development. */
-function getPythonBin(): string {
-  return process.env.PYTHON_BIN ?? "python3";
-}
 
 export interface PipelineRunResult {
   success: boolean;
@@ -308,7 +301,7 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   const workerPath = getWorkerPath();
 
   return new Promise((resolvePromise) => {
-    const child = spawn(getPythonBin(), [workerPath], { stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn("python3", [workerPath], { stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.write(JSON.stringify(workerConfig));
     child.stdin.end();
 

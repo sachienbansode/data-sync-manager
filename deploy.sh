@@ -26,6 +26,13 @@ echo "[2/5] Installing Node dependencies..."
 pnpm install --frozen-lockfile
 echo "  Done."
 
+# ── Python packages (kept in system python3 — matches your working backup) ───
+echo "      Ensuring Python pipeline packages are present..."
+pip3 install --break-system-packages -q \
+  psycopg2-binary SQLAlchemy pandas PyMySQL oracledb pyodbc 2>/dev/null \
+  || pip3 install -q psycopg2-binary SQLAlchemy pandas PyMySQL oracledb pyodbc 2>/dev/null \
+  || echo "      (Python packages already installed or skipped)"
+
 # ── 3. Build API server ───────────────────────────────────────────────────────
 echo ""
 echo "[3/5] Building API server..."

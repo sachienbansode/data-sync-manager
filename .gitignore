@@ -3,6 +3,10 @@
 .env.production
 .env.local
 .env.*.local
+# Block any .env files uploaded to attached_assets
+attached_assets/*.production
+attached_assets/*.env
+attached_assets/.env*
 
 # Dependencies
 node_modules/

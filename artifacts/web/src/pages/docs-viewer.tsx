@@ -117,7 +117,7 @@ export default function DocsViewer() {
             </div>
           )}
           {isAdmin && (
-            <Link href="/docs/admin">
+            <Link href="/docs/mgr">
               <Button variant="outline" size="sm" className="gap-2">
                 <Settings2 className="h-4 w-4" />
                 Manage
@@ -173,7 +173,7 @@ export default function DocsViewer() {
                   : "Failed to load the spec. Please try again."}
               </p>
               {specs?.length === 0 && isAdmin && (
-                <Link href="/docs/admin">
+                <Link href="/docs/mgr">
                   <Button variant="outline" size="sm" className="mt-3 gap-2">
                     <ExternalLink className="h-4 w-4" />
                     Upload a spec

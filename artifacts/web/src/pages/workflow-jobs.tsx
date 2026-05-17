@@ -258,7 +258,7 @@ export default function WorkflowJobs() {
     <>
       <div className="space-y-6">
         <div className="flex items-center gap-3">
-          <Link href="/workflow">
+          <Link href="/pipe">
             <Button variant="ghost" size="sm"><ChevronLeft className="h-4 w-4 mr-1" /> Back</Button>
           </Link>
           <div>

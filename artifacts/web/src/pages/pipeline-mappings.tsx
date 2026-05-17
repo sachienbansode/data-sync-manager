@@ -289,7 +289,7 @@ export default function PipelineMappings() {
     return (
       <div className="text-center py-24 text-muted-foreground">
         <p>Pipeline not found.</p>
-        <Link href="/workflow"><Button variant="outline" className="mt-4"><ArrowLeft className="h-4 w-4 mr-2" />Back to Workflows</Button></Link>
+        <Link href="/pipe"><Button variant="outline" className="mt-4"><ArrowLeft className="h-4 w-4 mr-2" />Back to Workflows</Button></Link>
       </div>
     );
   }
@@ -299,7 +299,7 @@ export default function PipelineMappings() {
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-3">
-        <Link href="/workflow">
+        <Link href="/pipe">
           <Button variant="ghost" size="sm"><ArrowLeft className="h-4 w-4 mr-1" />Back</Button>
         </Link>
         <div className="flex-1 min-w-0">
@@ -453,7 +453,7 @@ export default function PipelineMappings() {
       </Card>
 
       <div className="flex justify-end gap-3">
-        <Link href="/workflow"><Button variant="outline">Cancel</Button></Link>
+        <Link href="/pipe"><Button variant="outline">Cancel</Button></Link>
         <Button onClick={save} disabled={saving}>
           {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
           Save Mappings

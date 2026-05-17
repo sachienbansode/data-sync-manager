@@ -80,7 +80,7 @@ export default function Docs() {
         </div>
         {isAdmin && (
           <div className="flex gap-2 shrink-0">
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => setLocation("/docs/admin")}>
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setLocation("/docs/mgr")}>
               <Settings2 className="h-4 w-4" />
               Manage
             </Button>
@@ -177,7 +177,7 @@ export default function Docs() {
             </p>
           </div>
           {isAdmin && (
-            <Button className="gap-2" onClick={() => setLocation("/docs/admin")}>
+            <Button className="gap-2" onClick={() => setLocation("/docs/mgr")}>
               <Plus className="h-4 w-4" />
               Register First Application
             </Button>
@@ -252,7 +252,7 @@ export default function Docs() {
                     size="sm"
                     variant="outline"
                     className="w-full gap-2"
-                    onClick={() => setLocation("/docs/admin")}
+                    onClick={() => setLocation("/docs/mgr")}
                   >
                     <Plus className="h-4 w-4" />
                     Upload Spec

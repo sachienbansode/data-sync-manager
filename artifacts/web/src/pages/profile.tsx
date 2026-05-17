@@ -137,7 +137,7 @@ export default function Profile() {
                     Disable MFA
                   </Button>
                 ) : (
-                  <Button onClick={() => setLocation("/mfa-setup")}>
+                  <Button onClick={() => setLocation("/mfa")}>
                     Set up MFA
                   </Button>
                 )}

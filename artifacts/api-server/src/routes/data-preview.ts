@@ -31,11 +31,7 @@ function detectPiiType(colName: string): string | null {
 }
 
 /**
- * Indian-standard PII masking.
- * Rules:
- *  - Always use a FIXED "••••" mask segment — never mirror original length.
- *  - Show ~30-40 % from the start and ~15-20 % from the end.
- *  - Follow specific UIDAI / IT-dept standards for Aadhaar, PAN, etc.
+ * Indian-standard PII masking — fixed-length 'X' mask, 30-40 % visible.
  */
 function maskValue(raw: string, piiType: string): string {
   if (!raw || !raw.trim()) return raw;
@@ -44,69 +40,45 @@ function maskValue(raw: string, piiType: string): string {
 
   switch (piiType) {
     case "name": {
-      // Show first 2 chars + •••• + last 2 chars
-      // Short names (≤ 4): first 1 + •••• + last 1
-      if (n <= 4)  return s.slice(0, 1) + "••••" + s.slice(-1);
-      if (n <= 7)  return s.slice(0, 2) + "••••" + s.slice(-1);
-      return s.slice(0, 3) + "••••" + s.slice(-2);
+      if (n <= 4)  return s.slice(0, 1) + "XXXX" + s.slice(-1);
+      if (n <= 7)  return s.slice(0, 2) + "XXXX" + s.slice(-1);
+      return s.slice(0, 3) + "XXXX" + s.slice(-2);
     }
-
     case "email": {
-      // Standard: show first 3 chars of local part + •••• + @domain
       const at = s.indexOf("@");
-      if (at < 0) return s.slice(0, 2) + "••••" + s.slice(-1);
+      if (at < 0) return s.slice(0, 2) + "XXXX" + s.slice(-1);
       const local  = s.slice(0, at);
       const domain = s.slice(at + 1);
       const visible = Math.min(3, Math.max(1, Math.floor(local.length * 0.4)));
-      return local.slice(0, visible) + "••••@" + domain;
+      return local.slice(0, visible) + "XXXX@" + domain;
     }
-
     case "phone": {
-      // Show first 3 + •••• + last 2  →  987••••10
-      // Strip leading +91 / 0 for uniformity, then reattach
       const digits = s.replace(/\D/g, "");
-      if (digits.length >= 10) {
-        return digits.slice(0, 3) + "••••" + digits.slice(-2);
-      }
-      return s.slice(0, 2) + "••••" + s.slice(-1);
+      if (digits.length >= 10) return digits.slice(0, 3) + "XXXX" + digits.slice(-2);
+      return s.slice(0, 2) + "XXXX" + s.slice(-1);
     }
-
     case "pan":
-      // AAAAA9999A (10 chars) — CBDT standard: first 5 chars + •••• + last char
-      if (n === 10) return s.slice(0, 5) + "••••" + s.slice(-1);
-      return s.slice(0, 3) + "••••" + s.slice(-1);
-
+      if (n === 10) return s.slice(0, 5) + "XXXX" + s.slice(-1);
+      return s.slice(0, 3) + "XXXX" + s.slice(-1);
     case "national_id": {
-      // UIDAI standard: mask all except last 4 digits
-      // Display as: XXXX XXXX 1234
       const digits = s.replace(/\D/g, "");
-      if (digits.length === 12) {
-        return "XXXX XXXX " + digits.slice(-4);
-      }
-      if (digits.length >= 4) return "XXXX" + digits.slice(-4);
-      return "••••" + s.slice(-2);
+      if (digits.length === 12) return "XXXX XXXX " + digits.slice(-4);
+      if (digits.length >= 4)   return "XXXX" + digits.slice(-4);
+      return "XXXX" + s.slice(-2);
     }
-
     case "bank_account":
-      // Show first 2 + •••• + last 4  →  AC••••1234
-      if (n >= 8) return s.slice(0, 2) + "••••" + s.slice(-4);
-      return s.slice(0, 1) + "••••" + s.slice(-2);
-
+      if (n >= 8) return s.slice(0, 2) + "XXXX" + s.slice(-4);
+      return s.slice(0, 1) + "XXXX" + s.slice(-2);
     case "address":
-      // Show first 6 chars (enough to identify area) + ••••
-      if (n <= 8) return s.slice(0, 3) + "••••";
-      return s.slice(0, 6) + "••••";
-
+      if (n <= 8) return s.slice(0, 3) + "XXXX";
+      return s.slice(0, 6) + "XXXX";
     case "dob":
-      // Show year only, mask day + month  →  ••/••/1990
-      return "••/••/" + s.slice(-4);
-
+      return "XX/XX/" + s.slice(-4);
     default: {
-      // Generic: show first 30% + •••• + last 15%
       const head = Math.max(2, Math.floor(n * 0.30));
       const tail = Math.max(1, Math.floor(n * 0.15));
-      if (n <= 4) return s.slice(0, 1) + "••••";
-      return s.slice(0, head) + "••••" + s.slice(-tail);
+      if (n <= 4) return s.slice(0, 1) + "XXXX";
+      return s.slice(0, head) + "XXXX" + s.slice(-tail);
     }
   }
 }
@@ -128,16 +100,17 @@ function applyMasking(
   });
 }
 
-// Wrap user query to enforce row limit per engine
 function limitQuery(userQuery: string, engine: string, limit: number): string {
   const q = userQuery.trim().replace(/;+$/, "");
-  if (engine === "mssql" || engine === "sqlserver") {
-    return `SELECT TOP ${limit} * FROM (${q}) AS _dp`;
-  }
-  if (engine === "oracle" || engine === "oracledb") {
-    return `SELECT * FROM (${q}) WHERE ROWNUM <= ${limit}`;
-  }
+  if (engine === "mssql" || engine === "sqlserver") return `SELECT TOP ${limit} * FROM (${q}) AS _dp`;
+  if (engine === "oracle" || engine === "oracledb") return `SELECT * FROM (${q}) WHERE ROWNUM <= ${limit}`;
   return `SELECT * FROM (${q}) AS _dp LIMIT ${limit}`;
+}
+
+function countQuery(userQuery: string, engine: string): string {
+  const q = userQuery.trim().replace(/;+$/, "");
+  if (engine === "oracle" || engine === "oracledb") return `SELECT COUNT(*) AS total FROM (${q})`;
+  return `SELECT COUNT(*) AS total FROM (${q}) AS _cnt`;
 }
 
 // POST /api/admin/data-preview
@@ -149,7 +122,6 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, connectionId));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
 
-  // Read PII preview setting from app settings
   const [appCfg] = await db.select().from(appSettingsTable).limit(1);
   const piiMaskingEnabled = appCfg?.piiPreviewEnabled ?? true;
 
@@ -164,27 +136,29 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
 
   const engine = conn.dbEngine;
   const limitedQuery = limitQuery(query.trim(), engine, MAX_ROWS);
+  const cntQuery     = countQuery(query.trim(), engine);
 
   try {
     let columns: string[] = [];
     let rows: Record<string, unknown>[] = [];
+    let totalCount: number | null = null;
 
     if (engine === "postgresql" || engine === "postgres") {
       const useSSL = conn.extraParams?.ssl === "true";
       const pool = new Pool({
-        host: conn.host ?? undefined,
-        port: conn.port ?? 5432,
-        database: conn.dbName ?? undefined,
-        user: username,
-        password,
-        connectionTimeoutMillis: 15000,
-        max: 1,
+        host: conn.host ?? undefined, port: conn.port ?? 5432,
+        database: conn.dbName ?? undefined, user: username, password,
+        connectionTimeoutMillis: 15000, max: 1,
         ...(useSSL ? { ssl: { rejectUnauthorized: false } } : {}),
       });
       try {
-        const result = await pool.query(limitedQuery);
-        columns = result.fields.map(f => f.name);
-        rows = result.rows;
+        const [cntResult, dataResult] = await Promise.all([
+          pool.query(cntQuery).catch(() => null),
+          pool.query(limitedQuery),
+        ]);
+        columns = dataResult.fields.map(f => f.name);
+        rows = dataResult.rows;
+        totalCount = cntResult ? parseInt(String(cntResult.rows[0]?.total ?? "0"), 10) : null;
       } finally {
         await pool.end().catch(() => {});
       }
@@ -192,17 +166,19 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
     } else if (engine === "mysql") {
       const mysql2 = await import("mysql2/promise");
       const mysqlConn = await mysql2.createConnection({
-        host: conn.host ?? "localhost",
-        port: conn.port ?? 3306,
-        database: conn.dbName ?? undefined,
-        user: username,
-        password,
+        host: conn.host ?? "localhost", port: conn.port ?? 3306,
+        database: conn.dbName ?? undefined, user: username, password,
         connectTimeout: 15000,
       });
       try {
-        const [mysqlRows, fields] = await mysqlConn.execute(limitedQuery);
+        const [[cntRows], [dataRows, fields]] = await Promise.all([
+          mysqlConn.execute(cntQuery).catch(() => [[]] as unknown as [unknown[], unknown]),
+          mysqlConn.execute(limitedQuery),
+        ]);
         columns = (fields as { name: string }[]).map(f => f.name);
-        rows = mysqlRows as Record<string, unknown>[];
+        rows = dataRows as Record<string, unknown>[];
+        const cnt = (cntRows as Record<string, unknown>[])[0];
+        totalCount = cnt ? parseInt(String(cnt.total ?? "0"), 10) : null;
       } finally {
         await mysqlConn.end().catch(() => {});
       }
@@ -210,33 +186,39 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
     } else if (engine === "mssql" || engine === "sqlserver") {
       const mssql = await import("mssql");
       const pool = await mssql.connect({
-        server: conn.host ?? "localhost",
-        port: conn.port ?? 1433,
-        database: conn.dbName ?? undefined,
-        user: username,
-        password,
+        server: conn.host ?? "localhost", port: conn.port ?? 1433,
+        database: conn.dbName ?? undefined, user: username, password,
         options: { trustServerCertificate: true, connectTimeout: 15000 },
       } as Parameters<typeof mssql.connect>[0]);
       try {
-        const result = await pool.request().query(limitedQuery);
-        rows = result.recordset as Record<string, unknown>[];
+        const [cntResult, dataResult] = await Promise.all([
+          pool.request().query(cntQuery).catch(() => null),
+          pool.request().query(limitedQuery),
+        ]);
+        rows = dataResult.recordset as Record<string, unknown>[];
         columns = rows.length > 0 ? Object.keys(rows[0]!) : [];
+        totalCount = cntResult ? parseInt(String(cntResult.recordset[0]?.total ?? "0"), 10) : null;
       } finally {
         await pool.close().catch(() => {});
       }
 
     } else if (engine === "oracle" || engine === "oracledb") {
-      // Use .default — oracledb is a CJS module; dynamic import wraps it
       const oracledb = (await import("oracledb")).default;
       const connection = await oracledb.getConnection({
-        user: username,
-        password,
+        user: username, password,
         connectString: `${conn.host}:${conn.port ?? 1521}/${conn.dbName ?? "ORCL"}`,
       });
       try {
-        const result = await connection.execute(limitedQuery, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
-        columns = (result.metaData ?? []).map((m: { name: string }) => m.name);
-        rows = (result.rows ?? []) as Record<string, unknown>[];
+        const [cntResult, dataResult] = await Promise.all([
+          connection.execute(cntQuery, [], { outFormat: oracledb.OUT_FORMAT_OBJECT }).catch(() => null),
+          connection.execute(limitedQuery, [], { outFormat: oracledb.OUT_FORMAT_OBJECT }),
+        ]);
+        columns = (dataResult.metaData ?? []).map((m: { name: string }) => m.name);
+        rows    = (dataResult.rows ?? []) as Record<string, unknown>[];
+        if (cntResult?.rows) {
+          const r = (cntResult.rows as Record<string, unknown>[])[0];
+          totalCount = r ? parseInt(String(r.TOTAL ?? r.total ?? "0"), 10) : null;
+        }
       } finally {
         await connection.close().catch(() => {});
       }
@@ -245,20 +227,18 @@ router.post("/admin/data-preview", authenticate, requireRole("Admin"), async (re
       res.status(400).json({ error: `Engine "${engine}" is not supported for data preview` }); return;
     }
 
-    // Detect PII columns — always identify them so UI can show badges
     const piiMap: Record<string, string> = {};
     for (const col of columns) {
       const t = detectPiiType(col);
       if (t) piiMap[col] = t;
     }
-
-    // Apply masking only when admin has enabled PII protection
     const finalRows = piiMaskingEnabled ? applyMasking(rows, piiMap) : rows;
 
     res.json({
       columns,
       rows: finalRows,
       rowCount: finalRows.length,
+      totalCount,
       piiColumns: Object.keys(piiMap),
       piiMaskingEnabled,
     });

@@ -53,7 +53,6 @@ function RootRoute() {
   return isAuthenticated ? <Redirect to="/dashboard" /> : <Redirect to="/login" />;
 }
 
-/** Applies font settings from DB as CSS variables on <html> */
 function FontApplicator() {
   useFontSettings();
   return null;
@@ -66,105 +65,78 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/403" component={Forbidden} />
 
-      <Route path="/mfa-setup">
-        <ProtectedRoute component={MfaSetup} path="/mfa-setup" />
-      </Route>
-      <Route path="/dashboard">
-        <ProtectedRoute component={Dashboard} path="/dashboard" />
-      </Route>
-      <Route path="/users">
-        <ProtectedRoute component={Users} path="/users" />
-      </Route>
-      <Route path="/roles">
-        <ProtectedRoute component={Roles} path="/roles" />
-      </Route>
-      <Route path="/profile">
-        <ProtectedRoute component={Profile} path="/profile" skipPermissionCheck />
-      </Route>
-      <Route path="/audit-log">
-        <ProtectedRoute component={AuditLog} path="/audit-log" />
-      </Route>
-      <Route path="/pii-records">
-        <Redirect to="/admin/pii-permissions" />
-      </Route>
-      <Route path="/admin/data-objects">
-        <ProtectedRoute component={DataObjects} path="/admin/data-objects" requireRole="Admin" />
-      </Route>
-      <Route path="/about">
-        <ProtectedRoute component={About} path="/about" skipPermissionCheck />
-      </Route>
-      <Route path="/admin/email-settings">
-        <ProtectedRoute component={EmailSettings} path="/admin/email-settings" />
-      </Route>
-      <Route path="/admin/app-settings">
-        <ProtectedRoute component={AppSettings} path="/admin/app-settings" />
-      </Route>
-      <Route path="/admin/pii-permissions">
-        <ProtectedRoute component={PiiPermissions} path="/admin/pii-permissions" />
-      </Route>
-      <Route path="/admin/db-connections">
-        <ProtectedRoute component={DbConnections} path="/admin/db-connections" />
-      </Route>
-      <Route path="/admin/field-mappings">
-        <ProtectedRoute component={FieldMappings} path="/admin/field-mappings" />
-      </Route>
-      <Route path="/admin/font-settings">
-        <ProtectedRoute component={FontSettings} path="/admin/font-settings" requireRole="Admin" />
-      </Route>
-      <Route path="/admin/allowed-file-types">
-        <ProtectedRoute component={AllowedFileTypes} path="/admin/allowed-file-types" requireRole="Admin" />
-      </Route>
-      <Route path="/admin/login-report">
-        <ProtectedRoute component={LoginReport} path="/admin/login-report" requireRole="Admin" />
-      </Route>
-      <Route path="/admin/application-types">
-        <ProtectedRoute component={ApplicationTypes} path="/admin/application-types" requireRole="Admin" />
-      </Route>
-      <Route path="/admin/email-templates">
-        <ProtectedRoute component={EmailTemplates} path="/admin/email-templates" requireRole="Admin" />
-      </Route>
-      <Route path="/workflow/jobs">
-        <ProtectedRoute component={WorkflowJobs} path="/workflow/jobs" />
-      </Route>
-      <Route path="/workflow/:id/mappings">
-        <ProtectedRoute component={PipelineMappings} path="/workflow" />
-      </Route>
-      <Route path="/workflow">
-        <ProtectedRoute component={Workflow} path="/workflow" />
-      </Route>
-      <Route path="/docs">
-        <ProtectedRoute component={Docs} path="/docs" />
-      </Route>
-      <Route path="/docs/admin">
-        <ProtectedRoute component={DocsAdmin} path="/docs" requireRole="Admin" />
-      </Route>
-      <Route path="/docs/:appId">
-        <ProtectedRoute component={DocsViewer} path="/docs" />
-      </Route>
+      {/* ── Auth ── */}
+      <Route path="/mfa"><ProtectedRoute component={MfaSetup} path="/mfa-setup" skipPermissionCheck /></Route>
+      <Route path="/mfa-setup"><Redirect to="/mfa" /></Route>
 
-      <Route path="/url-shortener">
-        <ProtectedRoute component={UrlShortener} path="/url-shortener" />
-      </Route>
-      <Route path="/admin/short-domains">
-        <ProtectedRoute component={ShortDomains} path="/admin/short-domains" requireRole="Admin" />
-      </Route>
+      {/* ── Main pages ── */}
+      <Route path="/dashboard"><ProtectedRoute component={Dashboard} path="/dashboard" /></Route>
+      <Route path="/users"><ProtectedRoute component={Users} path="/users" /></Route>
+      <Route path="/roles"><ProtectedRoute component={Roles} path="/roles" /></Route>
+      <Route path="/profile"><ProtectedRoute component={Profile} path="/profile" skipPermissionCheck /></Route>
+      <Route path="/about"><ProtectedRoute component={About} path="/about" skipPermissionCheck /></Route>
 
-      <Route path="/email-hub/campaigns/:id">
-        <ProtectedRoute component={CampaignDetail} path="/email-hub/campaigns" />
-      </Route>
-      <Route path="/email-hub/campaigns">
-        <ProtectedRoute component={Campaigns} path="/email-hub/campaigns" />
-      </Route>
-      <Route path="/email-hub/templates">
-        <ProtectedRoute component={EmailHubTemplates} path="/email-hub/templates" />
-      </Route>
-      <Route path="/admin/comm-settings">
-        <ProtectedRoute component={CommSettings} path="/admin/comm-settings" requireRole="Admin" />
-      </Route>
+      <Route path="/audit"><ProtectedRoute component={AuditLog} path="/audit-log" /></Route>
+      <Route path="/audit-log"><Redirect to="/audit" /></Route>
 
-      <Route path="/data-preview">
-        <ProtectedRoute component={DataPreview} path="/data-preview" requireRole="Admin" />
-      </Route>
+      <Route path="/links"><ProtectedRoute component={UrlShortener} path="/url-shortener" /></Route>
+      <Route path="/url-shortener"><Redirect to="/links" /></Route>
+
+      <Route path="/preview"><ProtectedRoute component={DataPreview} path="/data-preview" requireRole="Admin" /></Route>
+      <Route path="/data-preview"><Redirect to="/preview" /></Route>
+
+      {/* ── Pipeline / Workflow ── */}
+      <Route path="/pipe/jobs"><ProtectedRoute component={WorkflowJobs} path="/workflow/jobs" /></Route>
+      <Route path="/pipe/:id/map"><ProtectedRoute component={PipelineMappings} path="/workflow" /></Route>
+      <Route path="/pipe"><ProtectedRoute component={Workflow} path="/workflow" /></Route>
+      <Route path="/workflow/jobs"><Redirect to="/pipe/jobs" /></Route>
+      <Route path="/workflow/:id/mappings">{(params) => <Redirect to={`/pipe/${params.id}/map`} />}</Route>
+      <Route path="/workflow"><Redirect to="/pipe" /></Route>
+
+      {/* ── Docs ── */}
+      <Route path="/docs/mgr"><ProtectedRoute component={DocsAdmin} path="/docs" requireRole="Admin" /></Route>
+      <Route path="/docs/admin"><Redirect to="/docs/mgr" /></Route>
+      <Route path="/docs/:appId"><ProtectedRoute component={DocsViewer} path="/docs" /></Route>
+      <Route path="/docs"><ProtectedRoute component={Docs} path="/docs" /></Route>
+
+      {/* ── Communication Hub ── */}
+      <Route path="/hub/camp/:id"><ProtectedRoute component={CampaignDetail} path="/email-hub/campaigns" /></Route>
+      <Route path="/hub/camp"><ProtectedRoute component={Campaigns} path="/email-hub/campaigns" /></Route>
+      <Route path="/hub/tpl"><ProtectedRoute component={EmailHubTemplates} path="/email-hub/templates" /></Route>
+      <Route path="/email-hub/campaigns/:id">{(params) => <Redirect to={`/hub/camp/${params.id}`} />}</Route>
+      <Route path="/email-hub/campaigns"><Redirect to="/hub/camp" /></Route>
+      <Route path="/email-hub/templates"><Redirect to="/hub/tpl" /></Route>
+
+      {/* ── Admin ── */}
+      <Route path="/a/conn"><ProtectedRoute component={DbConnections} path="/admin/db-connections" /></Route>
+      <Route path="/a/dobj"><ProtectedRoute component={DataObjects} path="/admin/data-objects" requireRole="Admin" /></Route>
+      <Route path="/a/fmap"><ProtectedRoute component={FieldMappings} path="/admin/field-mappings" /></Route>
+      <Route path="/a/pii"><ProtectedRoute component={PiiPermissions} path="/admin/pii-permissions" /></Route>
+      <Route path="/a/smtp"><ProtectedRoute component={EmailSettings} path="/admin/email-settings" /></Route>
+      <Route path="/a/etpl"><ProtectedRoute component={EmailTemplates} path="/admin/email-templates" requireRole="Admin" /></Route>
+      <Route path="/a/cfg"><ProtectedRoute component={AppSettings} path="/admin/app-settings" /></Route>
+      <Route path="/a/font"><ProtectedRoute component={FontSettings} path="/admin/font-settings" requireRole="Admin" /></Route>
+      <Route path="/a/ftype"><ProtectedRoute component={AllowedFileTypes} path="/admin/allowed-file-types" requireRole="Admin" /></Route>
+      <Route path="/a/logins"><ProtectedRoute component={LoginReport} path="/admin/login-report" requireRole="Admin" /></Route>
+      <Route path="/a/appt"><ProtectedRoute component={ApplicationTypes} path="/admin/application-types" requireRole="Admin" /></Route>
+      <Route path="/a/dom"><ProtectedRoute component={ShortDomains} path="/admin/short-domains" requireRole="Admin" /></Route>
+      <Route path="/a/comms"><ProtectedRoute component={CommSettings} path="/admin/comm-settings" requireRole="Admin" /></Route>
+
+      {/* legacy admin redirects */}
+      <Route path="/admin/db-connections"><Redirect to="/a/conn" /></Route>
+      <Route path="/admin/data-objects"><Redirect to="/a/dobj" /></Route>
+      <Route path="/admin/field-mappings"><Redirect to="/a/fmap" /></Route>
+      <Route path="/admin/pii-permissions"><Redirect to="/a/pii" /></Route>
+      <Route path="/pii-records"><Redirect to="/a/pii" /></Route>
+      <Route path="/admin/email-settings"><Redirect to="/a/smtp" /></Route>
+      <Route path="/admin/email-templates"><Redirect to="/a/etpl" /></Route>
+      <Route path="/admin/app-settings"><Redirect to="/a/cfg" /></Route>
+      <Route path="/admin/font-settings"><Redirect to="/a/font" /></Route>
+      <Route path="/admin/allowed-file-types"><Redirect to="/a/ftype" /></Route>
+      <Route path="/admin/login-report"><Redirect to="/a/logins" /></Route>
+      <Route path="/admin/application-types"><Redirect to="/a/appt" /></Route>
+      <Route path="/admin/short-domains"><Redirect to="/a/dom" /></Route>
+      <Route path="/admin/comm-settings"><Redirect to="/a/comms" /></Route>
 
       <Route path="/auth/callback" component={AuthCallback} />
       <Route component={NotFound} />

@@ -9,7 +9,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
 import { Loader2, Download, Database, Play, ShieldAlert } from "lucide-react";
-import { Layout } from "@/components/layout";
 
 const BASE = import.meta.env.BASE_URL;
 const PAGE_SIZE = 20;
@@ -113,8 +112,7 @@ export default function DataPreview() {
   const piiSet      = new Set(result?.piiColumns ?? []);
 
   return (
-    <Layout>
-      <div className="space-y-6">
+    <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Data Preview</h1>
           <p className="text-muted-foreground mt-1">
@@ -304,7 +302,6 @@ export default function DataPreview() {
             <p className="text-sm mt-1">Select a connection, write a query, and click Run.</p>
           </div>
         )}
-      </div>
-    </Layout>
+    </div>
   );
 }

@@ -43,6 +43,7 @@ import EmailHubTemplates from "@/pages/email-hub/templates";
 import CommSettings from "@/pages/admin/comm-settings";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
+import { SessionTimeoutProvider } from "@/components/session-timeout";
 
 const queryClient = new QueryClient();
 
@@ -178,10 +179,12 @@ function App() {
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
             <AuthProvider>
-              <FaviconSync />
-              <FontApplicator />
-              <Router />
-              <Toaster richColors position="top-right" />
+              <SessionTimeoutProvider>
+                <FaviconSync />
+                <FontApplicator />
+                <Router />
+                <Toaster richColors position="top-right" />
+              </SessionTimeoutProvider>
             </AuthProvider>
           </WouterRouter>
         </TooltipProvider>

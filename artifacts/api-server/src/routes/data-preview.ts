@@ -30,40 +30,84 @@ function detectPiiType(colName: string): string | null {
   return null;
 }
 
+/**
+ * Indian-standard PII masking.
+ * Rules:
+ *  - Always use a FIXED "••••" mask segment — never mirror original length.
+ *  - Show ~30-40 % from the start and ~15-20 % from the end.
+ *  - Follow specific UIDAI / IT-dept standards for Aadhaar, PAN, etc.
+ */
 function maskValue(raw: string, piiType: string): string {
-  if (!raw) return raw;
+  if (!raw || !raw.trim()) return raw;
+  const s = raw.trim();
+  const n = s.length;
+
   switch (piiType) {
-    case "phone":
-      // Show first 3 digits, mask rest: 987•••••••
-      return raw.slice(0, 3) + "•".repeat(Math.max(0, raw.length - 3));
-    case "email": {
-      const at = raw.indexOf("@");
-      if (at < 0) return raw.slice(0, 2) + "•".repeat(Math.max(0, raw.length - 2));
-      const local = raw.slice(0, at);
-      const domain = raw.slice(at + 1);
-      return (local.slice(0, 2) + "••••") + "@" + domain;
+    case "name": {
+      // Show first 2 chars + •••• + last 2 chars
+      // Short names (≤ 4): first 1 + •••• + last 1
+      if (n <= 4)  return s.slice(0, 1) + "••••" + s.slice(-1);
+      if (n <= 7)  return s.slice(0, 2) + "••••" + s.slice(-1);
+      return s.slice(0, 3) + "••••" + s.slice(-2);
     }
-    case "pan":
-      // Indian PAN: AAAAA9999A (10 chars) — show first 5 + last 1, mask 4 digits
-      if (raw.length === 10) {
-        return raw.slice(0, 5) + "••••" + raw.slice(-1);
+
+    case "email": {
+      // Standard: show first 3 chars of local part + •••• + @domain
+      const at = s.indexOf("@");
+      if (at < 0) return s.slice(0, 2) + "••••" + s.slice(-1);
+      const local  = s.slice(0, at);
+      const domain = s.slice(at + 1);
+      const visible = Math.min(3, Math.max(1, Math.floor(local.length * 0.4)));
+      return local.slice(0, visible) + "••••@" + domain;
+    }
+
+    case "phone": {
+      // Show first 3 + •••• + last 2  →  987••••10
+      // Strip leading +91 / 0 for uniformity, then reattach
+      const digits = s.replace(/\D/g, "");
+      if (digits.length >= 10) {
+        return digits.slice(0, 3) + "••••" + digits.slice(-2);
       }
-      return raw.slice(0, 3) + "•".repeat(Math.max(0, raw.length - 4)) + raw.slice(-1);
+      return s.slice(0, 2) + "••••" + s.slice(-1);
+    }
+
+    case "pan":
+      // AAAAA9999A (10 chars) — CBDT standard: first 5 chars + •••• + last char
+      if (n === 10) return s.slice(0, 5) + "••••" + s.slice(-1);
+      return s.slice(0, 3) + "••••" + s.slice(-1);
+
+    case "national_id": {
+      // UIDAI standard: mask all except last 4 digits
+      // Display as: XXXX XXXX 1234
+      const digits = s.replace(/\D/g, "");
+      if (digits.length === 12) {
+        return "XXXX XXXX " + digits.slice(-4);
+      }
+      if (digits.length >= 4) return "XXXX" + digits.slice(-4);
+      return "••••" + s.slice(-2);
+    }
+
     case "bank_account":
-    case "national_id":
-      // Show last 4 digits only: ••••1234
-      return "••••" + raw.slice(-4);
+      // Show first 2 + •••• + last 4  →  AC••••1234
+      if (n >= 8) return s.slice(0, 2) + "••••" + s.slice(-4);
+      return s.slice(0, 1) + "••••" + s.slice(-2);
+
     case "address":
-      return raw.length <= 8 ? "•".repeat(raw.length) : raw.slice(0, 6) + "•••";
-    case "name":
-      // Show first char + mask rest: A•••••
-      return raw.slice(0, 1) + "•".repeat(Math.max(0, raw.length - 1));
+      // Show first 6 chars (enough to identify area) + ••••
+      if (n <= 8) return s.slice(0, 3) + "••••";
+      return s.slice(0, 6) + "••••";
+
     case "dob":
-      // Show year only: ••••-••-1990 → mask day/month
-      return "••/••/" + raw.slice(-4);
-    default:
-      if (raw.length <= 4) return "•".repeat(raw.length);
-      return raw.slice(0, 2) + "•".repeat(raw.length - 4) + raw.slice(-2);
+      // Show year only, mask day + month  →  ••/••/1990
+      return "••/••/" + s.slice(-4);
+
+    default: {
+      // Generic: show first 30% + •••• + last 15%
+      const head = Math.max(2, Math.floor(n * 0.30));
+      const tail = Math.max(1, Math.floor(n * 0.15));
+      if (n <= 4) return s.slice(0, 1) + "••••";
+      return s.slice(0, head) + "••••" + s.slice(-tail);
+    }
   }
 }
 

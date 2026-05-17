@@ -36,6 +36,7 @@ export const ALL_PAGES = [
   { path: "/email-hub/campaigns", name: "Email Campaigns" },
   { path: "/email-hub/templates", name: "Email Templates (Bulk)" },
   { path: "/admin/comm-settings", name: "Bulk Email Settings" },
+  { path: "/data-preview", name: "Data Preview" },
 ];
 
 const CreateRoleBody = z.object({

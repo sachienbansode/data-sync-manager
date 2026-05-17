@@ -1,0 +1,25 @@
+# Python dependencies for pipeline_worker.py
+# Install with: pip3 install -r requirements.txt
+
+# PostgreSQL driver (psycopg2-binary includes compiled C extension — no build tools needed)
+psycopg2-binary>=2.9
+
+# ORM + connection pooling used by MySQL / MSSQL source paths
+SQLAlchemy>=2.0
+
+# Chunked reads for non-PostgreSQL sources
+pandas>=2.0
+
+# MySQL dialect for SQLAlchemy  (mysql+pymysql:// URLs)
+PyMySQL>=1.1
+
+# Oracle native thin driver — no Instant Client required
+oracledb>=2.0
+
+# MSSQL dialect for SQLAlchemy  (mssql+pyodbc:// URLs)
+# NOTE: also requires system-level ODBC Driver 17:
+#   curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key add -
+#   curl https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list \
+#     | sudo tee /etc/apt/sources.list.d/mssql-release.list
+#   sudo apt-get update && sudo ACCEPT_EULA=Y apt-get install -y msodbcsql17 unixodbc-dev
+pyodbc>=5.0

@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
 import { db, usersTable, rolesTable, mfaSecretsTable, refreshTokensTable, auditLogsTable, pagePermissionsTable, sessionsTable } from "@workspace/db";
+import { ALL_PAGES } from "./roles";
 import {
   LoginBody,
   VerifyMfaBody,
@@ -60,7 +61,6 @@ async function getUserWithRole(userId: number) {
 async function getPagePermissions(roleId: number, roleName?: string): Promise<string[]> {
   // Admin role always gets access to every page — no DB lookup needed.
   if (roleName === "Admin") {
-    const { ALL_PAGES } = await import("./roles");
     return ALL_PAGES.map((p) => p.path);
   }
   const perms = await db

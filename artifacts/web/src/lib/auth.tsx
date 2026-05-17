@@ -1,12 +1,7 @@
-import { createContext, useContext, useEffect, useRef, useState, ReactNode, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { toast } from "sonner";
-
-const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;  // 30 minutes
-const WARNING_BEFORE_MS     =  1 * 60 * 1000;  // warn 1 minute before
-const ACTIVITY_EVENTS = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"] as const;
 
 type UserProfile = {
   id: number;
@@ -117,68 +112,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [, setLocation] = useLocation();
   const queryClient = useQueryClient();
 
-  const logoutTimerRef  = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const warningToastRef = useRef<string | number | null>(null);
-  const isAuthenticatedRef = useRef(false);
-
-  const clearInactivityTimers = useCallback(() => {
-    if (logoutTimerRef.current)  clearTimeout(logoutTimerRef.current);
-    if (warningTimerRef.current) clearTimeout(warningTimerRef.current);
-    if (warningToastRef.current) toast.dismiss(warningToastRef.current);
-    logoutTimerRef.current  = null;
-    warningTimerRef.current = null;
-    warningToastRef.current = null;
-  }, []);
-
-  // Forward-declared so the activity listener can reference it
-  const resetInactivityTimer = useCallback(() => {
-    if (!isAuthenticatedRef.current) return;
-    clearInactivityTimers();
-
-    warningTimerRef.current = setTimeout(() => {
-      warningToastRef.current = toast.warning(
-        "Your session will expire in 1 minute due to inactivity.",
-        { duration: WARNING_BEFORE_MS, id: "inactivity-warning" },
-      );
-    }, INACTIVITY_TIMEOUT_MS - WARNING_BEFORE_MS);
-
-    logoutTimerRef.current = setTimeout(() => {
-      toast.dismiss("inactivity-warning");
-      toast.error("Session expired due to inactivity. Please log in again.");
-      // Trigger logout without waiting for user action
-      setAccessToken(null);
-      setRefreshToken(null);
-      isAuthenticatedRef.current = false;
-      clearInactivityTimers();
-      queryClient.removeQueries({ queryKey: getGetMeQueryKey() });
-      setUser(null);
-      setHasToken(false);
-      setLocation("/login");
-    }, INACTIVITY_TIMEOUT_MS);
-  }, [clearInactivityTimers, queryClient, setLocation]);
-
-  // Attach / detach activity listeners whenever auth state changes
-  useEffect(() => {
-    if (!user) {
-      isAuthenticatedRef.current = false;
-      clearInactivityTimers();
-      ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
-      return;
-    }
-
-    isAuthenticatedRef.current = true;
-    resetInactivityTimer();
-    ACTIVITY_EVENTS.forEach(evt =>
-      window.addEventListener(evt, resetInactivityTimer, { passive: true })
-    );
-
-    return () => {
-      ACTIVITY_EVENTS.forEach(evt => window.removeEventListener(evt, resetInactivityTimer));
-      clearInactivityTimers();
-    };
-  }, [user, resetInactivityTimer, clearInactivityTimers]);
-
   useEffect(() => {
     bootstrapSession().then((ok) => {
       setHasToken(ok);
@@ -242,7 +175,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkPermission = (path: string): boolean => {
     if (!user) return false;
-    if (user.roleName === "Admin") return true; // Admin always has full access
     return user.pagePermissions?.includes(path) ?? false;
   };
 

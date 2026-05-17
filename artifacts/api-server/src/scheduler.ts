@@ -161,7 +161,6 @@ function getWorkerPath(): string {
   return pathResolve(__dirname, "lib", "pipeline_worker.py");
 }
 
-
 export interface PipelineRunResult {
   success: boolean;
   recordCount?: number;

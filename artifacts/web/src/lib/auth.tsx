@@ -242,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const checkPermission = (path: string): boolean => {
     if (!user) return false;
+    if (user.roleName === "Admin") return true; // Admin always has full access
     return user.pagePermissions?.includes(path) ?? false;
   };
 

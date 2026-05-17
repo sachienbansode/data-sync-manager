@@ -57,7 +57,12 @@ async function getUserWithRole(userId: number) {
   return row;
 }
 
-async function getPagePermissions(roleId: number, _roleName?: string): Promise<string[]> {
+async function getPagePermissions(roleId: number, roleName?: string): Promise<string[]> {
+  // Admin role always gets access to every page — no DB lookup needed.
+  if (roleName === "Admin") {
+    const { ALL_PAGES } = await import("./roles");
+    return ALL_PAGES.map((p) => p.path);
+  }
   const perms = await db
     .select({ pagePath: pagePermissionsTable.pagePath })
     .from(pagePermissionsTable)

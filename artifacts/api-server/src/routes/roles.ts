@@ -45,14 +45,14 @@ export const ALL_PAGES = [
  * from existing roles. Safe to run on every boot (uses onConflictDoNothing).
  */
 export async function syncPagePermissionsForAllRoles(): Promise<void> {
-  const roles = await db.select({ id: rolesTable.id }).from(rolesTable);
-  if (roles.length === 0) return;
-  const rows = roles.flatMap(role =>
+  const rolesFull = await db.select({ id: rolesTable.id, name: rolesTable.name }).from(rolesTable);
+  if (rolesFull.length === 0) return;
+  const rows = rolesFull.flatMap(role =>
     ALL_PAGES.map(p => ({
       roleId: role.id,
       pagePath: p.path,
       pageName: p.name,
-      canAccess: false,
+      canAccess: role.name === "Admin", // Admin gets all pages enabled by default
     }))
   );
   await db.insert(pagePermissionsTable).values(rows).onConflictDoNothing();

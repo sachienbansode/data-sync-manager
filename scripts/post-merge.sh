@@ -2,11 +2,16 @@
 set -e
 pnpm install --frozen-lockfile
 
-# Re-install Python pipeline dependencies after every pull
-REQUIREMENTS="$(dirname "$0")/../artifacts/api-server/src/lib/requirements.txt"
+# Re-install Python pipeline dependencies into the virtualenv after every pull
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VENV_DIR="$APP_DIR/venv"
+REQUIREMENTS="$APP_DIR/artifacts/api-server/src/lib/requirements.txt"
 if [ -f "$REQUIREMENTS" ]; then
   echo "Installing Python pipeline dependencies..."
-  pip3 install -r "$REQUIREMENTS" --quiet && echo "  Python packages OK."
+  if [ ! -d "$VENV_DIR" ]; then
+    python3 -m venv "$VENV_DIR"
+  fi
+  "$VENV_DIR/bin/pip" install --quiet -r "$REQUIREMENTS" && echo "  Python packages OK."
 fi
 
 pnpm --filter db push

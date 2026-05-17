@@ -75,15 +75,23 @@ sudo chmod -R o+rX "$APP_DIR/artifacts/web/dist"
 # ── 6. Install dependencies & rebuild native modules ────────────────────────
 echo "[6/9] Installing Node dependencies..."
 # Ensure build tools are present for native modules (bcrypt etc.)
-sudo apt-get install -y build-essential python3 python3-pip 2>/dev/null | tail -1
+sudo apt-get install -y build-essential python3 python3-venv python3-full 2>/dev/null | tail -1
 pnpm install --frozen-lockfile
 # Rebuild native addons compiled for this server's architecture
 pnpm rebuild
 
-# ── 6b. Install Python dependencies for pipeline_worker.py ──────────────────
-echo "[6b/9] Installing Python pipeline dependencies..."
-pip3 install -r "$APP_DIR/artifacts/api-server/src/lib/requirements.txt" --quiet
-echo "  Python packages installed."
+# ── 6b. Python virtualenv + pipeline dependencies ───────────────────────────
+VENV_DIR="$APP_DIR/venv"
+echo "[6b/9] Setting up Python virtualenv at $VENV_DIR ..."
+if [ ! -d "$VENV_DIR" ]; then
+  python3 -m venv "$VENV_DIR"
+  echo "  Created new virtualenv."
+else
+  echo "  Virtualenv already exists."
+fi
+"$VENV_DIR/bin/pip" install --quiet --upgrade pip
+"$VENV_DIR/bin/pip" install --quiet -r "$APP_DIR/artifacts/api-server/src/lib/requirements.txt"
+echo "  Python packages installed into virtualenv."
 
 # ── 7. .env.production (create template on first deploy, never overwrite) ────
 if [ ! -f "$ENV_FILE" ]; then

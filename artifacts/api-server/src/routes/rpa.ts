@@ -9,6 +9,8 @@ import {
   rpaBotCredentialsTable,
   rpaBotRunsTable,
   rpaBotSchedulesTable,
+  pagePermissionsTable,
+  rolesTable,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, loadEncryptionKey } from "../lib/crypto";
@@ -439,4 +441,22 @@ export async function seedRpaBotsIfEmpty(): Promise<void> {
   ];
 
   await db.insert(rpaBotStepsTable).values(steps.map(s => ({ ...s, botId: bot.id })));
+}
+
+// ── Idempotent page-permission bootstrap ──────────────────────────────────────
+// Upserts the /admin/rpa-bots page permission row for every existing role so
+// that existing databases (not re-seeded from scratch) gain access immediately.
+// Admin gets canAccess=true; all other roles default to false.
+export async function seedRpaPagePermissions(): Promise<void> {
+  const roles = await db.select({ id: rolesTable.id, name: rolesTable.name }).from(rolesTable);
+  for (const role of roles) {
+    const canAccess = role.name === "Admin";
+    await db
+      .insert(pagePermissionsTable)
+      .values({ roleId: role.id, pagePath: "/admin/rpa-bots", pageName: "RPA Bots", canAccess })
+      .onConflictDoUpdate({
+        target: [pagePermissionsTable.roleId, pagePermissionsTable.pagePath],
+        set: { pageName: "RPA Bots", canAccess },
+      });
+  }
 }

@@ -40,6 +40,7 @@ const PAGES = [
   { path: "/email-hub/campaigns",      name: "Email Campaigns" },
   { path: "/email-hub/templates",      name: "Email Templates (Bulk)" },
   { path: "/admin/comm-settings",      name: "Bulk Email Settings" },
+  { path: "/admin/rpa-bots",           name: "RPA Bot Manager" },
 ];
 
 /* ─────────────────────────────────────────────────────────────────────────── */

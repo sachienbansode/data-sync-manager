@@ -28,12 +28,13 @@ const PAGES = [
   { path: "/pii-records", name: "PII Records" },
   { path: "/admin/db-connections", name: "DB Connections" },
   { path: "/admin/field-mappings", name: "Field Mappings" },
+  { path: "/admin/rpa-bots",       name: "RPA Bots" },
 ];
 
 const ALL_ROLES_PATHS = ["/dashboard", "/profile", "/mfa-setup"];
 
 const PAGE_ACCESS: Record<string, string[]> = {
-  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/pii-records", "/admin/app-settings", "/admin/email-settings", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings"],
+  Admin: [...ALL_ROLES_PATHS, "/users", "/roles", "/audit-log", "/docs", "/workflow", "/pii-records", "/admin/app-settings", "/admin/email-settings", "/admin/pii-permissions", "/admin/db-connections", "/admin/field-mappings", "/admin/rpa-bots"],
   Manager: [...ALL_ROLES_PATHS, "/docs", "/workflow", "/pii-records"],
   Analyst: [...ALL_ROLES_PATHS, "/docs", "/workflow", "/pii-records"],
   Viewer: [...ALL_ROLES_PATHS, "/docs", "/pii-records"],

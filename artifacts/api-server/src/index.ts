@@ -1,7 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler } from "./scheduler";
-import { seedRpaBotsIfEmpty } from "./routes/rpa";
+import { seedRpaBotsIfEmpty, seedRpaPagePermissions } from "./routes/rpa";
 
 const rawPort = process.env["PORT"];
 
@@ -63,6 +63,9 @@ app.listen(port, (err) => {
     );
     seedRpaBotsIfEmpty().catch((e) =>
       logger.error({ err: e }, "RPA bot auto-seed failed"),
+    );
+    seedRpaPagePermissions().catch((e) =>
+      logger.error({ err: e }, "RPA page-permission bootstrap failed"),
     );
   }, 1_000);
 });

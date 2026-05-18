@@ -317,6 +317,18 @@ router.get("/rpa/runs/:id/stream", ...adminAuth, async (req, res): Promise<void>
     return;
   }
 
+  if (!pyResp.ok) {
+    let detail = `Upstream error ${pyResp.status}`;
+    try {
+      const errBody = await pyResp.json() as { detail?: string; error?: string };
+      detail = errBody.detail ?? errBody.error ?? detail;
+    } catch { /* non-JSON body */ }
+    res.write(`data: ${JSON.stringify({ level: "error", message: detail })}\n\n`);
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+    return;
+  }
+
   if (!pyResp.body) {
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
     res.end();

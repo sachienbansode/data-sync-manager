@@ -5,7 +5,7 @@
  */
 
 import { and, eq, isNull, inArray } from "drizzle-orm";
-import { db, rpaBotsTable, rpaBotRunsTable, auditLogsTable } from "@workspace/db";
+import { db, rpaBotsTable, rpaBotRunsTable, auditLogsTable, appSettingsTable } from "@workspace/db";
 import { sendMail } from "./lib/mailer";
 import { logger } from "./lib/logger";
 
@@ -145,19 +145,39 @@ async function processCompletedRuns(): Promise<void> {
   }
 }
 
-let _timer: ReturnType<typeof setInterval> | null = null;
+async function getIntervalMs(): Promise<number> {
+  try {
+    const [cfg] = await db.select({ rpaNotifyIntervalSec: appSettingsTable.rpaNotifyIntervalSec })
+      .from(appSettingsTable).limit(1);
+    const sec = cfg?.rpaNotifyIntervalSec ?? 60;
+    return Math.max(10, sec) * 1000;
+  } catch {
+    return 60_000;
+  }
+}
+
+let _running = false;
+let _timer: ReturnType<typeof setTimeout> | null = null;
+
+async function scheduleNext(): Promise<void> {
+  if (!_running) return;
+  const ms = await getIntervalMs();
+  _timer = setTimeout(async () => {
+    if (!_running) return;
+    try { await processCompletedRuns(); } catch (e) { logger.error({ err: e }, "RPA notifier poll error"); }
+    scheduleNext();
+  }, ms);
+}
 
 export function startRpaNotifier(): void {
-  if (_timer) return;
-  _timer = setInterval(() => {
-    processCompletedRuns().catch((e) =>
-      logger.error({ err: e }, "RPA notifier poll error")
-    );
-  }, 60_000);
+  if (_running) return;
+  _running = true;
   processCompletedRuns().catch(() => {});
-  logger.info("RPA run notifier started (60s interval)");
+  scheduleNext();
+  logger.info("RPA run notifier started (interval from settings)");
 }
 
 export function stopRpaNotifier(): void {
-  if (_timer) { clearInterval(_timer); _timer = null; }
+  _running = false;
+  if (_timer) { clearTimeout(_timer); _timer = null; }
 }

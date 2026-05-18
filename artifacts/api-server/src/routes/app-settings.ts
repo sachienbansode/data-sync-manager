@@ -166,4 +166,34 @@ router.post("/admin/app-settings/logo", authenticate, requireRole("Admin"), (req
   res.json({ success: true, hasLogo: true });
 });
 
+// GET /admin/rpa-settings — read RPA runtime settings
+router.get("/admin/rpa-settings", authenticate, requireRole("Admin"), async (_req, res): Promise<void> => {
+  const cfg = await getOrCreateSettings();
+  res.json({ rpaNotifyIntervalSec: cfg.rpaNotifyIntervalSec ?? 60 });
+});
+
+// PUT /admin/rpa-settings — update RPA runtime settings
+router.put("/admin/rpa-settings", authenticate, requireRole("Admin"), async (req, res): Promise<void> => {
+  const { rpaNotifyIntervalSec } = req.body as { rpaNotifyIntervalSec?: number };
+  if (!Number.isInteger(rpaNotifyIntervalSec) || rpaNotifyIntervalSec < 10 || rpaNotifyIntervalSec > 3600) {
+    res.status(400).json({ error: "rpaNotifyIntervalSec must be an integer between 10 and 3600 seconds" });
+    return;
+  }
+  await getOrCreateSettings();
+  await db.update(appSettingsTable).set({ rpaNotifyIntervalSec });
+
+  const user = (req as Express.Request & { user?: { sub?: number; email?: string } }).user;
+  await db.insert(auditLogsTable).values({
+    userId: user?.sub ?? null,
+    userEmail: user?.email ?? null,
+    action: "RPA_SETTINGS_UPDATED",
+    details: JSON.stringify({ rpaNotifyIntervalSec }),
+    ipAddress: req.ip ?? null,
+    resourceType: "rpa_settings",
+    resourceId: "1",
+  });
+
+  res.json({ rpaNotifyIntervalSec });
+});
+
 export default router;

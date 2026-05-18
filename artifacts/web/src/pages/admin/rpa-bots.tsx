@@ -17,7 +17,7 @@ import {
   Bot, Plus, Play, Trash2, Pencil, ChevronDown, ChevronUp,
   Loader2, CheckCircle2, XCircle, Clock, AlertTriangle,
   Terminal, Key, List, History, RotateCcw, EyeOff,
-  CalendarClock, Image, ExternalLink, Mail,
+  CalendarClock, Image, ExternalLink, Mail, Settings,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -1107,10 +1107,123 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
   );
 }
 
+// ── RPA Settings Dialog ───────────────────────────────────────────────────────
+function RpaSettingsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const [intervalSec, setIntervalSec] = useState<number | "">(60);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    apiFetch("/admin/rpa-settings")
+      .then((d: unknown) => setIntervalSec((d as { rpaNotifyIntervalSec: number }).rpaNotifyIntervalSec))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  const save = async () => {
+    const val = Number(intervalSec);
+    if (!Number.isInteger(val) || val < 10 || val > 3600) {
+      toast.error("Interval must be between 10 and 3600 seconds");
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch("/admin/rpa-settings", {
+        method: "PUT",
+        body: JSON.stringify({ rpaNotifyIntervalSec: val }),
+      });
+      toast.success(`Notifier interval updated to ${val}s — takes effect on next cycle`);
+      onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
+  };
+
+  const PRESETS = [
+    { label: "10 s (debug)",  value: 10 },
+    { label: "30 s",           value: 30 },
+    { label: "60 s (default)", value: 60 },
+    { label: "5 min",          value: 300 },
+    { label: "15 min",         value: 900 },
+    { label: "30 min",         value: 1800 },
+    { label: "1 hour",         value: 3600 },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />RPA Settings
+          </DialogTitle>
+        </DialogHeader>
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        ) : (
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium">Notification Poll Interval</Label>
+              <p className="text-xs text-muted-foreground">
+                How often the background notifier checks for completed runs and sends emails.
+                Changes take effect after the current cycle finishes — no restart needed.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Quick presets</Label>
+              <div className="flex flex-wrap gap-1.5">
+                {PRESETS.map(p => (
+                  <button
+                    key={p.value}
+                    onClick={() => setIntervalSec(p.value)}
+                    className={`px-2.5 py-1 rounded text-xs border transition-colors ${
+                      Number(intervalSec) === p.value
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "border-border hover:bg-muted"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Custom (seconds)</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  min={10}
+                  max={3600}
+                  value={intervalSec}
+                  onChange={e => setIntervalSec(e.target.value === "" ? "" : Number(e.target.value))}
+                  className="w-28 font-mono"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {intervalSec ? `= ${Number(intervalSec) >= 60
+                    ? `${Math.floor(Number(intervalSec) / 60)}m ${Number(intervalSec) % 60 > 0 ? `${Number(intervalSec) % 60}s` : ""}`.trim()
+                    : `${intervalSec}s`}` : ""}
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground">Minimum: 10s · Maximum: 3600s (1 hour)</p>
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving || loading}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function RpaBotsPage() {
   const qc = useQueryClient();
   const [showNew, setShowNew] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [selectedBot, setSelectedBot] = useState<RpaBot | null>(null);
 
   const { data: bots = [], isLoading } = useQuery<RpaBot[]>({
@@ -1145,6 +1258,9 @@ export default function RpaBotsPage() {
           <p className="text-muted-foreground mt-1">Automate repetitive browser tasks with configurable bots powered by Playwright.</p>
         </div>
         <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => setShowSettings(true)}>
+            <Settings className="h-4 w-4 mr-1" />Settings
+          </Button>
           <Button variant="outline" size="sm" onClick={seedBots} disabled={seeding}>
             {seeding ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}Seed Demo Bot
           </Button>
@@ -1218,6 +1334,7 @@ export default function RpaBotsPage() {
       )}
 
       <NewBotDialog open={showNew} onClose={() => setShowNew(false)} onCreated={bot => { qc.invalidateQueries({ queryKey: ["rpa-bots"] }); setSelectedBot(bot); }} />
+      <RpaSettingsDialog open={showSettings} onClose={() => setShowSettings(false)} />
     </div>
   );
 }

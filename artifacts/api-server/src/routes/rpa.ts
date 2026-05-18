@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import fs from "fs";
+import path from "path";
 import {
   db,
   rpaBotsTable,
@@ -59,7 +60,7 @@ router.post("/rpa/bots", ...adminAuth, async (req, res): Promise<void> => {
   const { name, description, botType } = parsed.data;
   const [bot] = await db.insert(rpaBotsTable).values({
     name, description, botType,
-    createdBy: req.user?.userId ?? null,
+    createdBy: req.user?.sub ?? null,
   }).returning();
   res.status(201).json(bot);
 });
@@ -247,7 +248,7 @@ router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> =
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      triggeredBy: req.user?.userId ?? null,
+      triggeredBy: req.user?.sub ?? null,
       triggeredByEmail: req.user?.email ?? null,
     }),
   });
@@ -316,9 +317,8 @@ router.get("/rpa/runs/:id/screenshot", ...adminAuth, async (req, res): Promise<v
   const filePath = run.screenshotPath;
   if (!fs.existsSync(filePath)) { res.status(404).json({ error: "Screenshot file not found on server" }); return; }
 
-  res.setHeader("Content-Type", "image/png");
   res.setHeader("Cache-Control", "max-age=3600");
-  fs.createReadStream(filePath).pipe(res as unknown as NodeJS.WritableStream);
+  res.sendFile(path.resolve(filePath), { headers: { "Content-Type": "image/png" } });
 });
 
 // ── SEED reference bot ────────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ router.post("/rpa/seed", ...adminAuth, async (req, res): Promise<void> => {
     description: "Reference bot: logs into the platform, navigates to Data Preview, selects the first DB connection, runs a sample query, and screenshots the result.",
     botType: "browser_automation",
     isActive: true,
-    createdBy: req.user?.userId ?? null,
+    createdBy: req.user?.sub ?? null,
   }).returning();
 
   const appUrl = process.env.APP_URL ?? "http://localhost:22333";

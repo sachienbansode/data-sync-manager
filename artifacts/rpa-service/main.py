@@ -87,6 +87,17 @@ async def trigger_bot_run(bot_id: int, request: Request):
     if not bot_row["is_active"]:
         raise HTTPException(status_code=400, detail="Bot is inactive")
 
+    # Enforce sequential execution per bot — reject if an active run already exists
+    active = await pool.fetchrow(
+        "SELECT id FROM rpa_bot_runs WHERE bot_id=$1 AND status IN ('pending', 'running') LIMIT 1",
+        bot_id,
+    )
+    if active:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Bot already has an active run (id={active['id']}). Wait for it to finish before triggering a new run.",
+        )
+
     run_id = await pool.fetchval(
         """INSERT INTO rpa_bot_runs (bot_id, status, triggered_by, triggered_by_email)
            VALUES ($1, 'pending', $2, $3) RETURNING id""",

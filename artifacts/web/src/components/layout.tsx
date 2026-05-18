@@ -6,7 +6,7 @@ import {
   Activity, Mail, Settings, ChevronDown, ChevronRight, Database,
   GitBranch, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
   Type, FileType, LogIn, Info, Layers, Table2, History, Link2,
-  Megaphone, Send, ScanSearch,
+  Megaphone, Send, ScanSearch, Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -61,6 +61,14 @@ const dataPipelineGroup: NavGroup = {
     { href: "/pipe", label: "Step 3: Pipelines", icon: GitBranch, permissionPath: "/workflow" },
     { href: "/pipe/jobs", label: "Job History", icon: History, permissionPath: "/workflow/jobs" },
     { href: "/preview", label: "Data Preview", icon: ScanSearch, permissionPath: "/data-preview" },
+  ],
+};
+
+const rpaGroup: NavGroup = {
+  label: "RPA Bots",
+  icon: Bot,
+  items: [
+    { href: "/a/rpa", label: "Bot Manager", icon: Bot, permissionPath: "/admin/rpa-bots" },
   ],
 };
 
@@ -235,6 +243,16 @@ function SidebarContent({ onNav }: { onNav?: () => void }) {
           {/* Data Pipeline group */}
           <CollapsibleGroup
             group={dataPipelineGroup}
+            location={location}
+            onNav={onNav}
+            isAdmin={isAdmin}
+            checkPermission={checkPermission}
+            indent={false}
+          />
+
+          {/* RPA Bots group */}
+          <CollapsibleGroup
+            group={rpaGroup}
             location={location}
             onNav={onNav}
             isAdmin={isAdmin}

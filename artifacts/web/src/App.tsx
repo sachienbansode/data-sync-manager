@@ -41,6 +41,7 @@ import Campaigns from "@/pages/email-hub/campaigns";
 import CampaignDetail from "@/pages/email-hub/campaign-detail";
 import EmailHubTemplates from "@/pages/email-hub/templates";
 import CommSettings from "@/pages/admin/comm-settings";
+import RpaBots from "@/pages/admin/rpa-bots";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 import { SessionTimeoutProvider } from "@/components/session-timeout";
@@ -121,6 +122,8 @@ function Router() {
       <Route path="/a/appt"><ProtectedRoute component={ApplicationTypes} path="/admin/application-types" requireRole="Admin" /></Route>
       <Route path="/a/dom"><ProtectedRoute component={ShortDomains} path="/admin/short-domains" requireRole="Admin" /></Route>
       <Route path="/a/comms"><ProtectedRoute component={CommSettings} path="/admin/comm-settings" requireRole="Admin" /></Route>
+      <Route path="/a/rpa"><ProtectedRoute component={RpaBots} path="/admin/rpa-bots" requireRole="Admin" /></Route>
+      <Route path="/admin/rpa-bots"><Redirect to="/a/rpa" /></Route>
 
       {/* legacy admin redirects */}
       <Route path="/admin/db-connections"><Redirect to="/a/conn" /></Route>

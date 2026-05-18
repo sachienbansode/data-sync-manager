@@ -1,0 +1,914 @@
+import { useState, useRef, useEffect } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { getAccessToken } from "@/lib/auth";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
+  Bot, Plus, Play, Trash2, Pencil, ChevronDown, ChevronUp,
+  Loader2, CheckCircle2, XCircle, Clock, AlertTriangle,
+  Terminal, Key, List, History, RotateCcw, EyeOff,
+} from "lucide-react";
+import { toast } from "sonner";
+
+// ── API helper ────────────────────────────────────────────────────────────────
+async function apiFetch(path: string, opts: RequestInit = {}) {
+  const token = getAccessToken();
+  const resp = await fetch(`${import.meta.env.BASE_URL}api${path}`, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...((opts.headers as Record<string, string>) ?? {}),
+    },
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error((data as { error?: string }).error ?? "Request failed");
+  return data;
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+type BotType = "browser_automation" | "file_processing" | "web_scraping";
+type RunStatus = "pending" | "running" | "success" | "failed";
+type StepType = "navigate" | "fill" | "click" | "wait" | "extract" | "screenshot" | "select" | "key_press" | "scroll" | "hover";
+
+interface RpaBot {
+  id: number;
+  name: string;
+  description: string | null;
+  botType: BotType;
+  isActive: boolean;
+  createdAt: string;
+}
+
+interface RpaBotStep {
+  id: number;
+  botId: number;
+  stepOrder: number;
+  stepType: StepType;
+  config: Record<string, unknown>;
+  description: string | null;
+}
+
+interface RpaBotCredential {
+  id: number;
+  botId: number;
+  label: string;
+  usernameSet: boolean;
+  passwordSet: boolean;
+  createdAt: string;
+}
+
+interface RpaBotRun {
+  id: number;
+  botId: number;
+  status: RunStatus;
+  triggeredByEmail: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  screenshotPath: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+}
+
+interface LogLine {
+  ts: string;
+  level: string;
+  message: string;
+  done?: boolean;
+}
+
+// ── Constants ─────────────────────────────────────────────────────────────────
+const BOT_TYPES: { value: BotType; label: string }[] = [
+  { value: "browser_automation", label: "Browser Automation" },
+  { value: "file_processing", label: "File Processing" },
+  { value: "web_scraping", label: "Web Scraping" },
+];
+
+const STEP_TYPES: { value: StepType; label: string; hint: string }[] = [
+  { value: "navigate", label: "Navigate", hint: '{ "url": "https://..." }' },
+  { value: "fill", label: "Fill Input", hint: '{ "selector": "input[name=email]", "value": "..." }' },
+  { value: "click", label: "Click", hint: '{ "selector": "button[type=submit]" }' },
+  { value: "wait", label: "Wait", hint: '{ "selector": ".element", "ms": 2000 }' },
+  { value: "extract", label: "Extract Text", hint: '{ "selector": "h1", "attribute": "textContent" }' },
+  { value: "screenshot", label: "Screenshot", hint: '{ "full_page": true }' },
+  { value: "select", label: "Select Option", hint: '{ "selector": "select#type", "value": "admin" }' },
+  { value: "key_press", label: "Key Press", hint: '{ "key": "Enter", "selector": "input" }' },
+  { value: "scroll", label: "Scroll", hint: '{ "x": 0, "y": 500 }' },
+  { value: "hover", label: "Hover", hint: '{ "selector": ".menu-item" }' },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function statusBadge(status: RunStatus) {
+  switch (status) {
+    case "success":  return <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"><CheckCircle2 className="h-3 w-3 mr-1" />Success</Badge>;
+    case "failed":   return <Badge className="bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"><XCircle className="h-3 w-3 mr-1" />Failed</Badge>;
+    case "running":  return <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400"><Loader2 className="h-3 w-3 mr-1 animate-spin" />Running</Badge>;
+    default:         return <Badge variant="secondary"><Clock className="h-3 w-3 mr-1" />Pending</Badge>;
+  }
+}
+
+function botTypeBadge(type: BotType) {
+  const map: Record<BotType, string> = {
+    browser_automation: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
+    file_processing: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
+    web_scraping: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400",
+  };
+  const labels: Record<BotType, string> = {
+    browser_automation: "Browser",
+    file_processing: "File",
+    web_scraping: "Scraping",
+  };
+  return <Badge className={map[type]}>{labels[type]}</Badge>;
+}
+
+function duration(run: RpaBotRun): string {
+  if (!run.startedAt || !run.finishedAt) return "—";
+  const ms = new Date(run.finishedAt).getTime() - new Date(run.startedAt).getTime();
+  return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+function fmt(ts: string | null) {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString();
+}
+
+function logLevelColor(level: string) {
+  switch (level) {
+    case "error": return "text-red-400";
+    case "warn":  return "text-yellow-400";
+    case "debug": return "text-gray-500";
+    default:      return "text-green-400";
+  }
+}
+
+// ── New Bot Dialog ────────────────────────────────────────────────────────────
+function NewBotDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (bot: RpaBot) => void }) {
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [botType, setBotType] = useState<BotType>("browser_automation");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!name.trim()) { toast.error("Name is required"); return; }
+    setSaving(true);
+    try {
+      const bot = await apiFetch("/rpa/bots", { method: "POST", body: JSON.stringify({ name, description, botType }) });
+      toast.success("Bot created");
+      onCreated(bot as RpaBot);
+      setName(""); setDescription(""); setBotType("browser_automation");
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create bot");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Bot className="h-5 w-5" />New Bot</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Name</Label>
+            <Input placeholder="My Automation Bot" value={name} onChange={e => setName(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Description <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Textarea placeholder="What does this bot do?" value={description} onChange={e => setDescription(e.target.value)} rows={2} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Bot Type</Label>
+            <Select value={botType} onValueChange={v => setBotType(v as BotType)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {BOT_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Create Bot
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Step Editor Dialog ────────────────────────────────────────────────────────
+function StepDialog({
+  open, onClose, botId, step, onSaved,
+}: {
+  open: boolean; onClose: () => void; botId: number;
+  step?: RpaBotStep; onSaved: () => void;
+}) {
+  const isEdit = !!step;
+  const [stepType, setStepType] = useState<StepType>(step?.stepType ?? "navigate");
+  const [configStr, setConfigStr] = useState(step ? JSON.stringify(step.config, null, 2) : "{}");
+  const [description, setDescription] = useState(step?.description ?? "");
+  const [saving, setSaving] = useState(false);
+  const [jsonError, setJsonError] = useState("");
+
+  const hint = STEP_TYPES.find(s => s.value === stepType)?.hint ?? "{}";
+
+  useEffect(() => {
+    if (open && !step) {
+      setStepType("navigate");
+      setConfigStr("{}");
+      setDescription("");
+    } else if (open && step) {
+      setStepType(step.stepType);
+      setConfigStr(JSON.stringify(step.config, null, 2));
+      setDescription(step.description ?? "");
+    }
+  }, [open, step]);
+
+  const validate = () => {
+    try { JSON.parse(configStr); setJsonError(""); return true; }
+    catch { setJsonError("Invalid JSON"); return false; }
+  };
+
+  const submit = async () => {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      const config = JSON.parse(configStr);
+      if (isEdit && step) {
+        await apiFetch(`/rpa/steps/${step.id}`, { method: "PATCH", body: JSON.stringify({ stepType, config, description }) });
+      } else {
+        await apiFetch(`/rpa/bots/${botId}/steps`, { method: "POST", body: JSON.stringify({ stepType, config, description }) });
+      }
+      toast.success(isEdit ? "Step updated" : "Step added");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save step");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit Step" : "Add Step"}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Step Type</Label>
+            <Select value={stepType} onValueChange={v => setStepType(v as StepType)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {STEP_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label>Config (JSON)</Label>
+              <button className="text-xs text-primary hover:underline" onClick={() => setConfigStr(hint)}>Use template</button>
+            </div>
+            <Textarea
+              value={configStr}
+              onChange={e => { setConfigStr(e.target.value); setJsonError(""); }}
+              rows={6}
+              className="font-mono text-xs"
+              placeholder={hint}
+            />
+            {jsonError && <p className="text-xs text-red-500">{jsonError}</p>}
+            <p className="text-xs text-muted-foreground">Example: <code className="bg-muted px-1 rounded">{hint}</code></p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Description <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Input placeholder="What does this step do?" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{isEdit ? "Update" : "Add Step"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Add Credential Dialog ─────────────────────────────────────────────────────
+function CredentialDialog({ open, onClose, botId, onSaved }: { open: boolean; onClose: () => void; botId: number; onSaved: () => void }) {
+  const [label, setLabel] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!label.trim() || !username.trim() || !password.trim()) { toast.error("All fields required"); return; }
+    setSaving(true);
+    try {
+      await apiFetch(`/rpa/bots/${botId}/credentials`, { method: "POST", body: JSON.stringify({ label, username, password }) });
+      toast.success("Credential saved (encrypted)");
+      setLabel(""); setUsername(""); setPassword("");
+      onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save credential");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2"><Key className="h-5 w-5" />Add Credential</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground -mt-2">Credentials are encrypted with AES-256-GCM before storing.</p>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label>Label</Label>
+            <Input placeholder='e.g. "admin" — referenced in step config as cred_label' value={label} onChange={e => setLabel(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Username / Email</Label>
+            <Input value={username} onChange={e => setUsername(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Password</Label>
+            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Encrypted
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Log Viewer ────────────────────────────────────────────────────────────────
+function LogViewer({ run }: { run: RpaBotRun }) {
+  const [logs, setLogs] = useState<LogLine[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const startStream = async () => {
+    if (abortRef.current) abortRef.current.abort();
+    abortRef.current = new AbortController();
+    setLogs([]);
+    setStreaming(true);
+
+    const token = getAccessToken();
+    try {
+      const resp = await fetch(`${import.meta.env.BASE_URL}api/rpa/runs/${run.id}/stream`, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: abortRef.current.signal,
+      });
+      if (!resp.body) { setStreaming(false); return; }
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+        for (const part of parts) {
+          const line = part.replace(/^data: /, "").trim();
+          if (!line) continue;
+          try {
+            const obj = JSON.parse(line) as LogLine;
+            if (obj.done) { setStreaming(false); return; }
+            setLogs(prev => [...prev, obj]);
+          } catch { /* ignore */ }
+        }
+      }
+    } catch (e) {
+      if ((e as Error).name !== "AbortError") console.error(e);
+    } finally {
+      setStreaming(false);
+    }
+  };
+
+  useEffect(() => {
+    startStream();
+    return () => abortRef.current?.abort();
+  }, [run.id]);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Terminal className="h-4 w-4" />
+          <span>Run #{run.id} logs</span>
+          {streaming && <><Loader2 className="h-3 w-3 animate-spin" /><span>Live</span></>}
+        </div>
+        <Button variant="ghost" size="sm" onClick={startStream}>
+          <RotateCcw className="h-3 w-3 mr-1" />Reload
+        </Button>
+      </div>
+      <div className="bg-zinc-950 text-zinc-100 rounded-md font-mono text-xs p-3 h-72 overflow-y-auto">
+        {logs.length === 0 && !streaming && (
+          <p className="text-zinc-500 italic">No logs yet. Click Reload if the run has completed.</p>
+        )}
+        {logs.map((log, i) => (
+          <div key={i} className="flex gap-2 leading-5">
+            <span className="text-zinc-600 shrink-0">{new Date(log.ts).toLocaleTimeString()}</span>
+            <span className={`shrink-0 uppercase ${logLevelColor(log.level)}`}>[{log.level}]</span>
+            <span className="break-all">{log.message}</span>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+    </div>
+  );
+}
+
+// ── Steps Tab ─────────────────────────────────────────────────────────────────
+function StepsTab({ bot }: { bot: RpaBot }) {
+  const qc = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+  const [editStep, setEditStep] = useState<RpaBotStep | undefined>();
+
+  const { data: steps = [], isLoading } = useQuery<RpaBotStep[]>({
+    queryKey: ["rpa-steps", bot.id],
+    queryFn: () => apiFetch(`/rpa/bots/${bot.id}/steps`),
+  });
+
+  const deleteStep = useMutation({
+    mutationFn: (id: number) => apiFetch(`/rpa/steps/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Step deleted"); qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const moveStep = useMutation({
+    mutationFn: (reordered: { id: number; stepOrder: number }[]) =>
+      apiFetch(`/rpa/bots/${bot.id}/steps/reorder`, { method: "PUT", body: JSON.stringify(reordered) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] }),
+  });
+
+  const swap = (i: number, j: number) => {
+    const copy = [...steps];
+    const reordered = copy.map((s, idx) => {
+      if (idx === i) return { id: s.id, stepOrder: copy[j]!.stepOrder };
+      if (idx === j) return { id: s.id, stepOrder: copy[i]!.stepOrder };
+      return { id: s.id, stepOrder: s.stepOrder };
+    });
+    moveStep.mutate(reordered);
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{steps.length} step{steps.length !== 1 ? "s" : ""} configured</p>
+        <Button size="sm" onClick={() => setShowAdd(true)}>
+          <Plus className="h-4 w-4 mr-1" />Add Step
+        </Button>
+      </div>
+
+      {steps.length === 0 ? (
+        <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
+          <List className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p>No steps yet. Add your first step to define what the bot does.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {steps.map((step, i) => (
+            <div key={step.id} className="flex items-start gap-2 p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors">
+              <div className="text-muted-foreground text-xs w-6 pt-0.5 shrink-0 text-right">{i + 1}</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline" className="font-mono text-xs">{step.stepType}</Badge>
+                  {step.description && <span className="text-sm">{step.description}</span>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1 font-mono truncate">
+                  {JSON.stringify(step.config)}
+                </p>
+              </div>
+              <div className="flex items-center gap-0.5 shrink-0">
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === 0} onClick={() => swap(i, i - 1)}>
+                  <ChevronUp className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === steps.length - 1} onClick={() => swap(i, i + 1)}>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditStep(step)}>
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteStep.mutate(step.id)}>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <StepDialog open={showAdd} onClose={() => setShowAdd(false)} botId={bot.id} onSaved={() => qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] })} />
+      <StepDialog open={!!editStep} onClose={() => setEditStep(undefined)} botId={bot.id} step={editStep} onSaved={() => { qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] }); setEditStep(undefined); }} />
+    </div>
+  );
+}
+
+// ── Credentials Tab ───────────────────────────────────────────────────────────
+function CredentialsTab({ bot }: { bot: RpaBot }) {
+  const qc = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+
+  const { data: creds = [], isLoading } = useQuery<RpaBotCredential[]>({
+    queryKey: ["rpa-creds", bot.id],
+    queryFn: () => apiFetch(`/rpa/bots/${bot.id}/credentials`),
+  });
+
+  const deleteCred = useMutation({
+    mutationFn: (id: number) => apiFetch(`/rpa/credentials/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Credential removed"); qc.invalidateQueries({ queryKey: ["rpa-creds", bot.id] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{creds.length} credential{creds.length !== 1 ? "s" : ""} stored</p>
+        <Button size="sm" onClick={() => setShowAdd(true)}>
+          <Plus className="h-4 w-4 mr-1" />Add Credential
+        </Button>
+      </div>
+
+      {creds.length === 0 ? (
+        <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
+          <Key className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p>No credentials stored. Add login credentials for the bot to use.</p>
+          <p className="text-xs mt-1">Reference them in step config via <code className="bg-muted px-1 rounded">cred_label</code> and <code className="bg-muted px-1 rounded">cred_field</code>.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {creds.map(cred => (
+            <div key={cred.id} className="flex items-center gap-3 p-3 border rounded-lg bg-card">
+              <Key className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex-1">
+                <p className="font-mono font-medium text-sm">{cred.label}</p>
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <EyeOff className="h-3 w-3" />
+                  Username {cred.usernameSet ? "set" : "—"} · Password {cred.passwordSet ? "set" : "—"} · Added {fmt(cred.createdAt)}
+                </p>
+              </div>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => deleteCred.mutate(cred.id)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <CredentialDialog open={showAdd} onClose={() => setShowAdd(false)} botId={bot.id} onSaved={() => qc.invalidateQueries({ queryKey: ["rpa-creds", bot.id] })} />
+    </div>
+  );
+}
+
+// ── Runs Tab ──────────────────────────────────────────────────────────────────
+function RunsTab({ bot }: { bot: RpaBot }) {
+  const qc = useQueryClient();
+  const [activeRun, setActiveRun] = useState<RpaBotRun | null>(null);
+  const [running, setRunning] = useState(false);
+
+  const { data: runs = [], isLoading, refetch } = useQuery<RpaBotRun[]>({
+    queryKey: ["rpa-runs", bot.id],
+    queryFn: () => apiFetch(`/rpa/bots/${bot.id}/runs`),
+    refetchInterval: (query) => {
+      const data = query.state.data as RpaBotRun[] | undefined;
+      if (data?.some(r => r.status === "running" || r.status === "pending")) return 3000;
+      return false;
+    },
+  });
+
+  const triggerRun = async () => {
+    setRunning(true);
+    try {
+      const run = await apiFetch(`/rpa/bots/${bot.id}/run`, { method: "POST" }) as RpaBotRun;
+      toast.success("Bot run started");
+      qc.invalidateQueries({ queryKey: ["rpa-runs", bot.id] });
+      setActiveRun(run);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to start run");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{runs.length} run{runs.length !== 1 ? "s" : ""} in history</p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()}>
+            <RotateCcw className="h-4 w-4 mr-1" />Refresh
+          </Button>
+          <Button size="sm" onClick={triggerRun} disabled={running || !bot.isActive}>
+            {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
+            Run Now
+          </Button>
+        </div>
+      </div>
+
+      {activeRun && (
+        <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Current Run</span>
+            {statusBadge(runs.find(r => r.id === activeRun.id)?.status ?? activeRun.status)}
+          </div>
+          <LogViewer run={activeRun} />
+        </div>
+      )}
+
+      {runs.length === 0 ? (
+        <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
+          <History className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p>No runs yet. Click "Run Now" to execute this bot.</p>
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {runs.map(run => (
+            <div key={run.id}
+              className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-colors hover:bg-muted/50 ${activeRun?.id === run.id ? "bg-muted/40 border-primary/30" : ""}`}
+              onClick={() => setActiveRun(run)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {statusBadge(run.status)}
+                  <span className="text-xs text-muted-foreground">#{run.id}</span>
+                  {run.triggeredByEmail && <span className="text-xs text-muted-foreground">by {run.triggeredByEmail}</span>}
+                </div>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {fmt(run.startedAt)} · {duration(run)}
+                  {run.errorMessage && <span className="text-red-500 ml-2 truncate">{run.errorMessage}</span>}
+                </p>
+              </div>
+              <Terminal className="h-4 w-4 text-muted-foreground shrink-0" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeRun && !runs.some(r => r.id === activeRun.id && (r.status === "running" || r.status === "pending")) && activeRun.id !== runs[0]?.id && (
+        <div className="border rounded-lg p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium">Run #{activeRun.id} Logs</span>
+            {statusBadge(activeRun.status)}
+          </div>
+          <LogViewer run={activeRun} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Bot Detail Panel ──────────────────────────────────────────────────────────
+function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: RpaBot) => void; onDeleted: () => void }) {
+  const qc = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const [editName, setEditName] = useState(bot.name);
+  const [editDesc, setEditDesc] = useState(bot.description ?? "");
+  const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState("steps");
+
+  const toggleActive = useMutation({
+    mutationFn: () => apiFetch(`/rpa/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !bot.isActive }) }),
+    onSuccess: (data) => { toast.success(bot.isActive ? "Bot deactivated" : "Bot activated"); onUpdated(data as RpaBot); qc.invalidateQueries({ queryKey: ["rpa-bots"] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const deleteBot = useMutation({
+    mutationFn: () => apiFetch(`/rpa/bots/${bot.id}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Bot deleted"); qc.invalidateQueries({ queryKey: ["rpa-bots"] }); onDeleted(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const saveEdit = async () => {
+    if (!editName.trim()) { toast.error("Name required"); return; }
+    setSaving(true);
+    try {
+      const updated = await apiFetch(`/rpa/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ name: editName, description: editDesc }) });
+      onUpdated(updated as RpaBot);
+      qc.invalidateQueries({ queryKey: ["rpa-bots"] });
+      setEditing(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="h-full flex flex-col">
+      <CardHeader className="pb-3 shrink-0">
+        {editing ? (
+          <div className="space-y-2">
+            <Input value={editName} onChange={e => setEditName(e.target.value)} className="font-semibold" />
+            <Textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={2} placeholder="Description..." />
+            <div className="flex gap-2">
+              <Button size="sm" onClick={saveEdit} disabled={saving}>
+                {saving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Save
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <CardTitle className="text-lg truncate">{bot.name}</CardTitle>
+              {bot.description && <CardDescription className="mt-1 line-clamp-2">{bot.description}</CardDescription>}
+              <div className="flex items-center gap-2 mt-2">
+                {botTypeBadge(bot.botType)}
+                <Badge variant={bot.isActive ? "default" : "secondary"}>{bot.isActive ? "Active" : "Inactive"}</Badge>
+              </div>
+            </div>
+            <div className="flex gap-1 shrink-0">
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditName(bot.name); setEditDesc(bot.description ?? ""); setEditing(true); }}>
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleActive.mutate()} disabled={toggleActive.isPending}>
+                {bot.isActive ? <AlertTriangle className="h-4 w-4 text-yellow-500" /> : <CheckCircle2 className="h-4 w-4 text-green-500" />}
+              </Button>
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive" onClick={() => {
+                if (confirm(`Delete "${bot.name}"? This removes all steps, runs, and logs.`)) deleteBot.mutate();
+              }}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardHeader>
+      <Separator />
+      <CardContent className="flex-1 overflow-hidden pt-4">
+        <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
+          <TabsList className="w-full shrink-0">
+            <TabsTrigger value="steps" className="flex-1"><List className="h-4 w-4 mr-1.5" />Steps</TabsTrigger>
+            <TabsTrigger value="runs" className="flex-1"><Play className="h-4 w-4 mr-1.5" />Runs</TabsTrigger>
+            <TabsTrigger value="credentials" className="flex-1"><Key className="h-4 w-4 mr-1.5" />Credentials</TabsTrigger>
+          </TabsList>
+          <ScrollArea className="flex-1 mt-3">
+            <TabsContent value="steps" className="mt-0"><StepsTab bot={bot} /></TabsContent>
+            <TabsContent value="runs" className="mt-0"><RunsTab bot={bot} /></TabsContent>
+            <TabsContent value="credentials" className="mt-0"><CredentialsTab bot={bot} /></TabsContent>
+          </ScrollArea>
+        </Tabs>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Main Page ─────────────────────────────────────────────────────────────────
+export default function RpaBotsPage() {
+  const qc = useQueryClient();
+  const [showNew, setShowNew] = useState(false);
+  const [selectedBot, setSelectedBot] = useState<RpaBot | null>(null);
+
+  const { data: bots = [], isLoading } = useQuery<RpaBot[]>({
+    queryKey: ["rpa-bots"],
+    queryFn: () => apiFetch("/rpa/bots"),
+  });
+
+  const [seeding, setSeeding] = useState(false);
+  const seedBots = async () => {
+    setSeeding(true);
+    try {
+      const resp = await apiFetch("/rpa/seed", { method: "POST" });
+      if ((resp as { message?: string }).message?.includes("skipping")) {
+        toast.info("Bots already exist — seed skipped");
+      } else {
+        toast.success("Reference bot seeded");
+        qc.invalidateQueries({ queryKey: ["rpa-bots"] });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Seed failed");
+    } finally {
+      setSeeding(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-500 h-full">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            <Bot className="h-8 w-8 text-primary" />RPA Bots
+          </h1>
+          <p className="text-muted-foreground mt-1">Automate repetitive browser tasks with configurable bots powered by Playwright.</p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={seedBots} disabled={seeding}>
+            {seeding ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
+            Seed Demo Bot
+          </Button>
+          <Button onClick={() => setShowNew(true)}>
+            <Plus className="h-4 w-4 mr-2" />New Bot
+          </Button>
+        </div>
+      </div>
+
+      {bots.length === 0 ? (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+            <Bot className="h-16 w-16 text-muted-foreground/30 mb-4" />
+            <h3 className="text-lg font-semibold mb-1">No bots yet</h3>
+            <p className="text-muted-foreground mb-4 max-w-sm">
+              Create your first bot to start automating browser tasks. Or seed a demo bot to explore the feature.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={seedBots} disabled={seeding}>
+                {seeding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Seed Demo Bot
+              </Button>
+              <Button onClick={() => setShowNew(true)}>
+                <Plus className="h-4 w-4 mr-2" />Create Bot
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+          {/* Bot list */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
+              {bots.length} Bot{bots.length !== 1 ? "s" : ""}
+            </p>
+            {bots.map(bot => (
+              <button
+                key={bot.id}
+                onClick={() => setSelectedBot(bot)}
+                className={`w-full text-left p-3 border rounded-lg transition-colors hover:bg-muted/50 ${selectedBot?.id === bot.id ? "border-primary bg-primary/5" : ""}`}
+              >
+                <div className="flex items-start gap-2">
+                  <Bot className={`h-4 w-4 mt-0.5 shrink-0 ${bot.isActive ? "text-primary" : "text-muted-foreground"}`} />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm truncate">{bot.name}</p>
+                    {bot.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{bot.description}</p>}
+                    <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                      {botTypeBadge(bot.botType)}
+                      {!bot.isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Detail panel */}
+          <div className="lg:col-span-2">
+            {selectedBot ? (
+              <BotDetail
+                bot={selectedBot}
+                onUpdated={updated => setSelectedBot(updated)}
+                onDeleted={() => setSelectedBot(null)}
+              />
+            ) : (
+              <div className="border-2 border-dashed rounded-lg h-48 flex items-center justify-center text-muted-foreground">
+                Select a bot from the list to view details and run it.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <NewBotDialog open={showNew} onClose={() => setShowNew(false)} onCreated={bot => { qc.invalidateQueries({ queryKey: ["rpa-bots"] }); setSelectedBot(bot); }} />
+    </div>
+  );
+}

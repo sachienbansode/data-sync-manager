@@ -37,6 +37,7 @@ export const ALL_PAGES = [
   { path: "/email-hub/templates", name: "Email Templates (Bulk)" },
   { path: "/admin/comm-settings", name: "Bulk Email Settings" },
   { path: "/data-preview", name: "Data Preview" },
+  { path: "/admin/rpa-bots", name: "RPA Bots" },
 ];
 
 const CreateRoleBody = z.object({

@@ -1,15 +1,16 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
+import fs from "fs";
 import {
   db,
   rpaBotsTable,
   rpaBotStepsTable,
   rpaBotCredentialsTable,
   rpaBotRunsTable,
-  rpaBotLogsTable,
+  rpaBotSchedulesTable,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
-import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
+import { encrypt, loadEncryptionKey } from "../lib/crypto";
 import { z } from "zod";
 
 const router: IRouter = Router();
@@ -18,10 +19,19 @@ const RPA_SERVICE_URL = process.env.RPA_SERVICE_URL ?? "http://localhost:8090";
 
 const adminAuth = [authenticate, requireRole("Admin")];
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
-async function proxyToRpa(path: string, opts: RequestInit = {}) {
-  const resp = await fetch(`${RPA_SERVICE_URL}${path}`, opts);
-  return resp;
+// ── Generic Python proxy helper ───────────────────────────────────────────────
+async function proxyToRpa(path: string, opts: RequestInit = {}): Promise<Response> {
+  return fetch(`${RPA_SERVICE_URL}${path}`, opts);
+}
+
+async function jsonProxy(path: string, opts: RequestInit = {}): Promise<{ status: number; body: unknown }> {
+  try {
+    const resp = await proxyToRpa(path, opts);
+    const body = await resp.json().catch(() => ({ error: "RPA service returned non-JSON response" }));
+    return { status: resp.status, body };
+  } catch {
+    return { status: 503, body: { error: "RPA service is not reachable. Ensure the RPA Bot Service workflow is running." } };
+  }
 }
 
 // ── BOTS CRUD ─────────────────────────────────────────────────────────────────
@@ -94,7 +104,6 @@ router.post("/rpa/bots/:id/steps", ...adminAuth, async (req, res): Promise<void>
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
   const { stepType, config, description, stepOrder } = parsed.data;
 
-  // Default order: append at end
   let order = stepOrder;
   if (order === undefined) {
     const existing = await db.select().from(rpaBotStepsTable).where(eq(rpaBotStepsTable.botId, botId));
@@ -123,7 +132,6 @@ router.delete("/rpa/steps/:id", ...adminAuth, async (req, res): Promise<void> =>
   res.json({ ok: true });
 });
 
-// Reorder steps — accepts [{id, stepOrder}]
 router.put("/rpa/bots/:id/steps/reorder", ...adminAuth, async (req, res): Promise<void> => {
   const botId = parseInt(req.params.id, 10);
   const body = z.array(z.object({ id: z.number(), stepOrder: z.number() })).safeParse(req.body);
@@ -153,7 +161,6 @@ router.get("/rpa/bots/:id/credentials", ...adminAuth, async (req, res): Promise<
     usernameSet: rpaBotCredentialsTable.usernameEnc,
     createdAt: rpaBotCredentialsTable.createdAt,
   }).from(rpaBotCredentialsTable).where(eq(rpaBotCredentialsTable.botId, botId));
-  // Return masked — never expose decrypted values
   res.json(creds.map(c => ({ ...c, usernameSet: !!c.usernameSet, passwordSet: true })));
 });
 
@@ -178,62 +185,85 @@ router.delete("/rpa/credentials/:id", ...adminAuth, async (req, res): Promise<vo
   res.json({ ok: true });
 });
 
-// ── RUNS ──────────────────────────────────────────────────────────────────────
+// ── SCHEDULES CRUD ────────────────────────────────────────────────────────────
+
+const CreateScheduleBody = z.object({
+  cronExpr: z.string().min(1).max(100),
+  isActive: z.boolean().default(false),
+});
+
+router.get("/rpa/bots/:id/schedules", ...adminAuth, async (req, res): Promise<void> => {
+  const botId = parseInt(req.params.id, 10);
+  const schedules = await db.select().from(rpaBotSchedulesTable)
+    .where(eq(rpaBotSchedulesTable.botId, botId));
+  res.json(schedules);
+});
+
+router.post("/rpa/bots/:id/schedules", ...adminAuth, async (req, res): Promise<void> => {
+  const botId = parseInt(req.params.id, 10);
+  const parsed = CreateScheduleBody.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
+  const [schedule] = await db.insert(rpaBotSchedulesTable).values({
+    botId, ...parsed.data,
+  }).returning();
+  res.status(201).json(schedule);
+});
+
+router.patch("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  const parsed = CreateScheduleBody.partial().safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
+  const [schedule] = await db.update(rpaBotSchedulesTable)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(eq(rpaBotSchedulesTable.id, id)).returning();
+  if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+  res.json(schedule);
+});
+
+router.delete("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  const [schedule] = await db.delete(rpaBotSchedulesTable).where(eq(rpaBotSchedulesTable.id, id)).returning();
+  if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+  res.json({ ok: true });
+});
+
+// ── RUNS — proxy to Python ────────────────────────────────────────────────────
 
 router.get("/rpa/bots/:id/runs", ...adminAuth, async (req, res): Promise<void> => {
   const botId = parseInt(req.params.id, 10);
-  const runs = await db.select().from(rpaBotRunsTable)
-    .where(eq(rpaBotRunsTable.botId, botId))
-    .orderBy(desc(rpaBotRunsTable.createdAt))
-    .limit(50);
-  res.json(runs);
+  const { status, body } = await jsonProxy(`/bots/${botId}/runs`);
+  res.status(status).json(body);
 });
 
 router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> => {
   const botId = parseInt(req.params.id, 10);
-  const [bot] = await db.select().from(rpaBotsTable).where(eq(rpaBotsTable.id, botId));
+  // Verify bot exists at Node layer before calling Python
+  const [bot] = await db.select({ id: rpaBotsTable.id, isActive: rpaBotsTable.isActive })
+    .from(rpaBotsTable).where(eq(rpaBotsTable.id, botId));
   if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
   if (!bot.isActive) { res.status(400).json({ error: "Bot is inactive" }); return; }
 
-  const [run] = await db.insert(rpaBotRunsTable).values({
-    botId,
-    status: "pending",
-    triggeredBy: req.user?.userId ?? null,
-    triggeredByEmail: req.user?.email ?? null,
-  }).returning();
-
-  // Call Python service to execute
-  try {
-    const pyResp = await proxyToRpa(`/internal/runs/${run.id}/execute`, { method: "POST" });
-    if (!pyResp.ok) {
-      const err = await pyResp.json().catch(() => ({ detail: "RPA service error" }));
-      res.status(pyResp.status).json({ error: (err as { detail?: string }).detail ?? "RPA service error" });
-      return;
-    }
-  } catch (e) {
-    // RPA service unreachable — mark run as failed
-    await db.update(rpaBotRunsTable).set({
-      status: "failed",
-      errorMessage: "RPA service is not reachable",
-      startedAt: new Date(),
-      finishedAt: new Date(),
-    }).where(eq(rpaBotRunsTable.id, run.id));
-    res.status(503).json({ error: "RPA service is not reachable. Ensure the RPA Bot Service workflow is running." });
-    return;
-  }
-
-  res.status(201).json(run);
+  const { status, body } = await jsonProxy(`/bots/${botId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      triggeredBy: req.user?.userId ?? null,
+      triggeredByEmail: req.user?.email ?? null,
+    }),
+  });
+  res.status(status).json(body);
 });
+
+// ── LOGS — proxy to Python ────────────────────────────────────────────────────
 
 router.get("/rpa/runs/:id/logs", ...adminAuth, async (req, res): Promise<void> => {
   const runId = parseInt(req.params.id, 10);
-  const logs = await db.select().from(rpaBotLogsTable)
-    .where(eq(rpaBotLogsTable.runId, runId))
-    .orderBy(rpaBotLogsTable.ts);
-  res.json(logs);
+  const { status, body } = await jsonProxy(`/runs/${runId}/logs`);
+  res.status(status).json(body);
 });
 
-// SSE stream — proxy to Python service
+// ── SSE stream — proxy to Python ──────────────────────────────────────────────
+
 router.get("/rpa/runs/:id/stream", ...adminAuth, async (req, res): Promise<void> => {
   const runId = parseInt(req.params.id, 10);
 
@@ -244,7 +274,7 @@ router.get("/rpa/runs/:id/stream", ...adminAuth, async (req, res): Promise<void>
 
   let pyResp: Response;
   try {
-    pyResp = await proxyToRpa(`/internal/runs/${runId}/stream`);
+    pyResp = await proxyToRpa(`/runs/${runId}/stream`);
   } catch {
     res.write(`data: ${JSON.stringify({ level: "error", message: "RPA service unreachable" })}\n\n`);
     res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
@@ -258,7 +288,6 @@ router.get("/rpa/runs/:id/stream", ...adminAuth, async (req, res): Promise<void>
     return;
   }
 
-  // Pipe chunks from Python SSE → client
   const reader = pyResp.body.getReader();
   const decoder = new TextDecoder();
   req.on("close", () => reader.cancel().catch(() => {}));
@@ -276,6 +305,22 @@ router.get("/rpa/runs/:id/stream", ...adminAuth, async (req, res): Promise<void>
   }
 });
 
+// ── SCREENSHOT — serve file ───────────────────────────────────────────────────
+
+router.get("/rpa/runs/:id/screenshot", ...adminAuth, async (req, res): Promise<void> => {
+  const runId = parseInt(req.params.id, 10);
+  const [run] = await db.select({ screenshotPath: rpaBotRunsTable.screenshotPath }).from(rpaBotRunsTable).where(eq(rpaBotRunsTable.id, runId));
+  if (!run) { res.status(404).json({ error: "Run not found" }); return; }
+  if (!run?.screenshotPath) { res.status(404).json({ error: "No screenshot for this run" }); return; }
+
+  const filePath = run.screenshotPath;
+  if (!fs.existsSync(filePath)) { res.status(404).json({ error: "Screenshot file not found on server" }); return; }
+
+  res.setHeader("Content-Type", "image/png");
+  res.setHeader("Cache-Control", "max-age=3600");
+  fs.createReadStream(filePath).pipe(res as unknown as NodeJS.WritableStream);
+});
+
 // ── SEED reference bot ────────────────────────────────────────────────────────
 
 router.post("/rpa/seed", ...adminAuth, async (req, res): Promise<void> => {
@@ -287,23 +332,36 @@ router.post("/rpa/seed", ...adminAuth, async (req, res): Promise<void> => {
 
   const [bot] = await db.insert(rpaBotsTable).values({
     name: "Data Preview Automation",
-    description: "Reference bot: logs into the platform, navigates to Data Preview, selects a connection, runs a query, and takes a screenshot.",
+    description: "Reference bot: logs into the platform, navigates to Data Preview, selects the first DB connection, runs a sample query, and screenshots the result.",
     botType: "browser_automation",
     isActive: true,
     createdBy: req.user?.userId ?? null,
   }).returning();
 
-  const appUrl = process.env.APP_URL ?? "http://localhost:5173";
+  const appUrl = process.env.APP_URL ?? "http://localhost:22333";
 
   const steps = [
-    { stepOrder: 0, stepType: "navigate" as const, config: { url: appUrl }, description: "Open app" },
-    { stepOrder: 1, stepType: "fill" as const, config: { selector: "input[type=email]", cred_label: "admin", cred_field: "username" }, description: "Fill email" },
-    { stepOrder: 2, stepType: "fill" as const, config: { selector: "input[type=password]", cred_label: "admin", cred_field: "password" }, description: "Fill password" },
-    { stepOrder: 3, stepType: "click" as const, config: { selector: "button[type=submit]" }, description: "Click login" },
-    { stepOrder: 4, stepType: "wait" as const, config: { selector: "[data-testid=dashboard]", ms: 3000 }, description: "Wait for dashboard" },
-    { stepOrder: 5, stepType: "navigate" as const, config: { url: `${appUrl}/preview` }, description: "Go to Data Preview" },
-    { stepOrder: 6, stepType: "wait" as const, config: { ms: 2000 }, description: "Wait for page load" },
-    { stepOrder: 7, stepType: "screenshot" as const, config: { full_page: true }, description: "Take screenshot" },
+    // Login flow
+    { stepOrder: 0,  stepType: "navigate"    as const, config: { url: appUrl },                                                                         description: "Open app login page" },
+    { stepOrder: 1,  stepType: "fill"        as const, config: { selector: "input[type=email], input[name=email]", cred_label: "admin", cred_field: "username" }, description: "Fill email" },
+    { stepOrder: 2,  stepType: "fill"        as const, config: { selector: "input[type=password]",                  cred_label: "admin", cred_field: "password" }, description: "Fill password" },
+    { stepOrder: 3,  stepType: "click"       as const, config: { selector: "button[type=submit]" },                                                      description: "Submit login form" },
+    { stepOrder: 4,  stepType: "wait"        as const, config: { ms: 3000 },                                                                             description: "Wait for dashboard to load" },
+    // Navigate to Data Preview
+    { stepOrder: 5,  stepType: "navigate"    as const, config: { url: `${appUrl}/preview` },                                                             description: "Navigate to Data Preview page" },
+    { stepOrder: 6,  stepType: "wait"        as const, config: { ms: 2000 },                                                                             description: "Wait for page load" },
+    // Select a DB connection from the combobox
+    { stepOrder: 7,  stepType: "click"       as const, config: { selector: "[role=combobox]" },                                                          description: "Open connection selector" },
+    { stepOrder: 8,  stepType: "wait"        as const, config: { ms: 500 },                                                                              description: "Wait for dropdown" },
+    { stepOrder: 9,  stepType: "click"       as const, config: { selector: "[role=option]:first-child" },                                                description: "Select first connection" },
+    { stepOrder: 10, stepType: "wait"        as const, config: { ms: 500 },                                                                              description: "Wait for selection" },
+    // Type a sample query
+    { stepOrder: 11, stepType: "fill"        as const, config: { selector: "textarea", value: "SELECT 1 AS test_col, NOW() AS current_time" },            description: "Enter sample SQL query" },
+    // Run the query
+    { stepOrder: 12, stepType: "click"       as const, config: { selector: "button:has-text('Run'), button:has-text('Preview'), button[aria-label*='Run']" }, description: "Click Run / Preview button" },
+    { stepOrder: 13, stepType: "wait"        as const, config: { ms: 3000 },                                                                             description: "Wait for query results" },
+    // Screenshot result
+    { stepOrder: 14, stepType: "screenshot"  as const, config: { full_page: false },                                                                     description: "Capture result screenshot" },
   ];
 
   await db.insert(rpaBotStepsTable).values(steps.map(s => ({ ...s, botId: bot.id })));

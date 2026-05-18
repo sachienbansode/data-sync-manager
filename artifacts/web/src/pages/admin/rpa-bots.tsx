@@ -12,10 +12,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Bot, Plus, Play, Trash2, Pencil, ChevronDown, ChevronUp,
   Loader2, CheckCircle2, XCircle, Clock, AlertTriangle,
   Terminal, Key, List, History, RotateCcw, EyeOff,
+  CalendarClock, Image, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -67,6 +69,15 @@ interface RpaBotCredential {
   createdAt: string;
 }
 
+interface RpaBotSchedule {
+  id: number;
+  botId: number;
+  cronExpr: string;
+  isActive: boolean;
+  lastRunAt: string | null;
+  createdAt: string;
+}
+
 interface RpaBotRun {
   id: number;
   botId: number;
@@ -94,16 +105,25 @@ const BOT_TYPES: { value: BotType; label: string }[] = [
 ];
 
 const STEP_TYPES: { value: StepType; label: string; hint: string }[] = [
-  { value: "navigate", label: "Navigate", hint: '{ "url": "https://..." }' },
-  { value: "fill", label: "Fill Input", hint: '{ "selector": "input[name=email]", "value": "..." }' },
-  { value: "click", label: "Click", hint: '{ "selector": "button[type=submit]" }' },
-  { value: "wait", label: "Wait", hint: '{ "selector": ".element", "ms": 2000 }' },
-  { value: "extract", label: "Extract Text", hint: '{ "selector": "h1", "attribute": "textContent" }' },
-  { value: "screenshot", label: "Screenshot", hint: '{ "full_page": true }' },
-  { value: "select", label: "Select Option", hint: '{ "selector": "select#type", "value": "admin" }' },
-  { value: "key_press", label: "Key Press", hint: '{ "key": "Enter", "selector": "input" }' },
-  { value: "scroll", label: "Scroll", hint: '{ "x": 0, "y": 500 }' },
-  { value: "hover", label: "Hover", hint: '{ "selector": ".menu-item" }' },
+  { value: "navigate",    label: "Navigate",      hint: '{ "url": "https://..." }' },
+  { value: "fill",        label: "Fill Input",    hint: '{ "selector": "input[name=email]", "value": "..." }' },
+  { value: "click",       label: "Click",         hint: '{ "selector": "button[type=submit]" }' },
+  { value: "wait",        label: "Wait",          hint: '{ "selector": ".element", "ms": 2000 }' },
+  { value: "extract",     label: "Extract Text",  hint: '{ "selector": "h1", "attribute": "textContent" }' },
+  { value: "screenshot",  label: "Screenshot",    hint: '{ "full_page": true }' },
+  { value: "select",      label: "Select Option", hint: '{ "selector": "select#type", "value": "admin" }' },
+  { value: "key_press",   label: "Key Press",     hint: '{ "key": "Enter", "selector": "input" }' },
+  { value: "scroll",      label: "Scroll",        hint: '{ "x": 0, "y": 500 }' },
+  { value: "hover",       label: "Hover",         hint: '{ "selector": ".menu-item" }' },
+];
+
+const CRON_PRESETS = [
+  { label: "Every 15 minutes", value: "*/15 * * * *" },
+  { label: "Every hour",       value: "0 * * * *" },
+  { label: "Every day at midnight", value: "0 0 * * *" },
+  { label: "Every day at 8am", value: "0 8 * * *" },
+  { label: "Every Monday at 9am", value: "0 9 * * 1" },
+  { label: "Custom…",          value: "" },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -148,6 +168,10 @@ function logLevelColor(level: string) {
     case "debug": return "text-gray-500";
     default:      return "text-green-400";
   }
+}
+
+function screenshotUrl(runId: number) {
+  return `${import.meta.env.BASE_URL}api/rpa/runs/${runId}/screenshot`;
 }
 
 // ── New Bot Dialog ────────────────────────────────────────────────────────────
@@ -210,9 +234,7 @@ function NewBotDialog({ open, onClose, onCreated }: { open: boolean; onClose: ()
 }
 
 // ── Step Editor Dialog ────────────────────────────────────────────────────────
-function StepDialog({
-  open, onClose, botId, step, onSaved,
-}: {
+function StepDialog({ open, onClose, botId, step, onSaved }: {
   open: boolean; onClose: () => void; botId: number;
   step?: RpaBotStep; onSaved: () => void;
 }) {
@@ -222,25 +244,14 @@ function StepDialog({
   const [description, setDescription] = useState(step?.description ?? "");
   const [saving, setSaving] = useState(false);
   const [jsonError, setJsonError] = useState("");
-
   const hint = STEP_TYPES.find(s => s.value === stepType)?.hint ?? "{}";
 
   useEffect(() => {
-    if (open && !step) {
-      setStepType("navigate");
-      setConfigStr("{}");
-      setDescription("");
-    } else if (open && step) {
-      setStepType(step.stepType);
-      setConfigStr(JSON.stringify(step.config, null, 2));
-      setDescription(step.description ?? "");
-    }
+    if (open && !step) { setStepType("navigate"); setConfigStr("{}"); setDescription(""); }
+    else if (open && step) { setStepType(step.stepType); setConfigStr(JSON.stringify(step.config, null, 2)); setDescription(step.description ?? ""); }
   }, [open, step]);
 
-  const validate = () => {
-    try { JSON.parse(configStr); setJsonError(""); return true; }
-    catch { setJsonError("Invalid JSON"); return false; }
-  };
+  const validate = () => { try { JSON.parse(configStr); setJsonError(""); return true; } catch { setJsonError("Invalid JSON"); return false; } };
 
   const submit = async () => {
     if (!validate()) return;
@@ -253,29 +264,21 @@ function StepDialog({
         await apiFetch(`/rpa/bots/${botId}/steps`, { method: "POST", body: JSON.stringify({ stepType, config, description }) });
       }
       toast.success(isEdit ? "Step updated" : "Step added");
-      onSaved();
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save step");
-    } finally {
-      setSaving(false);
-    }
+      onSaved(); onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit Step" : "Add Step"}</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>{isEdit ? "Edit Step" : "Add Step"}</DialogTitle></DialogHeader>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Step Type</Label>
             <Select value={stepType} onValueChange={v => setStepType(v as StepType)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {STEP_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
-              </SelectContent>
+              <SelectContent>{STEP_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
@@ -283,13 +286,7 @@ function StepDialog({
               <Label>Config (JSON)</Label>
               <button className="text-xs text-primary hover:underline" onClick={() => setConfigStr(hint)}>Use template</button>
             </div>
-            <Textarea
-              value={configStr}
-              onChange={e => { setConfigStr(e.target.value); setJsonError(""); }}
-              rows={6}
-              className="font-mono text-xs"
-              placeholder={hint}
-            />
+            <Textarea value={configStr} onChange={e => { setConfigStr(e.target.value); setJsonError(""); }} rows={6} className="font-mono text-xs" />
             {jsonError && <p className="text-xs text-red-500">{jsonError}</p>}
             <p className="text-xs text-muted-foreground">Example: <code className="bg-muted px-1 rounded">{hint}</code></p>
           </div>
@@ -300,9 +297,7 @@ function StepDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{isEdit ? "Update" : "Add Step"}
-          </Button>
+          <Button onClick={submit} disabled={saving}>{saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{isEdit ? "Update" : "Add Step"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -323,42 +318,56 @@ function CredentialDialog({ open, onClose, botId, onSaved }: { open: boolean; on
       await apiFetch(`/rpa/bots/${botId}/credentials`, { method: "POST", body: JSON.stringify({ label, username, password }) });
       toast.success("Credential saved (encrypted)");
       setLabel(""); setUsername(""); setPassword("");
-      onSaved();
-      onClose();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save credential");
-    } finally {
-      setSaving(false);
-    }
+      onSaved(); onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
   };
 
   return (
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2"><Key className="h-5 w-5" />Add Credential</DialogTitle>
-        </DialogHeader>
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Key className="h-5 w-5" />Add Credential</DialogTitle></DialogHeader>
         <p className="text-sm text-muted-foreground -mt-2">Credentials are encrypted with AES-256-GCM before storing.</p>
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Label</Label>
             <Input placeholder='e.g. "admin" — referenced in step config as cred_label' value={label} onChange={e => setLabel(e.target.value)} />
           </div>
-          <div className="space-y-1.5">
-            <Label>Username / Email</Label>
-            <Input value={username} onChange={e => setUsername(e.target.value)} />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Password</Label>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} />
-          </div>
+          <div className="space-y-1.5"><Label>Username / Email</Label><Input value={username} onChange={e => setUsername(e.target.value)} /></div>
+          <div className="space-y-1.5"><Label>Password</Label><Input type="password" value={password} onChange={e => setPassword(e.target.value)} /></div>
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>
-            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Encrypted
-          </Button>
+          <Button onClick={submit} disabled={saving}>{saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save Encrypted</Button>
         </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ── Screenshot Modal ──────────────────────────────────────────────────────────
+function ScreenshotModal({ runId, onClose }: { runId: number; onClose: () => void }) {
+  const url = `${screenshotUrl(runId)}?t=${Date.now()}`;
+  const token = getAccessToken();
+  const [src, setSrc] = useState<string | null>(null);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { if (!r.ok) throw new Error("Not found"); return r.blob(); })
+      .then(blob => setSrc(URL.createObjectURL(blob)))
+      .catch(() => setError(true));
+  }, [runId]);
+
+  return (
+    <Dialog open onOpenChange={() => onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader><DialogTitle className="flex items-center gap-2"><Image className="h-5 w-5" />Run #{runId} Screenshot</DialogTitle></DialogHeader>
+        <div className="flex items-center justify-center min-h-40">
+          {!src && !error && <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />}
+          {error && <p className="text-muted-foreground">Screenshot not available</p>}
+          {src && <img src={src} alt={`Run ${runId} screenshot`} className="max-w-full rounded border" />}
+        </div>
       </DialogContent>
     </Dialog>
   );
@@ -368,6 +377,7 @@ function CredentialDialog({ open, onClose, botId, onSaved }: { open: boolean; on
 function LogViewer({ run }: { run: RpaBotRun }) {
   const [logs, setLogs] = useState<LogLine[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [showScreenshot, setShowScreenshot] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -376,7 +386,6 @@ function LogViewer({ run }: { run: RpaBotRun }) {
     abortRef.current = new AbortController();
     setLogs([]);
     setStreaming(true);
-
     const token = getAccessToken();
     try {
       const resp = await fetch(`${import.meta.env.BASE_URL}api/rpa/runs/${run.id}/stream`, {
@@ -395,7 +404,7 @@ function LogViewer({ run }: { run: RpaBotRun }) {
         buf = parts.pop() ?? "";
         for (const part of parts) {
           const line = part.replace(/^data: /, "").trim();
-          if (!line) continue;
+          if (!line || line.startsWith(":")) continue;
           try {
             const obj = JSON.parse(line) as LogLine;
             if (obj.done) { setStreaming(false); return; }
@@ -405,36 +414,31 @@ function LogViewer({ run }: { run: RpaBotRun }) {
       }
     } catch (e) {
       if ((e as Error).name !== "AbortError") console.error(e);
-    } finally {
-      setStreaming(false);
-    }
+    } finally { setStreaming(false); }
   };
 
-  useEffect(() => {
-    startStream();
-    return () => abortRef.current?.abort();
-  }, [run.id]);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+  useEffect(() => { startStream(); return () => abortRef.current?.abort(); }, [run.id]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [logs]);
 
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Terminal className="h-4 w-4" />
-          <span>Run #{run.id} logs</span>
-          {streaming && <><Loader2 className="h-3 w-3 animate-spin" /><span>Live</span></>}
+          <span>Run #{run.id}</span>
+          {streaming && <><Loader2 className="h-3 w-3 animate-spin" /><span className="text-blue-500">Live</span></>}
         </div>
-        <Button variant="ghost" size="sm" onClick={startStream}>
-          <RotateCcw className="h-3 w-3 mr-1" />Reload
-        </Button>
+        <div className="flex gap-2">
+          {run.screenshotPath && (
+            <Button variant="outline" size="sm" onClick={() => setShowScreenshot(true)}>
+              <Image className="h-3 w-3 mr-1" />Screenshot
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={startStream}><RotateCcw className="h-3 w-3 mr-1" />Reload</Button>
+        </div>
       </div>
-      <div className="bg-zinc-950 text-zinc-100 rounded-md font-mono text-xs p-3 h-72 overflow-y-auto">
-        {logs.length === 0 && !streaming && (
-          <p className="text-zinc-500 italic">No logs yet. Click Reload if the run has completed.</p>
-        )}
+      <div className="bg-zinc-950 text-zinc-100 rounded-md font-mono text-xs p-3 h-64 overflow-y-auto">
+        {logs.length === 0 && !streaming && <p className="text-zinc-500 italic">No logs yet. Click Reload if the run completed.</p>}
         {logs.map((log, i) => (
           <div key={i} className="flex gap-2 leading-5">
             <span className="text-zinc-600 shrink-0">{new Date(log.ts).toLocaleTimeString()}</span>
@@ -444,6 +448,7 @@ function LogViewer({ run }: { run: RpaBotRun }) {
         ))}
         <div ref={bottomRef} />
       </div>
+      {showScreenshot && <ScreenshotModal runId={run.id} onClose={() => setShowScreenshot(false)} />}
     </div>
   );
 }
@@ -486,12 +491,9 @@ function StepsTab({ bot }: { bot: RpaBot }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{steps.length} step{steps.length !== 1 ? "s" : ""} configured</p>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="h-4 w-4 mr-1" />Add Step
-        </Button>
+        <p className="text-sm text-muted-foreground">{steps.length} step{steps.length !== 1 ? "s" : ""}</p>
+        <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" />Add Step</Button>
       </div>
-
       {steps.length === 0 ? (
         <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
           <List className="h-8 w-8 mx-auto mb-2 opacity-40" />
@@ -507,31 +509,121 @@ function StepsTab({ bot }: { bot: RpaBot }) {
                   <Badge variant="outline" className="font-mono text-xs">{step.stepType}</Badge>
                   {step.description && <span className="text-sm">{step.description}</span>}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 font-mono truncate">
-                  {JSON.stringify(step.config)}
-                </p>
+                <p className="text-xs text-muted-foreground mt-1 font-mono truncate">{JSON.stringify(step.config)}</p>
               </div>
               <div className="flex items-center gap-0.5 shrink-0">
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === 0} onClick={() => swap(i, i - 1)}>
-                  <ChevronUp className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === steps.length - 1} onClick={() => swap(i, i + 1)}>
-                  <ChevronDown className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditStep(step)}>
-                  <Pencil className="h-3 w-3" />
-                </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteStep.mutate(step.id)}>
-                  <Trash2 className="h-3 w-3" />
-                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === 0} onClick={() => swap(i, i - 1)}><ChevronUp className="h-3 w-3" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === steps.length - 1} onClick={() => swap(i, i + 1)}><ChevronDown className="h-3 w-3" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditStep(step)}><Pencil className="h-3 w-3" /></Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteStep.mutate(step.id)}><Trash2 className="h-3 w-3" /></Button>
               </div>
             </div>
           ))}
         </div>
       )}
-
       <StepDialog open={showAdd} onClose={() => setShowAdd(false)} botId={bot.id} onSaved={() => qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] })} />
       <StepDialog open={!!editStep} onClose={() => setEditStep(undefined)} botId={bot.id} step={editStep} onSaved={() => { qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] }); setEditStep(undefined); }} />
+    </div>
+  );
+}
+
+// ── Schedule Tab ──────────────────────────────────────────────────────────────
+function ScheduleTab({ bot }: { bot: RpaBot }) {
+  const qc = useQueryClient();
+  const [showAdd, setShowAdd] = useState(false);
+  const [cronExpr, setCronExpr] = useState("0 8 * * *");
+  const [preset, setPreset] = useState("0 8 * * *");
+  const [saving, setSaving] = useState(false);
+
+  const { data: schedules = [], isLoading } = useQuery<RpaBotSchedule[]>({
+    queryKey: ["rpa-schedules", bot.id],
+    queryFn: () => apiFetch(`/rpa/bots/${bot.id}/schedules`),
+  });
+
+  const deleteSchedule = useMutation({
+    mutationFn: (id: number) => apiFetch(`/rpa/schedules/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Schedule removed"); qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] }); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const toggleSchedule = useMutation({
+    mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
+      apiFetch(`/rpa/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] }),
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const addSchedule = async () => {
+    if (!cronExpr.trim()) { toast.error("Cron expression required"); return; }
+    setSaving(true);
+    try {
+      await apiFetch(`/rpa/bots/${bot.id}/schedules`, { method: "POST", body: JSON.stringify({ cronExpr, isActive: true }) });
+      toast.success("Schedule created");
+      qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] });
+      setShowAdd(false);
+      setCronExpr("0 8 * * *");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
+  };
+
+  if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">{schedules.length} schedule{schedules.length !== 1 ? "s" : ""}</p>
+        <Button size="sm" onClick={() => setShowAdd(p => !p)}><Plus className="h-4 w-4 mr-1" />Add Schedule</Button>
+      </div>
+
+      {showAdd && (
+        <div className="border rounded-lg p-4 space-y-3 bg-muted/30">
+          <p className="text-sm font-medium">New Schedule</p>
+          <div className="space-y-1.5">
+            <Label>Preset</Label>
+            <Select value={preset} onValueChange={v => { setPreset(v); if (v) setCronExpr(v); }}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>{CRON_PRESETS.map(p => <SelectItem key={p.label} value={p.value || p.label}>{p.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Cron Expression</Label>
+            <Input className="font-mono" value={cronExpr} onChange={e => setCronExpr(e.target.value)} placeholder="*/15 * * * *" />
+            <p className="text-xs text-muted-foreground">Format: minute hour day-of-month month day-of-week. <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">crontab.guru <ExternalLink className="h-3 w-3" /></a></p>
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={addSchedule} disabled={saving}>{saving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Create</Button>
+            <Button size="sm" variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
+          </div>
+        </div>
+      )}
+
+      {schedules.length === 0 && !showAdd ? (
+        <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
+          <CalendarClock className="h-8 w-8 mx-auto mb-2 opacity-40" />
+          <p>No schedules yet. Add a cron schedule to run this bot automatically.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {schedules.map(schedule => (
+            <div key={schedule.id} className="flex items-center gap-3 p-3 border rounded-lg bg-card">
+              <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="font-mono font-medium text-sm">{schedule.cronExpr}</p>
+                <p className="text-xs text-muted-foreground">
+                  {schedule.isActive ? "Active" : "Paused"} · Last run: {fmt(schedule.lastRunAt)} · Created {fmt(schedule.createdAt)}
+                </p>
+              </div>
+              <Switch
+                checked={schedule.isActive}
+                onCheckedChange={v => toggleSchedule.mutate({ id: schedule.id, isActive: v })}
+              />
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive shrink-0" onClick={() => deleteSchedule.mutate(schedule.id)}>
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -558,11 +650,8 @@ function CredentialsTab({ bot }: { bot: RpaBot }) {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{creds.length} credential{creds.length !== 1 ? "s" : ""} stored</p>
-        <Button size="sm" onClick={() => setShowAdd(true)}>
-          <Plus className="h-4 w-4 mr-1" />Add Credential
-        </Button>
+        <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" />Add Credential</Button>
       </div>
-
       {creds.length === 0 ? (
         <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
           <Key className="h-8 w-8 mx-auto mb-2 opacity-40" />
@@ -588,7 +677,6 @@ function CredentialsTab({ bot }: { bot: RpaBot }) {
           ))}
         </div>
       )}
-
       <CredentialDialog open={showAdd} onClose={() => setShowAdd(false)} botId={bot.id} onSaved={() => qc.invalidateQueries({ queryKey: ["rpa-creds", bot.id] })} />
     </div>
   );
@@ -605,8 +693,7 @@ function RunsTab({ bot }: { bot: RpaBot }) {
     queryFn: () => apiFetch(`/rpa/bots/${bot.id}/runs`),
     refetchInterval: (query) => {
       const data = query.state.data as RpaBotRun[] | undefined;
-      if (data?.some(r => r.status === "running" || r.status === "pending")) return 3000;
-      return false;
+      return data?.some(r => r.status === "running" || r.status === "pending") ? 3000 : false;
     },
   });
 
@@ -619,9 +706,7 @@ function RunsTab({ bot }: { bot: RpaBot }) {
       setActiveRun(run);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to start run");
-    } finally {
-      setRunning(false);
-    }
+    } finally { setRunning(false); }
   };
 
   if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -631,12 +716,9 @@ function RunsTab({ bot }: { bot: RpaBot }) {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{runs.length} run{runs.length !== 1 ? "s" : ""} in history</p>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RotateCcw className="h-4 w-4 mr-1" />Refresh
-          </Button>
+          <Button variant="outline" size="sm" onClick={() => refetch()}><RotateCcw className="h-4 w-4 mr-1" />Refresh</Button>
           <Button size="sm" onClick={triggerRun} disabled={running || !bot.isActive}>
-            {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}
-            Run Now
+            {running ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Play className="h-4 w-4 mr-2" />}Run Now
           </Button>
         </div>
       </div>
@@ -644,10 +726,10 @@ function RunsTab({ bot }: { bot: RpaBot }) {
       {activeRun && (
         <div className="border rounded-lg p-3 space-y-2 bg-muted/30">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Current Run</span>
+            <span className="text-sm font-medium">Active: Run #{activeRun.id}</span>
             {statusBadge(runs.find(r => r.id === activeRun.id)?.status ?? activeRun.status)}
           </div>
-          <LogViewer run={activeRun} />
+          <LogViewer run={runs.find(r => r.id === activeRun.id) ?? activeRun} />
         </div>
       )}
 
@@ -668,6 +750,11 @@ function RunsTab({ bot }: { bot: RpaBot }) {
                   {statusBadge(run.status)}
                   <span className="text-xs text-muted-foreground">#{run.id}</span>
                   {run.triggeredByEmail && <span className="text-xs text-muted-foreground">by {run.triggeredByEmail}</span>}
+                  {run.screenshotPath && (
+                    <Badge variant="outline" className="text-xs flex items-center gap-1">
+                      <Image className="h-3 w-3" />screenshot
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {fmt(run.startedAt)} · {duration(run)}
@@ -677,16 +764,6 @@ function RunsTab({ bot }: { bot: RpaBot }) {
               <Terminal className="h-4 w-4 text-muted-foreground shrink-0" />
             </div>
           ))}
-        </div>
-      )}
-
-      {activeRun && !runs.some(r => r.id === activeRun.id && (r.status === "running" || r.status === "pending")) && activeRun.id !== runs[0]?.id && (
-        <div className="border rounded-lg p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Run #{activeRun.id} Logs</span>
-            {statusBadge(activeRun.status)}
-          </div>
-          <LogViewer run={activeRun} />
         </div>
       )}
     </div>
@@ -719,14 +796,9 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
     setSaving(true);
     try {
       const updated = await apiFetch(`/rpa/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ name: editName, description: editDesc }) });
-      onUpdated(updated as RpaBot);
-      qc.invalidateQueries({ queryKey: ["rpa-bots"] });
-      setEditing(false);
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed");
-    } finally {
-      setSaving(false);
-    }
+      onUpdated(updated as RpaBot); qc.invalidateQueries({ queryKey: ["rpa-bots"] }); setEditing(false);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -737,9 +809,7 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
             <Input value={editName} onChange={e => setEditName(e.target.value)} className="font-semibold" />
             <Textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={2} placeholder="Description..." />
             <div className="flex gap-2">
-              <Button size="sm" onClick={saveEdit} disabled={saving}>
-                {saving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Save
-              </Button>
+              <Button size="sm" onClick={saveEdit} disabled={saving}>{saving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Save</Button>
               <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
             </div>
           </div>
@@ -772,14 +842,16 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
       <Separator />
       <CardContent className="flex-1 overflow-hidden pt-4">
         <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
-          <TabsList className="w-full shrink-0">
-            <TabsTrigger value="steps" className="flex-1"><List className="h-4 w-4 mr-1.5" />Steps</TabsTrigger>
-            <TabsTrigger value="runs" className="flex-1"><Play className="h-4 w-4 mr-1.5" />Runs</TabsTrigger>
-            <TabsTrigger value="credentials" className="flex-1"><Key className="h-4 w-4 mr-1.5" />Credentials</TabsTrigger>
+          <TabsList className="w-full shrink-0 grid grid-cols-4">
+            <TabsTrigger value="steps"><List className="h-3.5 w-3.5 mr-1" />Steps</TabsTrigger>
+            <TabsTrigger value="runs"><Play className="h-3.5 w-3.5 mr-1" />Runs</TabsTrigger>
+            <TabsTrigger value="schedule"><CalendarClock className="h-3.5 w-3.5 mr-1" />Schedule</TabsTrigger>
+            <TabsTrigger value="credentials"><Key className="h-3.5 w-3.5 mr-1" />Creds</TabsTrigger>
           </TabsList>
           <ScrollArea className="flex-1 mt-3">
-            <TabsContent value="steps" className="mt-0"><StepsTab bot={bot} /></TabsContent>
-            <TabsContent value="runs" className="mt-0"><RunsTab bot={bot} /></TabsContent>
+            <TabsContent value="steps"      className="mt-0"><StepsTab bot={bot} /></TabsContent>
+            <TabsContent value="runs"       className="mt-0"><RunsTab bot={bot} /></TabsContent>
+            <TabsContent value="schedule"   className="mt-0"><ScheduleTab bot={bot} /></TabsContent>
             <TabsContent value="credentials" className="mt-0"><CredentialsTab bot={bot} /></TabsContent>
           </ScrollArea>
         </Tabs>
@@ -807,23 +879,14 @@ export default function RpaBotsPage() {
       if ((resp as { message?: string }).message?.includes("skipping")) {
         toast.info("Bots already exist — seed skipped");
       } else {
-        toast.success("Reference bot seeded");
+        toast.success("Reference bot seeded with 15 steps");
         qc.invalidateQueries({ queryKey: ["rpa-bots"] });
       }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Seed failed");
-    } finally {
-      setSeeding(false);
-    }
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Seed failed"); }
+    finally { setSeeding(false); }
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
+  if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 h-full">
@@ -836,8 +899,7 @@ export default function RpaBotsPage() {
         </div>
         <div className="flex gap-2 shrink-0">
           <Button variant="outline" size="sm" onClick={seedBots} disabled={seeding}>
-            {seeding ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
-            Seed Demo Bot
+            {seeding ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}Seed Demo Bot
           </Button>
           <Button onClick={() => setShowNew(true)}>
             <Plus className="h-4 w-4 mr-2" />New Bot
@@ -851,29 +913,20 @@ export default function RpaBotsPage() {
             <Bot className="h-16 w-16 text-muted-foreground/30 mb-4" />
             <h3 className="text-lg font-semibold mb-1">No bots yet</h3>
             <p className="text-muted-foreground mb-4 max-w-sm">
-              Create your first bot to start automating browser tasks. Or seed a demo bot to explore the feature.
+              Create your first bot or seed the demo "Data Preview Automation" bot to explore the feature.
             </p>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={seedBots} disabled={seeding}>
-                {seeding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Seed Demo Bot
-              </Button>
-              <Button onClick={() => setShowNew(true)}>
-                <Plus className="h-4 w-4 mr-2" />Create Bot
-              </Button>
+              <Button variant="outline" onClick={seedBots} disabled={seeding}>{seeding && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Seed Demo Bot</Button>
+              <Button onClick={() => setShowNew(true)}><Plus className="h-4 w-4 mr-2" />Create Bot</Button>
             </div>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
-          {/* Bot list */}
           <div className="space-y-2">
-            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">
-              {bots.length} Bot{bots.length !== 1 ? "s" : ""}
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground px-1">{bots.length} Bot{bots.length !== 1 ? "s" : ""}</p>
             {bots.map(bot => (
-              <button
-                key={bot.id}
-                onClick={() => setSelectedBot(bot)}
+              <button key={bot.id} onClick={() => setSelectedBot(bot)}
                 className={`w-full text-left p-3 border rounded-lg transition-colors hover:bg-muted/50 ${selectedBot?.id === bot.id ? "border-primary bg-primary/5" : ""}`}
               >
                 <div className="flex items-start gap-2">
@@ -890,18 +943,12 @@ export default function RpaBotsPage() {
               </button>
             ))}
           </div>
-
-          {/* Detail panel */}
           <div className="lg:col-span-2">
             {selectedBot ? (
-              <BotDetail
-                bot={selectedBot}
-                onUpdated={updated => setSelectedBot(updated)}
-                onDeleted={() => setSelectedBot(null)}
-              />
+              <BotDetail bot={selectedBot} onUpdated={updated => setSelectedBot(updated)} onDeleted={() => setSelectedBot(null)} />
             ) : (
               <div className="border-2 border-dashed rounded-lg h-48 flex items-center justify-center text-muted-foreground">
-                Select a bot from the list to view details and run it.
+                Select a bot to view details and run it.
               </div>
             )}
           </div>

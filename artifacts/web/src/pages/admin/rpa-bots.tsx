@@ -558,7 +558,20 @@ function StepsTab({ bot }: { bot: RpaBot }) {
                   <Badge variant="outline" className="font-mono text-xs shrink-0">{step.stepType}</Badge>
                   {step.description && <span className="text-sm font-medium truncate">{step.description}</span>}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1 font-mono truncate">{JSON.stringify(step.config)}</p>
+                {step.config && Object.keys(step.config as Record<string, unknown>).length > 0 && (
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1.5">
+                    {Object.entries(step.config as Record<string, unknown>).map(([k, v]) => {
+                      const display = typeof v === "object" && v !== null ? JSON.stringify(v) : String(v);
+                      return (
+                        <span key={k} className="text-[11px] font-mono text-muted-foreground inline-flex items-baseline gap-0.5 max-w-full">
+                          <span className="text-foreground/40 shrink-0">{k}</span>
+                          <span className="text-foreground/25 shrink-0">=</span>
+                          <span className="text-foreground/60 truncate max-w-[220px]">{display}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
                 <Button variant="ghost" size="icon" className="h-6 w-6" disabled={i === 0} onClick={() => swap(i, i - 1)}>
@@ -1095,11 +1108,13 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
             <TabsTrigger value="schedule"><CalendarClock className="h-3.5 w-3.5 mr-1" />Schedule</TabsTrigger>
             <TabsTrigger value="credentials"><Key className="h-3.5 w-3.5 mr-1" />Creds</TabsTrigger>
           </TabsList>
-          <ScrollArea className="flex-1 mt-3">
-            <TabsContent value="steps"       className="mt-0"><StepsTab bot={bot} /></TabsContent>
-            <TabsContent value="runs"        className="mt-0"><RunsTab bot={bot} /></TabsContent>
-            <TabsContent value="schedule"    className="mt-0"><ScheduleTab bot={bot} /></TabsContent>
-            <TabsContent value="credentials" className="mt-0"><CredentialsTab bot={bot} /></TabsContent>
+          <ScrollArea className="flex-1 mt-3 pr-1">
+            <div className="pr-2">
+              <TabsContent value="steps"       className="mt-0"><StepsTab bot={bot} /></TabsContent>
+              <TabsContent value="runs"        className="mt-0"><RunsTab bot={bot} /></TabsContent>
+              <TabsContent value="schedule"    className="mt-0"><ScheduleTab bot={bot} /></TabsContent>
+              <TabsContent value="credentials" className="mt-0"><CredentialsTab bot={bot} /></TabsContent>
+            </div>
           </ScrollArea>
         </Tabs>
       </CardContent>

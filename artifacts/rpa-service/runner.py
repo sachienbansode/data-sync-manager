@@ -95,8 +95,17 @@ async def _run_bot(pool: asyncpg.Pool, run_id: int, bot_id: int):
     except ImportError:
         raise RuntimeError("Playwright is not installed. Run: pip install playwright && playwright install chromium")
 
+    import shutil
+    chromium_path = shutil.which("chromium") or shutil.which("chromium-browser") or shutil.which("google-chrome")
+    launch_kwargs: dict = {
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+    }
+    if chromium_path:
+        launch_kwargs["executable_path"] = chromium_path
+
     async with async_playwright() as pw:
-        browser = await pw.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+        browser = await pw.chromium.launch(**launch_kwargs)
         context = await browser.new_context(ignore_https_errors=True)
         page = await context.new_page()
 

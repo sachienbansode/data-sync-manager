@@ -49,6 +49,10 @@ interface RpaBot {
   botType: BotType;
   isActive: boolean;
   createdAt: string;
+  scheduleActive: boolean;
+  scheduleCronExpr: string | null;
+  scheduleLastRunAt: string | null;
+  scheduleNextRunAt: string | null;
 }
 
 interface RpaBotStep {
@@ -534,22 +538,30 @@ function ScheduleTab({ bot }: { bot: RpaBot }) {
   const [cronExpr, setCronExpr] = useState("0 8 * * *");
   const [preset, setPreset] = useState("0 8 * * *");
   const [saving, setSaving] = useState(false);
+  const [editId, setEditId] = useState<number | null>(null);
+  const [editCron, setEditCron] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const { data: schedules = [], isLoading } = useQuery<RpaBotSchedule[]>({
     queryKey: ["rpa-schedules", bot.id],
     queryFn: () => apiFetch(`/rpa/bots/${bot.id}/schedules`),
   });
 
+  const invalidateSchedules = () => {
+    qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] });
+    qc.invalidateQueries({ queryKey: ["rpa-bots"] });
+  };
+
   const deleteSchedule = useMutation({
-    mutationFn: (id: number) => apiFetch(`/rpa/schedules/${id}`, { method: "DELETE" }),
-    onSuccess: () => { toast.success("Schedule removed"); qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] }); },
+    mutationFn: (id: number) => apiFetch(`/rpa/bots/${bot.id}/schedules/${id}`, { method: "DELETE" }),
+    onSuccess: () => { toast.success("Schedule removed"); invalidateSchedules(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
   const toggleSchedule = useMutation({
     mutationFn: ({ id, isActive }: { id: number; isActive: boolean }) =>
-      apiFetch(`/rpa/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] }),
+      apiFetch(`/rpa/bots/${bot.id}/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ isActive }) }),
+    onSuccess: () => invalidateSchedules(),
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -559,11 +571,23 @@ function ScheduleTab({ bot }: { bot: RpaBot }) {
     try {
       await apiFetch(`/rpa/bots/${bot.id}/schedules`, { method: "POST", body: JSON.stringify({ cronExpr, isActive: true }) });
       toast.success("Schedule created");
-      qc.invalidateQueries({ queryKey: ["rpa-schedules", bot.id] });
+      invalidateSchedules();
       setShowAdd(false);
       setCronExpr("0 8 * * *");
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
     finally { setSaving(false); }
+  };
+
+  const saveEdit = async (id: number) => {
+    if (!editCron.trim()) { toast.error("Cron expression required"); return; }
+    setEditSaving(true);
+    try {
+      await apiFetch(`/rpa/bots/${bot.id}/schedules/${id}`, { method: "PATCH", body: JSON.stringify({ cronExpr: editCron }) });
+      toast.success("Schedule updated");
+      invalidateSchedules();
+      setEditId(null);
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setEditSaving(false); }
   };
 
   if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
@@ -605,21 +629,48 @@ function ScheduleTab({ bot }: { bot: RpaBot }) {
       ) : (
         <div className="space-y-2">
           {schedules.map(schedule => (
-            <div key={schedule.id} className="flex items-center gap-3 p-3 border rounded-lg bg-card">
-              <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
-                <p className="font-mono font-medium text-sm">{schedule.cronExpr}</p>
-                <p className="text-xs text-muted-foreground">
-                  {schedule.isActive ? "Active" : "Paused"} · Last run: {fmt(schedule.lastRunAt)} · Created {fmt(schedule.createdAt)}
-                </p>
-              </div>
-              <Switch
-                checked={schedule.isActive}
-                onCheckedChange={v => toggleSchedule.mutate({ id: schedule.id, isActive: v })}
-              />
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive shrink-0" onClick={() => deleteSchedule.mutate(schedule.id)}>
-                <Trash2 className="h-4 w-4" />
-              </Button>
+            <div key={schedule.id} className="border rounded-lg bg-card overflow-hidden">
+              {editId === schedule.id ? (
+                <div className="p-3 space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground">Edit cron expression</p>
+                  <Input
+                    className="font-mono text-sm"
+                    value={editCron}
+                    onChange={e => setEditCron(e.target.value)}
+                    placeholder="*/15 * * * *"
+                    autoFocus
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Format: minute hour day month weekday — <a href="https://crontab.guru" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline inline-flex items-center gap-0.5">crontab.guru <ExternalLink className="h-2.5 w-2.5" /></a>
+                  </p>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={() => saveEdit(schedule.id)} disabled={editSaving}>
+                      {editSaving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Save
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditId(null)}>Cancel</Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 p-3">
+                  <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-mono font-medium text-sm">{schedule.cronExpr}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {schedule.isActive ? "Active" : "Paused"} · Last run: {fmt(schedule.lastRunAt)} · Created {fmt(schedule.createdAt)}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={schedule.isActive}
+                    onCheckedChange={v => toggleSchedule.mutate({ id: schedule.id, isActive: v })}
+                  />
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => { setEditId(schedule.id); setEditCron(schedule.cronExpr); }}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive hover:text-destructive shrink-0" onClick={() => deleteSchedule.mutate(schedule.id)}>
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -937,7 +988,22 @@ export default function RpaBotsPage() {
                     <div className="flex gap-1.5 mt-1.5 flex-wrap">
                       {botTypeBadge(bot.botType)}
                       {!bot.isActive && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
+                      {bot.scheduleActive && (
+                        <Badge className="bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-400 text-xs flex items-center gap-0.5">
+                          <CalendarClock className="h-2.5 w-2.5" />{bot.scheduleCronExpr}
+                        </Badge>
+                      )}
                     </div>
+                    {bot.scheduleActive && (
+                      <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                        {bot.scheduleNextRunAt && (
+                          <p className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" />Next: {fmt(bot.scheduleNextRunAt)}</p>
+                        )}
+                        {bot.scheduleLastRunAt && (
+                          <p className="flex items-center gap-1"><History className="h-2.5 w-2.5" />Last: {fmt(bot.scheduleLastRunAt)}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </button>

@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler } from "./scheduler";
+import { initRpaBotScheduler } from "./rpa-scheduler";
 import { seedRpaBotsIfEmpty, seedRpaPagePermissions } from "./routes/rpa";
 
 const rawPort = process.env["PORT"];
@@ -47,6 +48,30 @@ async function startSchedulerWithRetry(
   }
 }
 
+async function startRpaBotSchedulerWithRetry(
+  maxAttempts = 6,
+  initialDelayMs = 2_000,
+): Promise<void> {
+  let delayMs = initialDelayMs;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      await initRpaBotScheduler();
+      return;
+    } catch (err) {
+      if (attempt === maxAttempts) {
+        logger.error({ err }, "RPA bot scheduler init failed after all retries — bot schedules will not run");
+        return;
+      }
+      logger.warn(
+        { err: err instanceof Error ? err.message : err, attempt, retryInMs: delayMs },
+        "RPA bot scheduler init failed, retrying…",
+      );
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      delayMs = Math.min(delayMs * 2, 30_000);
+    }
+  }
+}
+
 app.listen(port, (err) => {
   if (err) {
     logger.error({ err }, "Error listening on port");
@@ -60,6 +85,9 @@ app.listen(port, (err) => {
   setTimeout(() => {
     startSchedulerWithRetry().catch((e) =>
       logger.error({ err: e }, "Unexpected error in scheduler startup"),
+    );
+    startRpaBotSchedulerWithRetry().catch((e) =>
+      logger.error({ err: e }, "Unexpected error in RPA bot scheduler startup"),
     );
     seedRpaBotsIfEmpty().catch((e) =>
       logger.error({ err: e }, "RPA bot auto-seed failed"),

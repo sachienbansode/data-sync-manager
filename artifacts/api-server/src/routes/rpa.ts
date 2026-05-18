@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
+import cron from "node-cron";
 import {
   db,
   rpaBotsTable,
@@ -15,6 +16,7 @@ import {
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, loadEncryptionKey } from "../lib/crypto";
 import { z } from "zod";
+import { registerBotSchedule, cancelBotSchedule, computeNextBotRunAt } from "../rpa-scheduler";
 
 const router: IRouter = Router();
 
@@ -77,7 +79,34 @@ const UpdateBotBody = z.object({
 
 router.get("/rpa/bots", ...adminAuth, async (_req, res): Promise<void> => {
   const bots = await db.select().from(rpaBotsTable).orderBy(desc(rpaBotsTable.createdAt));
-  res.json(bots);
+
+  const schedules = await db
+    .select({
+      botId: rpaBotSchedulesTable.botId,
+      cronExpr: rpaBotSchedulesTable.cronExpr,
+      isActive: rpaBotSchedulesTable.isActive,
+      lastRunAt: rpaBotSchedulesTable.lastRunAt,
+    })
+    .from(rpaBotSchedulesTable)
+    .where(eq(rpaBotSchedulesTable.isActive, true));
+
+  const scheduleMap = new Map<number, typeof schedules[0]>();
+  for (const s of schedules) {
+    if (!scheduleMap.has(s.botId)) scheduleMap.set(s.botId, s);
+  }
+
+  const result = bots.map((bot) => {
+    const sched = scheduleMap.get(bot.id);
+    return {
+      ...bot,
+      scheduleActive: !!sched,
+      scheduleCronExpr: sched?.cronExpr ?? null,
+      scheduleLastRunAt: sched?.lastRunAt ?? null,
+      scheduleNextRunAt: sched ? computeNextBotRunAt(sched.cronExpr) : null,
+    };
+  });
+
+  res.json(result);
 });
 
 router.post("/rpa/bots", ...adminAuth, async (req, res): Promise<void> => {
@@ -98,11 +127,31 @@ router.patch("/rpa/bots/:id", ...adminAuth, async (req, res): Promise<void> => {
   const updates = { ...parsed.data, updatedAt: new Date() };
   const [bot] = await db.update(rpaBotsTable).set(updates).where(eq(rpaBotsTable.id, id)).returning();
   if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+
+  if (parsed.data.isActive !== undefined) {
+    const schedules = await db
+      .select({ id: rpaBotSchedulesTable.id, cronExpr: rpaBotSchedulesTable.cronExpr, isActive: rpaBotSchedulesTable.isActive })
+      .from(rpaBotSchedulesTable)
+      .where(eq(rpaBotSchedulesTable.botId, id));
+    for (const s of schedules) {
+      if (bot.isActive && s.isActive) {
+        registerBotSchedule(s.id, id, s.cronExpr);
+      } else {
+        cancelBotSchedule(s.id);
+      }
+    }
+  }
+
   res.json(bot);
 });
 
 router.delete("/rpa/bots/:id", ...adminAuth, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
+  const schedules = await db
+    .select({ id: rpaBotSchedulesTable.id })
+    .from(rpaBotSchedulesTable)
+    .where(eq(rpaBotSchedulesTable.botId, id));
+  for (const s of schedules) cancelBotSchedule(s.id);
   const [bot] = await db.delete(rpaBotsTable).where(eq(rpaBotsTable.id, id)).returning();
   if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
   res.json({ ok: true });
@@ -227,6 +276,19 @@ const CreateScheduleBody = z.object({
   isActive: z.boolean().default(false),
 });
 
+async function applyScheduleState(schedule: { id: number; botId: number; cronExpr: string; isActive: boolean }): Promise<void> {
+  if (schedule.isActive) {
+    const [bot] = await db.select({ isActive: rpaBotsTable.isActive }).from(rpaBotsTable).where(eq(rpaBotsTable.id, schedule.botId));
+    if (bot?.isActive) {
+      registerBotSchedule(schedule.id, schedule.botId, schedule.cronExpr);
+    } else {
+      cancelBotSchedule(schedule.id);
+    }
+  } else {
+    cancelBotSchedule(schedule.id);
+  }
+}
+
 router.get("/rpa/bots/:id/schedules", ...adminAuth, async (req, res): Promise<void> => {
   const botId = parseInt(req.params.id, 10);
   const schedules = await db.select().from(rpaBotSchedulesTable)
@@ -238,20 +300,46 @@ router.post("/rpa/bots/:id/schedules", ...adminAuth, async (req, res): Promise<v
   const botId = parseInt(req.params.id, 10);
   const parsed = CreateScheduleBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
-  const [schedule] = await db.insert(rpaBotSchedulesTable).values({
-    botId, ...parsed.data,
-  }).returning();
+  if (!cron.validate(parsed.data.cronExpr)) { res.status(400).json({ error: "Invalid cron expression" }); return; }
+  const [schedule] = await db.insert(rpaBotSchedulesTable).values({ botId, ...parsed.data }).returning();
+  await applyScheduleState(schedule);
   res.status(201).json(schedule);
+});
+
+router.patch("/rpa/bots/:botId/schedules/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  const botId = parseInt(req.params.botId, 10);
+  const parsed = CreateScheduleBody.partial().safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
+  if (parsed.data.cronExpr !== undefined && !cron.validate(parsed.data.cronExpr)) { res.status(400).json({ error: "Invalid cron expression" }); return; }
+  const [schedule] = await db.update(rpaBotSchedulesTable)
+    .set({ ...parsed.data, updatedAt: new Date() })
+    .where(and(eq(rpaBotSchedulesTable.id, id), eq(rpaBotSchedulesTable.botId, botId))).returning();
+  if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+  await applyScheduleState(schedule);
+  res.json(schedule);
+});
+
+router.delete("/rpa/bots/:botId/schedules/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const id = parseInt(req.params.id, 10);
+  const botId = parseInt(req.params.botId, 10);
+  const [schedule] = await db.delete(rpaBotSchedulesTable)
+    .where(and(eq(rpaBotSchedulesTable.id, id), eq(rpaBotSchedulesTable.botId, botId))).returning();
+  if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+  cancelBotSchedule(id);
+  res.json({ ok: true });
 });
 
 router.patch("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   const parsed = CreateScheduleBody.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
+  if (parsed.data.cronExpr !== undefined && !cron.validate(parsed.data.cronExpr)) { res.status(400).json({ error: "Invalid cron expression" }); return; }
   const [schedule] = await db.update(rpaBotSchedulesTable)
     .set({ ...parsed.data, updatedAt: new Date() })
     .where(eq(rpaBotSchedulesTable.id, id)).returning();
   if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+  await applyScheduleState(schedule);
   res.json(schedule);
 });
 
@@ -259,6 +347,7 @@ router.delete("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void
   const id = parseInt(req.params.id, 10);
   const [schedule] = await db.delete(rpaBotSchedulesTable).where(eq(rpaBotSchedulesTable.id, id)).returning();
   if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
+  cancelBotSchedule(id);
   res.json({ ok: true });
 });
 

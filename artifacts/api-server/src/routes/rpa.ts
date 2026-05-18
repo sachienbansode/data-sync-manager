@@ -25,6 +25,21 @@ async function proxyToRpa(path: string, opts: RequestInit = {}): Promise<Respons
   return fetch(`${RPA_SERVICE_URL}${path}`, opts);
 }
 
+// ── snake_case → camelCase helpers (normalise Python/asyncpg responses) ────────
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, l: string) => l.toUpperCase());
+}
+
+function camelizeKeys(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(camelizeKeys);
+  if (obj !== null && typeof obj === "object") {
+    return Object.fromEntries(
+      Object.entries(obj as Record<string, unknown>).map(([k, v]) => [snakeToCamel(k), camelizeKeys(v)])
+    );
+  }
+  return obj;
+}
+
 async function jsonProxy(path: string, opts: RequestInit = {}): Promise<{ status: number; body: unknown }> {
   try {
     const resp = await proxyToRpa(path, opts);
@@ -168,10 +183,18 @@ router.get("/rpa/bots/:id/credentials", ...adminAuth, async (req, res): Promise<
     id: rpaBotCredentialsTable.id,
     botId: rpaBotCredentialsTable.botId,
     label: rpaBotCredentialsTable.label,
-    usernameSet: rpaBotCredentialsTable.usernameEnc,
+    usernameEnc: rpaBotCredentialsTable.usernameEnc,
+    passwordEnc: rpaBotCredentialsTable.passwordEnc,
     createdAt: rpaBotCredentialsTable.createdAt,
   }).from(rpaBotCredentialsTable).where(eq(rpaBotCredentialsTable.botId, botId));
-  res.json(creds.map(c => ({ ...c, usernameSet: !!c.usernameSet, passwordSet: true })));
+  res.json(creds.map(c => ({
+    id: c.id,
+    botId: c.botId,
+    label: c.label,
+    usernameSet: !!c.usernameEnc,
+    passwordSet: !!c.passwordEnc,
+    createdAt: c.createdAt,
+  })));
 });
 
 router.post("/rpa/bots/:id/credentials", ...adminAuth, async (req, res): Promise<void> => {
@@ -242,7 +265,7 @@ router.delete("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void
 router.get("/rpa/bots/:id/runs", ...adminAuth, async (req, res): Promise<void> => {
   const botId = parseInt(req.params.id, 10);
   const { status, body } = await jsonProxy(`/bots/${botId}/runs`);
-  res.status(status).json(body);
+  res.status(status).json(status === 200 ? camelizeKeys(body) : body);
 });
 
 router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> => {
@@ -261,7 +284,7 @@ router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> =
       triggeredByEmail: req.user?.email ?? null,
     }),
   });
-  res.status(status).json(body);
+  res.status(status).json(status === 201 ? camelizeKeys(body) : body);
 });
 
 // ── LOGS — proxy to Python ────────────────────────────────────────────────────
@@ -269,7 +292,7 @@ router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> =
 router.get("/rpa/runs/:id/logs", ...adminAuth, async (req, res): Promise<void> => {
   const runId = parseInt(req.params.id, 10);
   const { status, body } = await jsonProxy(`/runs/${runId}/logs`);
-  res.status(status).json(body);
+  res.status(status).json(status === 200 ? camelizeKeys(body) : body);
 });
 
 // ── SSE stream — proxy to Python ──────────────────────────────────────────────

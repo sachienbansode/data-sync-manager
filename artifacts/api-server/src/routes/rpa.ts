@@ -251,6 +251,27 @@ router.delete("/rpa/steps/:id", ...adminAuth, async (req, res): Promise<void> =>
   res.json({ ok: true });
 });
 
+router.put("/rpa/bots/:id/steps", ...adminAuth, async (req, res): Promise<void> => {
+  const botId = parseInt(req.params.id, 10);
+  const body = z.array(z.object({
+    stepType: z.enum(["navigate", "fill", "click", "wait", "extract", "screenshot", "select", "key_press", "scroll", "hover"]),
+    config: z.record(z.unknown()).default({}),
+    description: z.string().max(500).optional(),
+  })).safeParse(req.body);
+  if (!body.success) { res.status(400).json({ error: body.error.errors[0]?.message ?? "Expected array of steps" }); return; }
+
+  const steps = await db.transaction(async (tx) => {
+    await tx.delete(rpaBotStepsTable).where(eq(rpaBotStepsTable.botId, botId));
+    if (body.data.length === 0) return [];
+    return tx.insert(rpaBotStepsTable).values(
+      body.data.map((s, i) => ({ botId, stepType: s.stepType, config: s.config ?? {}, description: s.description, stepOrder: i }))
+    ).returning();
+  });
+
+  logRpaAudit({ req, action: "RPA_STEPS_BULK_REPLACED", resourceType: "rpa_bot", resourceId: botId, details: { stepCount: body.data.length } });
+  res.json(steps);
+});
+
 router.put("/rpa/bots/:id/steps/reorder", ...adminAuth, async (req, res): Promise<void> => {
   const botId = parseInt(req.params.id, 10);
   const body = z.array(z.object({ id: z.number(), stepOrder: z.number() })).safeParse(req.body);

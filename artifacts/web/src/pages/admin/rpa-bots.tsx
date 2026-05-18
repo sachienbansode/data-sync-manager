@@ -496,6 +496,7 @@ function StepsTab({ bot }: { bot: RpaBot }) {
   const qc = useQueryClient();
   const [showAdd, setShowAdd] = useState(false);
   const [editStep, setEditStep] = useState<RpaBotStep | undefined>();
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
 
   const { data: steps = [], isLoading } = useQuery<RpaBotStep[]>({
     queryKey: ["rpa-steps", bot.id],
@@ -524,43 +525,65 @@ function StepsTab({ bot }: { bot: RpaBot }) {
     moveStep.mutate(reordered);
   };
 
+  const refresh = () => qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] });
+
   if (isLoading) return <div className="flex items-center justify-center h-40"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">{steps.length} step{steps.length !== 1 ? "s" : ""}</p>
-        <Button size="sm" onClick={() => setShowAdd(true)}><Plus className="h-4 w-4 mr-1" />Add Step</Button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => setShowBulkEdit(true)}>
+            <Pencil className="h-3.5 w-3.5 mr-1.5" />Edit All
+          </Button>
+          <Button size="sm" onClick={() => setShowAdd(true)}>
+            <Plus className="h-4 w-4 mr-1" />Add Step
+          </Button>
+        </div>
       </div>
+
       {steps.length === 0 ? (
         <div className="border-2 border-dashed rounded-lg p-8 text-center text-muted-foreground">
           <List className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p>No steps yet. Add your first step to define what the bot does.</p>
+          <p>No steps yet. Add your first step or use "Edit All" to paste a full JSON step list.</p>
         </div>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {steps.map((step, i) => (
-            <div key={step.id} className="flex items-start gap-2 p-3 border rounded-lg bg-card hover:bg-muted/50 transition-colors">
-              <div className="text-muted-foreground text-xs w-6 pt-0.5 shrink-0 text-right">{i + 1}</div>
+            <div key={step.id} className="flex items-start gap-2 p-3 border rounded-lg bg-card hover:bg-muted/30 transition-colors group">
+              <div className="text-muted-foreground text-xs w-5 pt-0.5 shrink-0 text-right font-mono">{i + 1}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Badge variant="outline" className="font-mono text-xs">{step.stepType}</Badge>
-                  {step.description && <span className="text-sm">{step.description}</span>}
+                  <Badge variant="outline" className="font-mono text-xs shrink-0">{step.stepType}</Badge>
+                  {step.description && <span className="text-sm font-medium truncate">{step.description}</span>}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1 font-mono truncate">{JSON.stringify(step.config)}</p>
               </div>
-              <div className="flex items-center gap-0.5 shrink-0">
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === 0} onClick={() => swap(i, i - 1)}><ChevronUp className="h-3 w-3" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={i === steps.length - 1} onClick={() => swap(i, i + 1)}><ChevronDown className="h-3 w-3" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditStep(step)}><Pencil className="h-3 w-3" /></Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => deleteStep.mutate(step.id)}><Trash2 className="h-3 w-3" /></Button>
+              <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={i === 0} onClick={() => swap(i, i - 1)}>
+                  <ChevronUp className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" disabled={i === steps.length - 1} onClick={() => swap(i, i + 1)}>
+                  <ChevronDown className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setEditStep(step)}>
+                  <Pencil className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-destructive hover:text-destructive" onClick={() => {
+                  if (confirm("Delete this step?")) deleteStep.mutate(step.id);
+                }}>
+                  <Trash2 className="h-3 w-3" />
+                </Button>
               </div>
             </div>
           ))}
         </div>
       )}
-      <StepDialog open={showAdd} onClose={() => setShowAdd(false)} botId={bot.id} onSaved={() => qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] })} />
-      <StepDialog open={!!editStep} onClose={() => setEditStep(undefined)} botId={bot.id} step={editStep} onSaved={() => { qc.invalidateQueries({ queryKey: ["rpa-steps", bot.id] }); setEditStep(undefined); }} />
+
+      <StepDialog open={showAdd} onClose={() => setShowAdd(false)} botId={bot.id} onSaved={refresh} />
+      <StepDialog open={!!editStep} onClose={() => setEditStep(undefined)} botId={bot.id} step={editStep} onSaved={() => { refresh(); setEditStep(undefined); }} />
+      <BulkEditStepsDialog open={showBulkEdit} onClose={() => setShowBulkEdit(false)} bot={bot} currentSteps={steps} onSaved={refresh} />
     </div>
   );
 }
@@ -855,70 +878,120 @@ function RunsTab({ bot }: { bot: RpaBot }) {
   );
 }
 
-// ── Bot Detail Panel ──────────────────────────────────────────────────────────
-function NotifySettingsTab({ bot, onUpdated }: { bot: RpaBot; onUpdated: (b: RpaBot) => void }) {
-  const [email, setEmail] = useState(bot.notifyEmail ?? "");
-  const [notifyOn, setNotifyOn] = useState<NotifyOn>(bot.notifyOn ?? "never");
+// ── Bulk Edit Steps Dialog ─────────────────────────────────────────────────────
+function BulkEditStepsDialog({ open, onClose, bot, currentSteps, onSaved }: {
+  open: boolean; onClose: () => void; bot: RpaBot;
+  currentSteps: RpaBotStep[]; onSaved: () => void;
+}) {
+  const template = currentSteps.map(s => ({ stepType: s.stepType, description: s.description ?? "", config: s.config }));
+  const [json, setJson] = useState("");
+  const [jsonError, setJsonError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => { setEmail(bot.notifyEmail ?? ""); setNotifyOn(bot.notifyOn ?? "never"); }, [bot.id, bot.notifyEmail, bot.notifyOn]);
+  useEffect(() => {
+    if (open) { setJson(JSON.stringify(template, null, 2)); setJsonError(""); }
+  }, [open, currentSteps.length]);
+
+  const validate = (): { stepType: string; description: string; config: Record<string, unknown> }[] | null => {
+    try {
+      const parsed = JSON.parse(json);
+      if (!Array.isArray(parsed)) { setJsonError("Must be a JSON array"); return null; }
+      for (const s of parsed) {
+        if (!s.stepType) { setJsonError('Each step needs a "stepType" field'); return null; }
+      }
+      setJsonError("");
+      return parsed;
+    } catch (e) {
+      setJsonError(e instanceof Error ? e.message : "Invalid JSON");
+      return null;
+    }
+  };
 
   const save = async () => {
+    const steps = validate();
+    if (!steps) return;
     setSaving(true);
     try {
-      const updated = await apiFetch(`/rpa/bots/${bot.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ notifyEmail: email.trim() || null, notifyOn }),
+      await apiFetch(`/rpa/bots/${bot.id}/steps`, {
+        method: "PUT",
+        body: JSON.stringify(steps.map(s => ({
+          stepType: s.stepType,
+          description: s.description || undefined,
+          config: s.config ?? {},
+        }))),
       });
-      onUpdated(updated as RpaBot);
-      toast.success("Notification settings saved");
-    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+      toast.success(`${steps.length} step${steps.length !== 1 ? "s" : ""} saved`);
+      onSaved(); onClose();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed to save steps"); }
     finally { setSaving(false); }
   };
 
+  const SCHEMA_HINT = `[
+  { "stepType": "navigate", "description": "Open login page", "config": { "url": "https://..." } },
+  { "stepType": "fill",     "description": "Enter email",    "config": { "selector": "input[name=email]", "value": "user@example.com" } },
+  { "stepType": "click",    "description": "Submit",         "config": { "selector": "button[type=submit]" } }
+]`;
+
   return (
-    <div className="space-y-5 p-1">
-      <div>
-        <h3 className="text-sm font-semibold mb-1 flex items-center gap-1.5"><Mail className="h-4 w-4 text-muted-foreground" />Email Notifications</h3>
-        <p className="text-xs text-muted-foreground mb-4">Send an email when a run completes or fails. The notifier checks every 60 seconds.</p>
-        <div className="space-y-3">
-          <div className="space-y-1.5">
-            <Label className="text-sm">Notify Email</Label>
-            <Input type="email" placeholder="ops@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <List className="h-5 w-5" />Edit All Steps — {bot.name}
+          </DialogTitle>
+          <p className="text-sm text-muted-foreground pt-1">
+            Edit the full step list as JSON. Each item needs <code className="bg-muted px-1 rounded text-xs">stepType</code>,
+            optional <code className="bg-muted px-1 rounded text-xs">description</code>, and <code className="bg-muted px-1 rounded text-xs">config</code>.
+            Saving will replace all existing steps atomically.
+          </p>
+        </DialogHeader>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">Steps JSON Array</Label>
+            <button className="text-xs text-primary hover:underline" onClick={() => { setJson(SCHEMA_HINT); setJsonError(""); }}>
+              Load example
+            </button>
           </div>
-          <div className="space-y-1.5">
-            <Label className="text-sm">Send notification</Label>
-            <Select value={notifyOn} onValueChange={v => setNotifyOn(v as NotifyOn)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {NOTIFY_ON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </div>
-          {notifyOn !== "never" && !email.trim() && (
-            <p className="text-xs text-yellow-600 dark:text-yellow-400">Enter an email address to enable notifications.</p>
-          )}
-          {notifyOn !== "never" && email.trim() && (
-            <p className="text-xs text-green-600 dark:text-green-400">
-              Notifications will be sent to <strong>{email}</strong> {notifyOn === "on_failure" ? "on failure only" : "for every run"}.
-            </p>
-          )}
-          <Button size="sm" onClick={save} disabled={saving}>
-            {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}Save Settings
-          </Button>
+          <Textarea
+            value={json}
+            onChange={e => { setJson(e.target.value); setJsonError(""); }}
+            className="font-mono text-xs min-h-[360px]"
+            spellCheck={false}
+          />
+          {jsonError && <p className="text-xs text-destructive">{jsonError}</p>}
+          <p className="text-xs text-muted-foreground">
+            Valid stepType values: <code className="bg-muted px-1 rounded">navigate fill click wait extract screenshot select key_press scroll hover</code>
+          </p>
         </div>
-      </div>
-    </div>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={save} disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}Save All Steps
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
+// ── Bot Detail Panel ───────────────────────────────────────────────────────────
 function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: RpaBot) => void; onDeleted: () => void }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(bot.name);
   const [editDesc, setEditDesc] = useState(bot.description ?? "");
+  const [editNotifyEmail, setEditNotifyEmail] = useState(bot.notifyEmail ?? "");
+  const [editNotifyOn, setEditNotifyOn] = useState<NotifyOn>(bot.notifyOn ?? "never");
   const [saving, setSaving] = useState(false);
   const [tab, setTab] = useState("steps");
+
+  const openEdit = () => {
+    setEditName(bot.name);
+    setEditDesc(bot.description ?? "");
+    setEditNotifyEmail(bot.notifyEmail ?? "");
+    setEditNotifyOn(bot.notifyOn ?? "never");
+    setEditing(true);
+  };
 
   const toggleActive = useMutation({
     mutationFn: () => apiFetch(`/rpa/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ isActive: !bot.isActive }) }),
@@ -936,7 +1009,15 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
     if (!editName.trim()) { toast.error("Name required"); return; }
     setSaving(true);
     try {
-      const updated = await apiFetch(`/rpa/bots/${bot.id}`, { method: "PATCH", body: JSON.stringify({ name: editName, description: editDesc }) });
+      const updated = await apiFetch(`/rpa/bots/${bot.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          name: editName,
+          description: editDesc,
+          notifyEmail: editNotifyEmail.trim() || null,
+          notifyOn: editNotifyOn,
+        }),
+      });
       onUpdated(updated as RpaBot); qc.invalidateQueries({ queryKey: ["rpa-bots"] }); setEditing(false);
     } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
     finally { setSaving(false); }
@@ -946,10 +1027,35 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-3 shrink-0">
         {editing ? (
-          <div className="space-y-2">
-            <Input value={editName} onChange={e => setEditName(e.target.value)} className="font-semibold" />
-            <Textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={2} placeholder="Description..." />
-            <div className="flex gap-2">
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Name</Label>
+              <Input value={editName} onChange={e => setEditName(e.target.value)} className="font-semibold" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground uppercase tracking-wider">Description</Label>
+              <Textarea value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={2} placeholder="What does this bot do?" />
+            </div>
+            <Separator />
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5" />Email Notifications
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Notify Email</Label>
+                <Input type="email" placeholder="ops@example.com" value={editNotifyEmail} onChange={e => setEditNotifyEmail(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wider">Send When</Label>
+                <Select value={editNotifyOn} onValueChange={v => setEditNotifyOn(v as NotifyOn)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {NOTIFY_ON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-1">
               <Button size="sm" onClick={saveEdit} disabled={saving}>{saving && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}Save</Button>
               <Button size="sm" variant="outline" onClick={() => setEditing(false)}>Cancel</Button>
             </div>
@@ -965,7 +1071,7 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
               </div>
             </div>
             <div className="flex gap-1 shrink-0">
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditName(bot.name); setEditDesc(bot.description ?? ""); setEditing(true); }}>
+              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={openEdit}>
                 <Pencil className="h-4 w-4" />
               </Button>
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => toggleActive.mutate()} disabled={toggleActive.isPending}>
@@ -983,19 +1089,17 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
       <Separator />
       <CardContent className="flex-1 overflow-hidden pt-4">
         <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
-          <TabsList className="w-full shrink-0 grid grid-cols-5">
+          <TabsList className="w-full shrink-0 grid grid-cols-4">
             <TabsTrigger value="steps"><List className="h-3.5 w-3.5 mr-1" />Steps</TabsTrigger>
             <TabsTrigger value="runs"><Play className="h-3.5 w-3.5 mr-1" />Runs</TabsTrigger>
             <TabsTrigger value="schedule"><CalendarClock className="h-3.5 w-3.5 mr-1" />Schedule</TabsTrigger>
             <TabsTrigger value="credentials"><Key className="h-3.5 w-3.5 mr-1" />Creds</TabsTrigger>
-            <TabsTrigger value="notify"><Mail className="h-3.5 w-3.5 mr-1" />Notify</TabsTrigger>
           </TabsList>
           <ScrollArea className="flex-1 mt-3">
-            <TabsContent value="steps"      className="mt-0"><StepsTab bot={bot} /></TabsContent>
-            <TabsContent value="runs"       className="mt-0"><RunsTab bot={bot} /></TabsContent>
-            <TabsContent value="schedule"   className="mt-0"><ScheduleTab bot={bot} /></TabsContent>
+            <TabsContent value="steps"       className="mt-0"><StepsTab bot={bot} /></TabsContent>
+            <TabsContent value="runs"        className="mt-0"><RunsTab bot={bot} /></TabsContent>
+            <TabsContent value="schedule"    className="mt-0"><ScheduleTab bot={bot} /></TabsContent>
             <TabsContent value="credentials" className="mt-0"><CredentialsTab bot={bot} /></TabsContent>
-            <TabsContent value="notify"     className="mt-0"><NotifySettingsTab bot={bot} onUpdated={onUpdated} /></TabsContent>
           </ScrollArea>
         </Tabs>
       </CardContent>

@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Activity, Shield, GitBranch, BookOpen, Lock, Database,
   Mail, Settings, Users, FileText, Network, Eye, Printer,
-  Cpu, Link2, Megaphone, ChevronRight,
+  Cpu, Link2, Megaphone, ChevronRight, Bot, Table2, FileSpreadsheet,
 } from "lucide-react";
 
 /* ─── Feature groups ─── */
@@ -99,6 +99,53 @@ const GROUPS = [
           "Incremental upserts with ON CONFLICT DO UPDATE",
           "Per-batch watermark persistence for crash recovery",
           "Supports PostgreSQL, MySQL, MSSQL, Oracle, S3, SFTP, CSV",
+        ],
+      },
+      {
+        icon: Table2,
+        title: "Data Objects",
+        badge: "Data",
+        bullets: [
+          "Register tables or custom SQL views as named Data Objects",
+          "Column-level PII tagging for automatic masking",
+          "Linked to DB Connection Manager for credential reuse",
+          "Test-preview object data before publishing",
+          "Admin-managed registry of available data sources",
+        ],
+      },
+      {
+        icon: FileSpreadsheet,
+        title: "Data Preview",
+        badge: "Data",
+        bullets: [
+          "Browse any registered DB connection's tables and views",
+          "Execute custom SQL queries against any connection",
+          "PII-masked column display controlled by admin settings",
+          "Paginated results with configurable page size",
+          "Export results to Excel (XLSX) with one click",
+        ],
+      },
+    ],
+  },
+  {
+    label: "Automation",
+    color: "from-green-500/10 to-emerald-500/10 border-green-500/20",
+    headerColor: "text-green-700",
+    dotColor: "bg-green-500",
+    features: [
+      {
+        icon: Bot,
+        title: "RPA Bot Engine",
+        badge: "Automation",
+        bullets: [
+          "Visual bot builder with ordered multi-step sequences",
+          "Playwright-powered headless browser automation",
+          "Action types: navigate, click, fill, select, screenshot, wait, assert, script",
+          "Secure per-bot credential vault for usernames, passwords & tokens",
+          "Cron-based scheduler with next-run preview and run history",
+          "Email notifications on run completion or failure (configurable)",
+          "Admin-configurable background notifier poll interval",
+          "Bulk JSON step editor for rapid bot configuration",
         ],
       },
     ],
@@ -244,10 +291,11 @@ const BADGE_COLORS: Record<string, string> = {
   Analytics: "bg-violet-500/10 text-violet-600 border-violet-500/20",
   Tools: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20",
   Communication: "bg-sky-500/10 text-sky-600 border-sky-500/20",
+  Automation: "bg-green-500/10 text-green-700 border-green-500/20",
 };
 
 const STAT_ITEMS = [
-  { value: "15+", label: "Modules" },
+  { value: "18+", label: "Modules" },
   { value: "5", label: "User Roles" },
   { value: "4", label: "DB Engines" },
   { value: "7", label: "Email Events" },

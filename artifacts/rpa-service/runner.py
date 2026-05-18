@@ -76,15 +76,24 @@ async def _run_bot(pool: asyncpg.Pool, run_id: int, bot_id: int):
     cred_rows = await pool.fetch(
         "SELECT * FROM rpa_bot_credentials WHERE bot_id=$1", bot_id
     )
+    global_cred_rows = await pool.fetch("SELECT * FROM rpa_credentials")
 
-    # Decrypt credentials
+    # Decrypt credentials — global vault first, then bot-specific overrides
     creds: dict[str, dict] = {}
+    for row in global_cred_rows:
+        label = row["name"]
+        try:
+            username = decrypt(row["username_enc"] or "")
+            password = decrypt(row["password_enc"] or "")
+            creds[label] = {"username": username, "password": password}
+        except Exception as e:
+            await write_log(pool, run_id, "warn", f"Could not decrypt global credential '{label}': {e}")
     for row in cred_rows:
         label = row["label"]
         try:
             username = decrypt(row["username_enc"] or "")
             password = decrypt(row["password_enc"] or "")
-            creds[label] = {"username": username, "password": password}
+            creds[label] = {"username": username, "password": password}  # bot-specific wins
         except Exception as e:
             await write_log(pool, run_id, "warn", f"Could not decrypt credential '{label}': {e}")
 

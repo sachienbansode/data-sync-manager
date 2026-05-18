@@ -8,6 +8,7 @@ import {
   rpaBotsTable,
   rpaBotStepsTable,
   rpaBotCredentialsTable,
+  rpaCredentialsTable,
   rpaBotRunsTable,
   rpaBotSchedulesTable,
   pagePermissionsTable,
@@ -622,20 +623,107 @@ export async function seedRpaBotsIfEmpty(): Promise<void> {
   await db.insert(rpaBotStepsTable).values(steps.map(s => ({ ...s, botId: bot.id })));
 }
 
+// ── Global Credential Vault ───────────────────────────────────────────────────
+
+router.get("/rpa/credentials", ...adminAuth, async (_req, res): Promise<void> => {
+  const rows = await db.select({
+    id: rpaCredentialsTable.id,
+    name: rpaCredentialsTable.name,
+    description: rpaCredentialsTable.description,
+    notes: rpaCredentialsTable.notes,
+    usernameEnc: rpaCredentialsTable.usernameEnc,
+    passwordEnc: rpaCredentialsTable.passwordEnc,
+    createdAt: rpaCredentialsTable.createdAt,
+    updatedAt: rpaCredentialsTable.updatedAt,
+  }).from(rpaCredentialsTable).orderBy(rpaCredentialsTable.name);
+  res.json(rows.map(r => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    notes: r.notes,
+    hasUsername: !!r.usernameEnc,
+    hasPassword: !!r.passwordEnc,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  })));
+});
+
+router.post("/rpa/credentials", ...adminAuth, async (req, res): Promise<void> => {
+  const { name, description, username, password, notes } = req.body as {
+    name?: string; description?: string; username?: string; password?: string; notes?: string;
+  };
+  if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+  try {
+    const key = loadEncryptionKey();
+    const [row] = await db.insert(rpaCredentialsTable).values({
+      name: name.trim(),
+      description: description?.trim() || null,
+      usernameEnc: username ? encrypt(username, key) : null,
+      passwordEnc: password ? encrypt(password, key) : null,
+      notes: notes?.trim() || null,
+      createdBy: req.user?.sub ?? null,
+    }).returning();
+    logRpaAudit({ req, action: "RPA_CREDENTIAL_CREATED", details: { name: name.trim() }, resourceType: "rpa_credential", resourceId: row!.id });
+    res.json({ id: row!.id, name: row!.name });
+  } catch (e: unknown) {
+    if ((e as { code?: string }).code === "23505") { res.status(409).json({ error: "A credential with that name already exists" }); return; }
+    throw e;
+  }
+});
+
+router.put("/rpa/credentials/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const { name, description, username, password, notes } = req.body as {
+    name?: string; description?: string; username?: string; password?: string; notes?: string;
+  };
+  if (!name?.trim()) { res.status(400).json({ error: "name is required" }); return; }
+  const key = loadEncryptionKey();
+  const updates: Record<string, unknown> = {
+    name: name.trim(),
+    description: description?.trim() || null,
+    notes: notes?.trim() || null,
+    updatedAt: new Date(),
+  };
+  if (username) updates.usernameEnc = encrypt(username, key);
+  if (password) updates.passwordEnc = encrypt(password, key);
+  try {
+    await db.update(rpaCredentialsTable).set(updates).where(eq(rpaCredentialsTable.id, id));
+    logRpaAudit({ req, action: "RPA_CREDENTIAL_UPDATED", details: { id, name: name.trim() }, resourceType: "rpa_credential", resourceId: id });
+    res.json({ success: true });
+  } catch (e: unknown) {
+    if ((e as { code?: string }).code === "23505") { res.status(409).json({ error: "A credential with that name already exists" }); return; }
+    throw e;
+  }
+});
+
+router.delete("/rpa/credentials/:id", ...adminAuth, async (req, res): Promise<void> => {
+  const id = Number(req.params.id);
+  const [row] = await db.select({ name: rpaCredentialsTable.name }).from(rpaCredentialsTable).where(eq(rpaCredentialsTable.id, id));
+  await db.delete(rpaCredentialsTable).where(eq(rpaCredentialsTable.id, id));
+  logRpaAudit({ req, action: "RPA_CREDENTIAL_DELETED", details: { id, name: row?.name }, resourceType: "rpa_credential", resourceId: id });
+  res.status(204).send();
+});
+
 // ── Idempotent page-permission bootstrap ──────────────────────────────────────
 // Upserts the /admin/rpa-bots page permission row for every existing role so
 // that existing databases (not re-seeded from scratch) gain access immediately.
 // Admin gets canAccess=true; all other roles default to false.
 export async function seedRpaPagePermissions(): Promise<void> {
   const roles = await db.select({ id: rolesTable.id, name: rolesTable.name }).from(rolesTable);
+  const pages = [
+    { pagePath: "/admin/rpa-bots", pageName: "RPA Bots" },
+    { pagePath: "/admin/rpa-credentials", pageName: "RPA Credential Vault" },
+  ];
   for (const role of roles) {
     const canAccess = role.name === "Admin";
-    await db
-      .insert(pagePermissionsTable)
-      .values({ roleId: role.id, pagePath: "/admin/rpa-bots", pageName: "RPA Bots", canAccess })
-      .onConflictDoUpdate({
-        target: [pagePermissionsTable.roleId, pagePermissionsTable.pagePath],
-        set: { pageName: "RPA Bots", canAccess },
-      });
+    for (const page of pages) {
+      await db
+        .insert(pagePermissionsTable)
+        .values({ roleId: role.id, pagePath: page.pagePath, pageName: page.pageName, canAccess })
+        .onConflictDoUpdate({
+          target: [pagePermissionsTable.roleId, pagePermissionsTable.pagePath],
+          set: { pageName: page.pageName, canAccess },
+        });
+    }
   }
 }

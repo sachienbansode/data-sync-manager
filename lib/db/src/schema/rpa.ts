@@ -81,6 +81,20 @@ export const rpaBotLogsTable = pgTable("rpa_bot_logs", {
 
 export type RpaBotLog = typeof rpaBotLogsTable.$inferSelect;
 
+export const rpaCredentialsTable = pgTable("rpa_credentials", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+  usernameEnc: text("username_enc"),
+  passwordEnc: text("password_enc"),
+  notes: text("notes"),
+  createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type RpaCredential = typeof rpaCredentialsTable.$inferSelect;
+
 export const rpaBotSchedulesTable = pgTable("rpa_bot_schedules", {
   id: serial("id").primaryKey(),
   botId: integer("bot_id").notNull().references(() => rpaBotsTable.id, { onDelete: "cascade" }),

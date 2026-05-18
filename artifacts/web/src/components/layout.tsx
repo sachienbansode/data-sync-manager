@@ -6,7 +6,7 @@ import {
   Activity, Mail, Settings, ChevronDown, ChevronRight, Database,
   GitBranch, BookOpen, Settings2, Shield, Eye, ServerCog, Network,
   Type, FileType, LogIn, Info, Layers, Table2, History, Link2,
-  Megaphone, Send, ScanSearch, Bot,
+  Megaphone, Send, ScanSearch, Bot, KeyRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -69,6 +69,7 @@ const rpaGroup: NavGroup = {
   icon: Bot,
   items: [
     { href: "/a/rpa", label: "Bot Manager", icon: Bot, permissionPath: "/admin/rpa-bots" },
+    { href: "/a/rpa-creds", label: "Credential Vault", icon: KeyRound, permissionPath: "/admin/rpa-credentials" },
   ],
 };
 

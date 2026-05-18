@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { initScheduler } from "./scheduler";
+import { seedRpaBotsIfEmpty } from "./routes/rpa";
 
 const rawPort = process.env["PORT"];
 
@@ -59,6 +60,9 @@ app.listen(port, (err) => {
   setTimeout(() => {
     startSchedulerWithRetry().catch((e) =>
       logger.error({ err: e }, "Unexpected error in scheduler startup"),
+    );
+    seedRpaBotsIfEmpty().catch((e) =>
+      logger.error({ err: e }, "RPA bot auto-seed failed"),
     );
   }, 1_000);
 });

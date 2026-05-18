@@ -28,7 +28,16 @@ async function proxyToRpa(path: string, opts: RequestInit = {}): Promise<Respons
 async function jsonProxy(path: string, opts: RequestInit = {}): Promise<{ status: number; body: unknown }> {
   try {
     const resp = await proxyToRpa(path, opts);
-    const body = await resp.json().catch(() => ({ error: "RPA service returned non-JSON response" }));
+    const raw = await resp.json().catch(() => ({ error: "RPA service returned non-JSON response" }));
+    // Normalise FastAPI {detail:...} → {error:...} so the frontend sees a consistent shape
+    const body =
+      !resp.ok &&
+      typeof raw === "object" &&
+      raw !== null &&
+      "detail" in (raw as object) &&
+      !("error" in (raw as object))
+        ? { error: (raw as { detail: string }).detail }
+        : raw;
     return { status: resp.status, body };
   } catch {
     return { status: 503, body: { error: "RPA service is not reachable. Ensure the RPA Bot Service workflow is running." } };
@@ -370,3 +379,41 @@ router.post("/rpa/seed", ...adminAuth, async (req, res): Promise<void> => {
 });
 
 export default router;
+
+// ── Auto-seed on first startup ────────────────────────────────────────────────
+// Called from index.ts at server startup. Inserts the reference bot exactly
+// once when the rpa_bots table is empty (idempotent).
+export async function seedRpaBotsIfEmpty(): Promise<void> {
+  const existing = await db.select({ id: rpaBotsTable.id }).from(rpaBotsTable).limit(1);
+  if (existing.length > 0) return;
+
+  const appUrl = process.env.APP_URL ?? "http://localhost:22333";
+
+  const [bot] = await db.insert(rpaBotsTable).values({
+    name: "Data Preview Automation",
+    description: "Reference bot: logs into the platform, navigates to Data Preview, selects the first DB connection, runs a sample query, and screenshots the result.",
+    botType: "browser_automation",
+    isActive: true,
+    createdBy: null,
+  }).returning();
+
+  const steps = [
+    { stepOrder: 0,  stepType: "navigate"   as const, config: { url: appUrl },                                                                            description: "Open app login page" },
+    { stepOrder: 1,  stepType: "fill"       as const, config: { selector: "input[type=email], input[name=email]", cred_label: "admin", cred_field: "username" }, description: "Fill email from credential" },
+    { stepOrder: 2,  stepType: "fill"       as const, config: { selector: "input[type=password]", cred_label: "admin", cred_field: "password" },           description: "Fill password from credential" },
+    { stepOrder: 3,  stepType: "click"      as const, config: { selector: "button[type=submit]" },                                                         description: "Submit login form" },
+    { stepOrder: 4,  stepType: "wait"       as const, config: { ms: 3000 },                                                                                description: "Wait for dashboard to load" },
+    { stepOrder: 5,  stepType: "navigate"   as const, config: { url: `${appUrl}/preview` },                                                                description: "Navigate to Data Preview page" },
+    { stepOrder: 6,  stepType: "wait"       as const, config: { ms: 2000 },                                                                                description: "Wait for page load" },
+    { stepOrder: 7,  stepType: "click"      as const, config: { selector: "[role=combobox]" },                                                             description: "Open connection selector dropdown" },
+    { stepOrder: 8,  stepType: "wait"       as const, config: { ms: 500 },                                                                                 description: "Wait for dropdown to open" },
+    { stepOrder: 9,  stepType: "click"      as const, config: { selector: "[role=option]:first-child" },                                                   description: "Select first available connection" },
+    { stepOrder: 10, stepType: "wait"       as const, config: { ms: 500 },                                                                                 description: "Wait for connection to be selected" },
+    { stepOrder: 11, stepType: "fill"       as const, config: { selector: "textarea", value: "SELECT 1 AS test_col, NOW() AS current_time" },              description: "Enter sample SQL query" },
+    { stepOrder: 12, stepType: "click"      as const, config: { selector: "button:has-text('Run'), button:has-text('Preview'), button[aria-label*='Run']" }, description: "Click Run / Preview button" },
+    { stepOrder: 13, stepType: "wait"       as const, config: { ms: 3000 },                                                                                description: "Wait for query results" },
+    { stepOrder: 14, stepType: "screenshot" as const, config: { full_page: false },                                                                        description: "Capture screenshot of results" },
+  ];
+
+  await db.insert(rpaBotStepsTable).values(steps.map(s => ({ ...s, botId: bot.id })));
+}

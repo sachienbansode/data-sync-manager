@@ -3,6 +3,7 @@ import { logger } from "./lib/logger";
 import { initScheduler } from "./scheduler";
 import { initRpaBotScheduler } from "./rpa-scheduler";
 import { seedRpaBotsIfEmpty, seedRpaPagePermissions } from "./routes/rpa";
+import { startRpaNotifier } from "./rpa-notifier";
 
 const rawPort = process.env["PORT"];
 
@@ -95,5 +96,6 @@ app.listen(port, (err) => {
     seedRpaPagePermissions().catch((e) =>
       logger.error({ err: e }, "RPA page-permission bootstrap failed"),
     );
+    startRpaNotifier();
   }, 1_000);
 });

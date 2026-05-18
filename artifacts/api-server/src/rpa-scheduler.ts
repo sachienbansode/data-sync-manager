@@ -7,7 +7,7 @@
 import cron from "node-cron";
 import { CronExpressionParser } from "cron-parser";
 import { eq, and } from "drizzle-orm";
-import { db, rpaBotSchedulesTable, rpaBotsTable } from "@workspace/db";
+import { db, rpaBotSchedulesTable, rpaBotsTable, auditLogsTable } from "@workspace/db";
 import { logger } from "./lib/logger";
 
 const RPA_SERVICE_URL = process.env.RPA_SERVICE_URL ?? "http://localhost:8090";
@@ -24,6 +24,9 @@ export function computeNextBotRunAt(cronExpr: string): Date | null {
 }
 
 async function triggerBotRun(botId: number, scheduleId: number): Promise<void> {
+  let runId: number | null = null;
+  let triggerError: string | null = null;
+
   try {
     const resp = await fetch(`${RPA_SERVICE_URL}/bots/${botId}/run`, {
       method: "POST",
@@ -33,13 +36,32 @@ async function triggerBotRun(botId: number, scheduleId: number): Promise<void> {
     });
     if (!resp.ok) {
       const err = await resp.json().catch(() => ({})) as { detail?: string; error?: string };
-      logger.error({ botId, scheduleId, status: resp.status, detail: err.detail ?? err.error }, "RPA scheduled run rejected by service");
+      triggerError = err.detail ?? err.error ?? `HTTP ${resp.status}`;
+      logger.error({ botId, scheduleId, status: resp.status, detail: triggerError }, "RPA scheduled run rejected by service");
     } else {
-      logger.info({ botId, scheduleId }, "RPA scheduled run triggered");
+      const body = await resp.json().catch(() => ({})) as { id?: number };
+      runId = body.id ?? null;
+      logger.info({ botId, scheduleId, runId }, "RPA scheduled run triggered");
     }
   } catch (err) {
+    triggerError = err instanceof Error ? err.message : "RPA service unreachable";
     logger.error({ botId, scheduleId, err }, "RPA service unreachable for scheduled run");
   }
+
+  db.insert(auditLogsTable).values({
+    userId: null,
+    userEmail: null,
+    action: triggerError ? "RPA_RUN_TRIGGER_FAILED" : "RPA_RUN_TRIGGERED",
+    details: JSON.stringify({
+      botId,
+      scheduleId,
+      runId,
+      trigger: "scheduler",
+      error: triggerError,
+    }),
+    resourceType: "rpa_bot",
+    resourceId: String(botId),
+  }).catch(() => {});
 
   await db
     .update(rpaBotSchedulesTable)

@@ -29,7 +29,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/rpa-service && pip install -r requirements.txt -q && python -m playwright install chromium --with-deps && python3 main.py"
+args = "cd artifacts/rpa-service && pip install -r requirements.txt -q && python -m playwright install chromium && python3 main.py"
 waitForPort = 8090
 
 [agent]

@@ -1,4 +1,4 @@
-import { Router, type IRouter } from "express";
+import { Router, type IRouter, type Request } from "express";
 import { eq, and, desc } from "drizzle-orm";
 import fs from "fs";
 import path from "path";
@@ -12,11 +12,39 @@ import {
   rpaBotSchedulesTable,
   pagePermissionsTable,
   rolesTable,
+  auditLogsTable,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, loadEncryptionKey } from "../lib/crypto";
 import { z } from "zod";
 import { registerBotSchedule, cancelBotSchedule, computeNextBotRunAt } from "../rpa-scheduler";
+
+// ── Audit logging helper ──────────────────────────────────────────────────────
+function logRpaAudit(opts: {
+  req?: Request;
+  userId?: number | null;
+  userEmail?: string | null;
+  action: string;
+  details: Record<string, unknown>;
+  resourceType: string;
+  resourceId: string | number;
+}): void {
+  const { req, userId, userEmail, action, details, resourceType, resourceId } = opts;
+  const uid = userId ?? (req?.user?.sub ?? null);
+  const email = userEmail ?? (req?.user?.email ?? null);
+  const ip = req
+    ? (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket?.remoteAddress ?? null
+    : null;
+  db.insert(auditLogsTable).values({
+    userId: uid,
+    userEmail: email,
+    action,
+    details: JSON.stringify(details),
+    ipAddress: ip,
+    resourceType,
+    resourceId: String(resourceId),
+  }).catch(() => {});
+}
 
 const router: IRouter = Router();
 
@@ -69,12 +97,16 @@ const CreateBotBody = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(1000).optional(),
   botType: z.enum(["browser_automation", "file_processing", "web_scraping"]).default("browser_automation"),
+  notifyEmail: z.string().email().optional().nullable(),
+  notifyOn: z.enum(["never", "always", "on_failure"]).default("never"),
 });
 
 const UpdateBotBody = z.object({
   name: z.string().min(1).max(200).optional(),
   description: z.string().max(1000).optional(),
   isActive: z.boolean().optional(),
+  notifyEmail: z.string().email().optional().nullable(),
+  notifyOn: z.enum(["never", "always", "on_failure"]).optional(),
 });
 
 router.get("/rpa/bots", ...adminAuth, async (_req, res): Promise<void> => {
@@ -112,11 +144,14 @@ router.get("/rpa/bots", ...adminAuth, async (_req, res): Promise<void> => {
 router.post("/rpa/bots", ...adminAuth, async (req, res): Promise<void> => {
   const parsed = CreateBotBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
-  const { name, description, botType } = parsed.data;
+  const { name, description, botType, notifyEmail, notifyOn } = parsed.data;
   const [bot] = await db.insert(rpaBotsTable).values({
     name, description, botType,
+    notifyEmail: notifyEmail ?? null,
+    notifyOn: notifyOn ?? "never",
     createdBy: req.user?.sub ?? null,
   }).returning();
+  logRpaAudit({ req, action: "RPA_BOT_CREATED", resourceType: "rpa_bot", resourceId: bot.id, details: { botName: name, botType, notifyEmail: notifyEmail ?? null, notifyOn: notifyOn ?? "never" } });
   res.status(201).json(bot);
 });
 
@@ -140,6 +175,10 @@ router.patch("/rpa/bots/:id", ...adminAuth, async (req, res): Promise<void> => {
         cancelBotSchedule(s.id);
       }
     }
+    const action = bot.isActive ? "RPA_BOT_ACTIVATED" : "RPA_BOT_DEACTIVATED";
+    logRpaAudit({ req, action, resourceType: "rpa_bot", resourceId: id, details: { botName: bot.name } });
+  } else {
+    logRpaAudit({ req, action: "RPA_BOT_UPDATED", resourceType: "rpa_bot", resourceId: id, details: { changes: parsed.data } });
   }
 
   res.json(bot);
@@ -154,6 +193,7 @@ router.delete("/rpa/bots/:id", ...adminAuth, async (req, res): Promise<void> => 
   for (const s of schedules) cancelBotSchedule(s.id);
   const [bot] = await db.delete(rpaBotsTable).where(eq(rpaBotsTable.id, id)).returning();
   if (!bot) { res.status(404).json({ error: "Bot not found" }); return; }
+  logRpaAudit({ req, action: "RPA_BOT_DELETED", resourceType: "rpa_bot", resourceId: id, details: { botName: bot.name, botType: bot.botType } });
   res.json({ ok: true });
 });
 
@@ -189,6 +229,7 @@ router.post("/rpa/bots/:id/steps", ...adminAuth, async (req, res): Promise<void>
   const [step] = await db.insert(rpaBotStepsTable).values({
     botId, stepType, config, description, stepOrder: order,
   }).returning();
+  logRpaAudit({ req, action: "RPA_STEP_ADDED", resourceType: "rpa_bot", resourceId: botId, details: { stepType, stepOrder: order, description: description ?? null } });
   res.status(201).json(step);
 });
 
@@ -198,6 +239,7 @@ router.patch("/rpa/steps/:id", ...adminAuth, async (req, res): Promise<void> => 
   if (!parsed.success) { res.status(400).json({ error: parsed.error.errors[0]?.message ?? "Invalid body" }); return; }
   const [step] = await db.update(rpaBotStepsTable).set(parsed.data).where(eq(rpaBotStepsTable.id, id)).returning();
   if (!step) { res.status(404).json({ error: "Step not found" }); return; }
+  logRpaAudit({ req, action: "RPA_STEP_UPDATED", resourceType: "rpa_bot", resourceId: step.botId, details: { stepId: id, changes: parsed.data } });
   res.json(step);
 });
 
@@ -205,6 +247,7 @@ router.delete("/rpa/steps/:id", ...adminAuth, async (req, res): Promise<void> =>
   const id = parseInt(req.params.id, 10);
   const [step] = await db.delete(rpaBotStepsTable).where(eq(rpaBotStepsTable.id, id)).returning();
   if (!step) { res.status(404).json({ error: "Step not found" }); return; }
+  logRpaAudit({ req, action: "RPA_STEP_DELETED", resourceType: "rpa_bot", resourceId: step.botId, details: { stepId: id, stepType: step.stepType } });
   res.json({ ok: true });
 });
 
@@ -217,6 +260,7 @@ router.put("/rpa/bots/:id/steps/reorder", ...adminAuth, async (req, res): Promis
       db.update(rpaBotStepsTable).set({ stepOrder }).where(and(eq(rpaBotStepsTable.id, id), eq(rpaBotStepsTable.botId, botId)))
     )
   );
+  logRpaAudit({ req, action: "RPA_STEPS_REORDERED", resourceType: "rpa_bot", resourceId: botId, details: { stepCount: body.data.length } });
   res.json({ ok: true });
 });
 
@@ -259,6 +303,7 @@ router.post("/rpa/bots/:id/credentials", ...adminAuth, async (req, res): Promise
     usernameEnc: encrypt(username),
     passwordEnc: encrypt(password),
   }).returning();
+  logRpaAudit({ req, action: "RPA_CREDENTIAL_ADDED", resourceType: "rpa_bot", resourceId: botId, details: { credentialId: cred.id, label } });
   res.status(201).json({ id: cred.id, botId: cred.botId, label: cred.label, usernameSet: true, passwordSet: true });
 });
 
@@ -266,6 +311,7 @@ router.delete("/rpa/credentials/:id", ...adminAuth, async (req, res): Promise<vo
   const id = parseInt(req.params.id, 10);
   const [cred] = await db.delete(rpaBotCredentialsTable).where(eq(rpaBotCredentialsTable.id, id)).returning();
   if (!cred) { res.status(404).json({ error: "Credential not found" }); return; }
+  logRpaAudit({ req, action: "RPA_CREDENTIAL_DELETED", resourceType: "rpa_bot", resourceId: cred.botId, details: { credentialId: id, label: cred.label } });
   res.json({ ok: true });
 });
 
@@ -303,6 +349,7 @@ router.post("/rpa/bots/:id/schedules", ...adminAuth, async (req, res): Promise<v
   if (!cron.validate(parsed.data.cronExpr)) { res.status(400).json({ error: "Invalid cron expression" }); return; }
   const [schedule] = await db.insert(rpaBotSchedulesTable).values({ botId, ...parsed.data }).returning();
   await applyScheduleState(schedule);
+  logRpaAudit({ req, action: "RPA_SCHEDULE_CREATED", resourceType: "rpa_bot", resourceId: botId, details: { scheduleId: schedule.id, cronExpr: parsed.data.cronExpr, isActive: parsed.data.isActive } });
   res.status(201).json(schedule);
 });
 
@@ -317,6 +364,7 @@ router.patch("/rpa/bots/:botId/schedules/:id", ...adminAuth, async (req, res): P
     .where(and(eq(rpaBotSchedulesTable.id, id), eq(rpaBotSchedulesTable.botId, botId))).returning();
   if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
   await applyScheduleState(schedule);
+  logRpaAudit({ req, action: "RPA_SCHEDULE_UPDATED", resourceType: "rpa_bot", resourceId: botId, details: { scheduleId: id, changes: parsed.data } });
   res.json(schedule);
 });
 
@@ -327,6 +375,7 @@ router.delete("/rpa/bots/:botId/schedules/:id", ...adminAuth, async (req, res): 
     .where(and(eq(rpaBotSchedulesTable.id, id), eq(rpaBotSchedulesTable.botId, botId))).returning();
   if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
   cancelBotSchedule(id);
+  logRpaAudit({ req, action: "RPA_SCHEDULE_DELETED", resourceType: "rpa_bot", resourceId: botId, details: { scheduleId: id, cronExpr: schedule.cronExpr } });
   res.json({ ok: true });
 });
 
@@ -340,6 +389,7 @@ router.patch("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void>
     .where(eq(rpaBotSchedulesTable.id, id)).returning();
   if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
   await applyScheduleState(schedule);
+  logRpaAudit({ req, action: "RPA_SCHEDULE_UPDATED", resourceType: "rpa_bot", resourceId: schedule.botId, details: { scheduleId: id, changes: parsed.data } });
   res.json(schedule);
 });
 
@@ -348,6 +398,7 @@ router.delete("/rpa/schedules/:id", ...adminAuth, async (req, res): Promise<void
   const [schedule] = await db.delete(rpaBotSchedulesTable).where(eq(rpaBotSchedulesTable.id, id)).returning();
   if (!schedule) { res.status(404).json({ error: "Schedule not found" }); return; }
   cancelBotSchedule(id);
+  logRpaAudit({ req, action: "RPA_SCHEDULE_DELETED", resourceType: "rpa_bot", resourceId: schedule.botId, details: { scheduleId: id, cronExpr: schedule.cronExpr } });
   res.json({ ok: true });
 });
 
@@ -375,7 +426,13 @@ router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> =
       triggeredByEmail: req.user?.email ?? null,
     }),
   });
-  res.status(status).json(status >= 200 && status < 300 ? camelizeKeys(body) : body);
+  if (status >= 200 && status < 300) {
+    const camel = camelizeKeys(body) as { id?: number };
+    logRpaAudit({ req, action: "RPA_RUN_TRIGGERED", resourceType: "rpa_bot", resourceId: botId, details: { runId: camel.id ?? null, trigger: "manual" } });
+    res.status(status).json(camel);
+  } else {
+    res.status(status).json(body);
+  }
 });
 
 // ── LOGS — proxy to Python ────────────────────────────────────────────────────

@@ -17,7 +17,7 @@ import {
   Bot, Plus, Play, Trash2, Pencil, ChevronDown, ChevronUp,
   Loader2, CheckCircle2, XCircle, Clock, AlertTriangle,
   Terminal, Key, List, History, RotateCcw, EyeOff,
-  CalendarClock, Image, ExternalLink,
+  CalendarClock, Image, ExternalLink, Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -41,6 +41,7 @@ async function apiFetch(path: string, opts: RequestInit = {}) {
 type BotType = "browser_automation" | "file_processing" | "web_scraping";
 type RunStatus = "pending" | "running" | "success" | "failed";
 type StepType = "navigate" | "fill" | "click" | "wait" | "extract" | "screenshot" | "select" | "key_press" | "scroll" | "hover";
+type NotifyOn = "never" | "always" | "on_failure";
 
 interface RpaBot {
   id: number;
@@ -48,6 +49,8 @@ interface RpaBot {
   description: string | null;
   botType: BotType;
   isActive: boolean;
+  notifyEmail: string | null;
+  notifyOn: NotifyOn;
   createdAt: string;
   scheduleActive: boolean;
   scheduleCronExpr: string | null;
@@ -179,20 +182,36 @@ function screenshotUrl(runId: number) {
 }
 
 // ── New Bot Dialog ────────────────────────────────────────────────────────────
+const NOTIFY_ON_OPTIONS: { value: NotifyOn; label: string }[] = [
+  { value: "never",      label: "Never" },
+  { value: "always",     label: "Always (success + failure)" },
+  { value: "on_failure", label: "On failure only" },
+];
+
 function NewBotDialog({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (bot: RpaBot) => void }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [botType, setBotType] = useState<BotType>("browser_automation");
+  const [notifyEmail, setNotifyEmail] = useState("");
+  const [notifyOn, setNotifyOn] = useState<NotifyOn>("never");
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
     if (!name.trim()) { toast.error("Name is required"); return; }
     setSaving(true);
     try {
-      const bot = await apiFetch("/rpa/bots", { method: "POST", body: JSON.stringify({ name, description, botType }) });
+      const bot = await apiFetch("/rpa/bots", {
+        method: "POST",
+        body: JSON.stringify({
+          name, description, botType,
+          notifyEmail: notifyEmail.trim() || null,
+          notifyOn,
+        }),
+      });
       toast.success("Bot created");
       onCreated(bot as RpaBot);
       setName(""); setDescription(""); setBotType("browser_automation");
+      setNotifyEmail(""); setNotifyOn("never");
       onClose();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create bot");
@@ -222,6 +241,21 @@ function NewBotDialog({ open, onClose, onCreated }: { open: boolean; onClose: ()
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {BOT_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Separator />
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />Email Notifications</p>
+          <div className="space-y-1.5">
+            <Label>Notify Email <span className="text-muted-foreground text-xs">(optional)</span></Label>
+            <Input type="email" placeholder="ops@example.com" value={notifyEmail} onChange={e => setNotifyEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Send notification</Label>
+            <Select value={notifyOn} onValueChange={v => setNotifyOn(v as NotifyOn)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {NOTIFY_ON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
               </SelectContent>
             </Select>
           </div>
@@ -822,6 +856,62 @@ function RunsTab({ bot }: { bot: RpaBot }) {
 }
 
 // ── Bot Detail Panel ──────────────────────────────────────────────────────────
+function NotifySettingsTab({ bot, onUpdated }: { bot: RpaBot; onUpdated: (b: RpaBot) => void }) {
+  const [email, setEmail] = useState(bot.notifyEmail ?? "");
+  const [notifyOn, setNotifyOn] = useState<NotifyOn>(bot.notifyOn ?? "never");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setEmail(bot.notifyEmail ?? ""); setNotifyOn(bot.notifyOn ?? "never"); }, [bot.id, bot.notifyEmail, bot.notifyOn]);
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      const updated = await apiFetch(`/rpa/bots/${bot.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ notifyEmail: email.trim() || null, notifyOn }),
+      });
+      onUpdated(updated as RpaBot);
+      toast.success("Notification settings saved");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "Failed"); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="space-y-5 p-1">
+      <div>
+        <h3 className="text-sm font-semibold mb-1 flex items-center gap-1.5"><Mail className="h-4 w-4 text-muted-foreground" />Email Notifications</h3>
+        <p className="text-xs text-muted-foreground mb-4">Send an email when a run completes or fails. The notifier checks every 60 seconds.</p>
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-sm">Notify Email</Label>
+            <Input type="email" placeholder="ops@example.com" value={email} onChange={e => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-sm">Send notification</Label>
+            <Select value={notifyOn} onValueChange={v => setNotifyOn(v as NotifyOn)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {NOTIFY_ON_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {notifyOn !== "never" && !email.trim() && (
+            <p className="text-xs text-yellow-600 dark:text-yellow-400">Enter an email address to enable notifications.</p>
+          )}
+          {notifyOn !== "never" && email.trim() && (
+            <p className="text-xs text-green-600 dark:text-green-400">
+              Notifications will be sent to <strong>{email}</strong> {notifyOn === "on_failure" ? "on failure only" : "for every run"}.
+            </p>
+          )}
+          <Button size="sm" onClick={save} disabled={saving}>
+            {saving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}Save Settings
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: RpaBot) => void; onDeleted: () => void }) {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -893,17 +983,19 @@ function BotDetail({ bot, onUpdated, onDeleted }: { bot: RpaBot; onUpdated: (b: 
       <Separator />
       <CardContent className="flex-1 overflow-hidden pt-4">
         <Tabs value={tab} onValueChange={setTab} className="h-full flex flex-col">
-          <TabsList className="w-full shrink-0 grid grid-cols-4">
+          <TabsList className="w-full shrink-0 grid grid-cols-5">
             <TabsTrigger value="steps"><List className="h-3.5 w-3.5 mr-1" />Steps</TabsTrigger>
             <TabsTrigger value="runs"><Play className="h-3.5 w-3.5 mr-1" />Runs</TabsTrigger>
             <TabsTrigger value="schedule"><CalendarClock className="h-3.5 w-3.5 mr-1" />Schedule</TabsTrigger>
             <TabsTrigger value="credentials"><Key className="h-3.5 w-3.5 mr-1" />Creds</TabsTrigger>
+            <TabsTrigger value="notify"><Mail className="h-3.5 w-3.5 mr-1" />Notify</TabsTrigger>
           </TabsList>
           <ScrollArea className="flex-1 mt-3">
             <TabsContent value="steps"      className="mt-0"><StepsTab bot={bot} /></TabsContent>
             <TabsContent value="runs"       className="mt-0"><RunsTab bot={bot} /></TabsContent>
             <TabsContent value="schedule"   className="mt-0"><ScheduleTab bot={bot} /></TabsContent>
             <TabsContent value="credentials" className="mt-0"><CredentialsTab bot={bot} /></TabsContent>
+            <TabsContent value="notify"     className="mt-0"><NotifySettingsTab bot={bot} onUpdated={onUpdated} /></TabsContent>
           </ScrollArea>
         </Tabs>
       </CardContent>

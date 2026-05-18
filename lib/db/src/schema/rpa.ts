@@ -10,6 +10,9 @@ export type RpaStepType = typeof RPA_STEP_TYPES[number];
 export const RPA_RUN_STATUSES = ["pending", "running", "success", "failed"] as const;
 export type RpaRunStatus = typeof RPA_RUN_STATUSES[number];
 
+export const RPA_NOTIFY_ON = ["never", "always", "on_failure"] as const;
+export type RpaNotifyOn = typeof RPA_NOTIFY_ON[number];
+
 export const RPA_LOG_LEVELS = ["info", "warn", "error", "debug"] as const;
 export type RpaLogLevel = typeof RPA_LOG_LEVELS[number];
 
@@ -19,6 +22,8 @@ export const rpaBotsTable = pgTable("rpa_bots", {
   description: text("description"),
   botType: text("bot_type").$type<RpaBotType>().notNull().default("browser_automation"),
   isActive: boolean("is_active").notNull().default(true),
+  notifyEmail: text("notify_email"),
+  notifyOn: text("notify_on").$type<RpaNotifyOn>().notNull().default("never"),
   createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -60,6 +65,7 @@ export const rpaBotRunsTable = pgTable("rpa_bot_runs", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   screenshotPath: text("screenshot_path"),
   errorMessage: text("error_message"),
+  notifiedAt: timestamp("notified_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index("rpa_bot_runs_bot_idx").on(t.botId)]);
 

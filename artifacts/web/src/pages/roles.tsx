@@ -65,7 +65,7 @@ function useAllPages() {
   return useQuery<PageItem[]>({
     queryKey: ["roles-pages"],
     queryFn: () => apiFetch("/roles/pages"),
-    staleTime: Infinity,
+    staleTime: 0,
   });
 }
 
@@ -73,6 +73,7 @@ const PAGE_GROUPS: Record<string, string[]> = {
   "Core":             ["/dashboard", "/users", "/roles", "/audit-log", "/admin/login-report"],
   "Data Pipeline":    ["/admin/db-connections", "/admin/data-objects", "/workflow", "/workflow/jobs", "/data-preview", "/admin/field-mappings"],
   "Communication HUB": ["/email-hub/campaigns", "/email-hub/templates", "/admin/comm-settings"],
+  "RPA Bots":         ["/admin/rpa-bots", "/admin/rpa-credentials"],
   "Tools":            ["/url-shortener", "/admin/short-domains", "/docs"],
   "Settings":         ["/admin/email-settings", "/admin/app-settings", "/admin/font-settings", "/admin/allowed-file-types", "/admin/application-types", "/admin/pii-permissions", "/pii-records"],
 };

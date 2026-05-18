@@ -123,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     query: {
       queryKey: getGetMeQueryKey(),
       retry: false,
-      staleTime: Infinity,
+      staleTime: 0,
       enabled: hasToken,
     },
   });

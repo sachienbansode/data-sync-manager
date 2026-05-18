@@ -286,7 +286,7 @@ router.post("/rpa/bots/:id/run", ...adminAuth, async (req, res): Promise<void> =
       triggeredByEmail: req.user?.email ?? null,
     }),
   });
-  res.status(status).json(status === 201 ? camelizeKeys(body) : body);
+  res.status(status).json(status >= 200 && status < 300 ? camelizeKeys(body) : body);
 });
 
 // ── LOGS — proxy to Python ────────────────────────────────────────────────────

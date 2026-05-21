@@ -159,7 +159,9 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
       const rows = (result.rows ?? []) as Record<string, unknown>[];
       res.json({ columns, rows, rowCount: rows.length });
     } catch (err: unknown) {
-      res.status(500).json({ error: err instanceof Error ? err.message : "Oracle query failed" });
+      const msg = err instanceof Error ? err.message : "Oracle query failed";
+      console.error(`[Oracle preview] connId=${conn.id} objId=${obj.id} user=${conn.usernameEnc ? "(set)" : "(empty)"} schema=${conn.schemaName ?? "(null)"} obj=${obj.objectValue} error: ${msg}`);
+      res.status(500).json({ error: msg });
     } finally {
       await oraConn?.close().catch(() => {});
     }

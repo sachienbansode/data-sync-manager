@@ -33,6 +33,7 @@ interface DbConnection {
   lastTestedAt: string | null;
   lastTestSuccess: boolean | null;
   createdAt: string;
+  createdByEmail?: string | null;
 }
 
 const ENGINE_META: Record<DbEngine, { label: string; icon: React.ComponentType<{ className?: string }>; defaultPort: number | null; isFile: boolean }> = {
@@ -416,69 +417,80 @@ export default function DbConnections() {
               </div>
             ) : (
               <>
-              <div className="divide-y">
-                {pagedConnections.map((c) => {
-                  const eng = ENGINE_META[c.dbEngine] ?? ENGINE_META.postgresql;
-                  const EngIcon = eng.icon;
-                  return (
-                    <div key={c.id} className="py-4 flex items-start justify-between gap-4">
-                      <div className="min-w-0 space-y-1 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <EngIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <span className="font-medium">{c.name}</span>
-                          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${engineBadgeColor(c.dbEngine)}`}>
-                            {eng.label}
-                          </span>
-                          <Badge variant="outline" className="text-xs">
-                            {appTypes.find(t => t.slug === c.type)?.name ?? c.type}
-                          </Badge>
-                          {c.allowWrites
-                            ? <span className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400"><PenLine className="h-3 w-3" /> Read+Write</span>
-                            : <span className="flex items-center gap-1 text-xs text-muted-foreground"><Lock className="h-3 w-3" /> Read Only</span>}
-                          {c.lastTestedAt && (
-                            c.lastTestSuccess
-                              ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3 w-3" /> Connected</span>
-                              : <span className="flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3 w-3" /> Failed</span>
-                          )}
-                        </div>
-                        <div className="text-sm text-muted-foreground font-mono">
-                          {connectionSummary(c)}
-                          {c.schemaName && c.schemaName !== "public" && !eng.isFile && (
-                            <span className="ml-2 text-xs font-sans">(schema: {c.schemaName})</span>
-                          )}
-                        </div>
-                        {!eng.isFile && (
-                          <p className="text-xs text-muted-foreground">
-                            Username: <span className="font-mono">••••••••</span> &nbsp;·&nbsp; Password: <span className="font-mono">••••••••</span>
-                          </p>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          Added {formatDate(c.createdAt)}
-                          {c.lastTestedAt && ` · Last tested ${formatDateTime(c.lastTestedAt)}`}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        {(!eng.isFile || c.dbEngine === "s3") && (
-                          <Button variant="outline" size="sm" onClick={() => testConnection(c.id)} disabled={testing === c.id}>
-                            {testing === c.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wifi className="h-4 w-4" />}
-                            <span className="ml-1 hidden sm:inline">Test</span>
-                          </Button>
-                        )}
-                        <Button variant="outline" size="sm" onClick={() => openHistory(c)}>
-                          <History className="h-4 w-4" />
-                          <span className="ml-1 hidden sm:inline">History</span>
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40">
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground w-10">#</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Name</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">App Type</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Host / Details</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Test Status</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">Created Date</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Created By</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {pagedConnections.map((c, idx) => {
+                      const eng = ENGINE_META[c.dbEngine] ?? ENGINE_META.postgresql;
+                      const EngIcon = eng.icon;
+                      const rowNum = (page - 1) * PAGE_SIZE + idx + 1;
+                      return (
+                        <tr key={c.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">{rowNum}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <EngIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="font-medium">{c.name}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${engineBadgeColor(c.dbEngine)}`}>{eng.label}</span>
+                              {c.allowWrites
+                                ? <span className="flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400"><PenLine className="h-3 w-3" />R+W</span>
+                                : <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><Lock className="h-3 w-3" />RO</span>}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant="outline" className="text-xs">{appTypes.find(t => t.slug === c.type)?.name ?? c.type}</Badge>
+                          </td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground max-w-[200px] truncate">
+                            {connectionSummary(c)}
+                            {c.schemaName && c.schemaName !== "public" && !eng.isFile && (
+                              <span className="ml-1 font-sans text-[10px]">({c.schemaName})</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {c.lastTestedAt ? (
+                              c.lastTestSuccess
+                                ? <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3 w-3" />Connected</span>
+                                : <span className="flex items-center gap-1 text-xs text-destructive"><XCircle className="h-3 w-3" />Failed</span>
+                            ) : <span className="text-xs text-muted-foreground">—</span>}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{formatDate(c.createdAt)}</td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">{c.createdByEmail ?? "—"}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1">
+                              {(!eng.isFile || c.dbEngine === "s3") && (
+                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => testConnection(c.id)} disabled={testing === c.id}>
+                                  {testing === c.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wifi className="h-3 w-3" />}
+                                  <span className="ml-1 hidden sm:inline">Test</span>
+                                </Button>
+                              )}
+                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => openHistory(c)}>
+                                <History className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(c)}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => setDeleteId(c.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {/* Pagination */}

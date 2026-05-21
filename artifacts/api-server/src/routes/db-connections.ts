@@ -2,7 +2,7 @@ import { Router, type IRouter } from "express";
 import { eq, desc } from "drizzle-orm";
 import pg from "pg";
 import net from "net";
-import { db, dbConnectionsTable, auditLogsTable, dataJobsTable, awsRegionsTable } from "@workspace/db";
+import { db, dbConnectionsTable, auditLogsTable, dataJobsTable, awsRegionsTable, usersTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { encrypt, decrypt, loadEncryptionKey } from "../lib/crypto";
 
@@ -40,8 +40,31 @@ function isFileEngine(engine: string) { return (FILE_ENGINES as readonly string[
 
 // GET /api/admin/db-connections
 router.get("/admin/db-connections", authenticate, requireRole("Admin"), async (_req, res) => {
-  const rows = await db.select().from(dbConnectionsTable).orderBy(desc(dbConnectionsTable.createdAt));
-  res.json(rows.map(safeRow));
+  const rows = await db
+    .select({
+      id: dbConnectionsTable.id,
+      name: dbConnectionsTable.name,
+      type: dbConnectionsTable.type,
+      dbEngine: dbConnectionsTable.dbEngine,
+      host: dbConnectionsTable.host,
+      port: dbConnectionsTable.port,
+      dbName: dbConnectionsTable.dbName,
+      schemaName: dbConnectionsTable.schemaName,
+      extraParams: dbConnectionsTable.extraParams,
+      fetchQuery: dbConnectionsTable.fetchQuery,
+      outputFilePath: dbConnectionsTable.outputFilePath,
+      allowWrites: dbConnectionsTable.allowWrites,
+      createdBy: dbConnectionsTable.createdBy,
+      lastTestedAt: dbConnectionsTable.lastTestedAt,
+      lastTestSuccess: dbConnectionsTable.lastTestSuccess,
+      createdAt: dbConnectionsTable.createdAt,
+      updatedAt: dbConnectionsTable.updatedAt,
+      createdByEmail: usersTable.email,
+    })
+    .from(dbConnectionsTable)
+    .leftJoin(usersTable, eq(dbConnectionsTable.createdBy, usersTable.id))
+    .orderBy(desc(dbConnectionsTable.createdAt));
+  res.json(rows);
 });
 
 // GET /api/admin/db-connections/:id/tables — list tables in the connected DB (PostgreSQL only)

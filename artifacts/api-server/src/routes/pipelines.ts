@@ -3,7 +3,7 @@ import { eq, desc, asc } from "drizzle-orm";
 import pg from "pg";
 import {
   db, dataPipelinesTable, pipelineFieldMappingsTable, auditLogsTable,
-  dbConnectionsTable, dataJobsTable, connectionObjectsTable,
+  dbConnectionsTable, dataJobsTable, connectionObjectsTable, usersTable,
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { decrypt, loadEncryptionKey } from "../lib/crypto";
@@ -20,7 +20,40 @@ function getIp(req: import("express").Request): string | null {
 
 // GET /api/admin/pipelines
 router.get("/admin/pipelines", authenticate, requireRole("Admin"), async (_req, res) => {
-  const rows = await db.select().from(dataPipelinesTable).orderBy(desc(dataPipelinesTable.createdAt));
+  const rows = await db
+    .select({
+      id: dataPipelinesTable.id,
+      name: dataPipelinesTable.name,
+      description: dataPipelinesTable.description,
+      sourceObjectId: dataPipelinesTable.sourceObjectId,
+      destObjectId: dataPipelinesTable.destObjectId,
+      sourceConnectionId: dataPipelinesTable.sourceConnectionId,
+      destConnectionId: dataPipelinesTable.destConnectionId,
+      sourceTable: dataPipelinesTable.sourceTable,
+      sourceQuery: dataPipelinesTable.sourceQuery,
+      destTarget: dataPipelinesTable.destTarget,
+      status: dataPipelinesTable.status,
+      scheduleEnabled: dataPipelinesTable.scheduleEnabled,
+      scheduleCron: dataPipelinesTable.scheduleCron,
+      scheduleLastRunAt: dataPipelinesTable.scheduleLastRunAt,
+      scheduleNextRunAt: dataPipelinesTable.scheduleNextRunAt,
+      scheduleConsecutiveFailures: dataPipelinesTable.scheduleConsecutiveFailures,
+      notifyOnSuccess: dataPipelinesTable.notifyOnSuccess,
+      notifyOnFailure: dataPipelinesTable.notifyOnFailure,
+      loadType: dataPipelinesTable.loadType,
+      preSqlCommand: dataPipelinesTable.preSqlCommand,
+      postSqlCommand: dataPipelinesTable.postSqlCommand,
+      conflictColumns: dataPipelinesTable.conflictColumns,
+      watermarkColumn: dataPipelinesTable.watermarkColumn,
+      lastWatermarkValue: dataPipelinesTable.lastWatermarkValue,
+      createdBy: dataPipelinesTable.createdBy,
+      createdAt: dataPipelinesTable.createdAt,
+      updatedAt: dataPipelinesTable.updatedAt,
+      createdByEmail: usersTable.email,
+    })
+    .from(dataPipelinesTable)
+    .leftJoin(usersTable, eq(dataPipelinesTable.createdBy, usersTable.id))
+    .orderBy(desc(dataPipelinesTable.createdAt));
   res.json(rows);
 });
 

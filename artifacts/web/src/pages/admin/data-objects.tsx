@@ -43,6 +43,7 @@ interface ConnectionObject {
   description: string | null;
   createdAt: string;
   updatedAt: string;
+  createdByEmail?: string | null;
 }
 
 interface DbConnection {
@@ -299,66 +300,94 @@ export default function DataObjects() {
             </div>
           ) : (
             <>
-              <div className="divide-y">
-                {paged.map(obj => (
-                  <div key={obj.id} className="flex items-start justify-between px-4 py-3 hover:bg-muted/30 transition-colors gap-4">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{obj.name}</span>
-                        <Badge variant="outline" className="text-[10px] gap-1">
-                          {obj.objectType === "table" ? <Table2 className="h-2.5 w-2.5" /> : <Code2 className="h-2.5 w-2.5" />}
-                          {obj.objectType === "table" ? "Table" : "Query"}
-                        </Badge>
-                        <Badge variant="outline" className={`text-[10px] ${ENGINE_COLOR[obj.connectionEngine] ?? ""}`}>
-                          <Network className="h-2.5 w-2.5 mr-1" />{obj.connectionName}
-                        </Badge>
-                      </div>
-                      <p className="text-xs text-muted-foreground font-mono truncate max-w-lg">
-                        {obj.objectType === "query"
-                          ? obj.objectValue.slice(0, 80) + (obj.objectValue.length > 80 ? "…" : "")
-                          : obj.objectValue
-                        }
-                      </p>
-                      {obj.description && <p className="text-xs text-muted-foreground">{obj.description}</p>}
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                      {dbOnlyConns.some(c => c.id === obj.connectionId) && (
-                        <>
-                          <Button
-                            variant="ghost" size="sm"
-                            className={`h-8 px-2 text-xs gap-1 ${testStatus[obj.id]?.ok === true ? "text-green-600" : testStatus[obj.id]?.ok === false ? "text-destructive" : ""}`}
-                            onClick={() => handleTest(obj)}
-                            disabled={testingIds.has(obj.id)}
-                            title={testStatus[obj.id]?.msg}
-                          >
-                            {testingIds.has(obj.id)
-                              ? <Loader2 className="h-3 w-3 animate-spin" />
-                              : testStatus[obj.id]?.ok === true
-                                ? <CheckCircle2 className="h-3 w-3" />
-                                : testStatus[obj.id]?.ok === false
-                                  ? <XCircle className="h-3 w-3" />
-                                  : <FlaskConical className="h-3 w-3" />
-                            }
-                            Test
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-8 px-2 text-xs gap-1" onClick={() => openPreview(obj)}>
-                            <Eye className="h-3 w-3" />Preview
-                          </Button>
-                        </>
-                      )}
-                      <Button variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={() => openEdit(obj)}>
-                        <Pencil className="h-3 w-3 mr-1" />Edit
-                      </Button>
-                      <Button
-                        variant="ghost" size="sm"
-                        className="h-8 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
-                        onClick={() => setDeleteId(obj.id)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40">
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground w-10">#</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Name</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Connection</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Type</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Object / Query</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">Created Date</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Created By</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {paged.map((obj, idx) => {
+                      const rowNum = (page - 1) * PAGE_SIZE + idx + 1;
+                      const canPreview = dbOnlyConns.some(c => c.id === obj.connectionId);
+                      return (
+                        <tr key={obj.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">{rowNum}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium text-sm">{obj.name}</div>
+                            {obj.description && <div className="text-xs text-muted-foreground mt-0.5">{obj.description}</div>}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant="outline" className={`text-[10px] ${ENGINE_COLOR[obj.connectionEngine] ?? ""}`}>
+                              <Network className="h-2.5 w-2.5 mr-1" />{obj.connectionName}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant="outline" className="text-[10px] gap-1">
+                              {obj.objectType === "table" ? <Table2 className="h-2.5 w-2.5" /> : <Code2 className="h-2.5 w-2.5" />}
+                              {obj.objectType === "table" ? "Table" : "Query"}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground max-w-[200px] truncate">
+                            {obj.objectType === "query"
+                              ? obj.objectValue.slice(0, 60) + (obj.objectValue.length > 60 ? "…" : "")
+                              : obj.objectValue}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(obj.createdAt).toLocaleDateString()}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">{obj.createdByEmail ?? "—"}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1">
+                              {canPreview && (
+                                <>
+                                  <Button
+                                    variant="ghost" size="sm"
+                                    className={`h-7 px-2 text-xs gap-1 ${testStatus[obj.id]?.ok === true ? "text-green-600" : testStatus[obj.id]?.ok === false ? "text-destructive" : ""}`}
+                                    onClick={() => handleTest(obj)}
+                                    disabled={testingIds.has(obj.id)}
+                                    title={testStatus[obj.id]?.msg}
+                                  >
+                                    {testingIds.has(obj.id)
+                                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                                      : testStatus[obj.id]?.ok === true
+                                        ? <CheckCircle2 className="h-3 w-3" />
+                                        : testStatus[obj.id]?.ok === false
+                                          ? <XCircle className="h-3 w-3" />
+                                          : <FlaskConical className="h-3 w-3" />
+                                    }
+                                    Test
+                                  </Button>
+                                  <Button variant="ghost" size="sm" className="h-7 px-2 text-xs gap-1" onClick={() => openPreview(obj)}>
+                                    <Eye className="h-3 w-3" />Preview
+                                  </Button>
+                                </>
+                              )}
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => openEdit(obj)}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                variant="ghost" size="sm"
+                                className="h-7 px-2 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                                onClick={() => setDeleteId(obj.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
 
               {/* Pagination */}

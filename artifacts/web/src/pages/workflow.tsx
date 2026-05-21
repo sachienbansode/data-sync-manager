@@ -46,6 +46,7 @@ interface Pipeline {
   watermarkColumn: string | null;
   lastWatermarkValue: string | null;
   createdAt: string;
+  createdByEmail?: string | null;
 }
 
 interface DbConnection {
@@ -412,106 +413,114 @@ export default function Workflow() {
                 <Button className="mt-4" onClick={openAdd}><Plus className="h-4 w-4 mr-2" />New Pipeline</Button>
               </div>
             ) : (
-              <div className="divide-y">
-                {pipelines.map((p) => {
-                  const srcObj = objById(p.sourceObjectId);
-                  const dstObj = objById(p.destObjectId);
-                  const srcEngine = srcObj ? objectConnEngine(srcObj) : (connById(p.sourceConnectionId)?.dbEngine ?? "");
-                  const dstEngine = dstObj ? objectConnEngine(dstObj) : (connById(p.destConnectionId)?.dbEngine ?? "");
-                  const SrcIcon = ENGINE_ICON[srcEngine] ?? Database;
-                  const DstIcon = ENGINE_ICON[dstEngine] ?? Database;
-
-                  return (
-                    <div key={p.id} className="py-4 flex items-start justify-between gap-4">
-                      <div className="min-w-0 space-y-1.5 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium">{p.name}</span>
-                          <Badge variant={p.status === "active" ? "default" : "secondary"} className="text-xs">
-                            {p.status === "active"
-                              ? <><CheckCircle className="h-3 w-3 mr-1" />Active</>
-                              : <><PauseCircle className="h-3 w-3 mr-1" />Inactive</>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b bg-muted/40">
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground w-10">#</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Name</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Status</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Source → Destination</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Schedule</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground whitespace-nowrap">Created Date</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Created By</th>
+                      <th className="text-left px-3 py-2 text-xs font-medium text-muted-foreground">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {pipelines.map((p, idx) => {
+                      const srcObj = objById(p.sourceObjectId);
+                      const dstObj = objById(p.destObjectId);
+                      const srcEngine = srcObj ? objectConnEngine(srcObj) : (connById(p.sourceConnectionId)?.dbEngine ?? "");
+                      const dstEngine = dstObj ? objectConnEngine(dstObj) : (connById(p.destConnectionId)?.dbEngine ?? "");
+                      const SrcIcon = ENGINE_ICON[srcEngine] ?? Database;
+                      const DstIcon = ENGINE_ICON[dstEngine] ?? Database;
+                      return (
+                        <tr key={p.id} className="hover:bg-muted/30 transition-colors">
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground tabular-nums">{idx + 1}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="font-medium">{p.name}</div>
+                            {p.description && <div className="text-xs text-muted-foreground mt-0.5">{p.description}</div>}
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <Badge variant={p.status === "active" ? "default" : "secondary"} className="text-xs">
+                              {p.status === "active"
+                                ? <><CheckCircle className="h-3 w-3 mr-1" />Active</>
+                                : <><PauseCircle className="h-3 w-3 mr-1" />Inactive</>
+                              }
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border">
+                                <SrcIcon className="h-3 w-3 text-muted-foreground" />
+                                <span className="font-medium max-w-[100px] truncate">
+                                  {srcObj
+                                    ? objectLabel(srcObj)
+                                    : p.sourceConnectionId
+                                      ? `${connById(p.sourceConnectionId)?.name ?? "Unknown"}${p.sourceTable ? ` · ${p.sourceTable}` : ""}`
+                                      : "—"
+                                  }
+                                </span>
+                              </div>
+                              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-muted/50 border">
+                                <DstIcon className="h-3 w-3 text-muted-foreground" />
+                                <span className="font-medium max-w-[100px] truncate">
+                                  {dstObj
+                                    ? objectLabel(dstObj)
+                                    : p.destConnectionId
+                                      ? `${connById(p.destConnectionId)?.name ?? "Unknown"}${p.destTarget ? ` · ${p.destTarget}` : ""}`
+                                      : "—"
+                                  }
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2.5">
+                            {p.scheduleEnabled && p.scheduleCron
+                              ? <span className="flex items-center gap-1 text-xs text-blue-600"><CalendarClock className="h-3 w-3" />{formatCron(p.scheduleCron)}</span>
+                              : <span className="text-xs text-muted-foreground">—</span>
                             }
-                          </Badge>
-                          {p.scheduleEnabled && p.scheduleCron && (
-                            <span className="flex items-center gap-1 text-xs text-blue-600">
-                              <CalendarClock className="h-3 w-3" /> {formatCron(p.scheduleCron)}
-                            </span>
-                          )}
-                        </div>
-                        {p.description && <p className="text-sm text-muted-foreground">{p.description}</p>}
-
-                        {/* Source → Dest flow */}
-                        <div className="flex items-center gap-2 text-sm flex-wrap">
-                          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
-                            <SrcIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            {srcObj
-                              ? <span className="font-medium">{objectLabel(srcObj)}</span>
-                              : p.sourceConnectionId
-                                ? <span className="font-medium">{connById(p.sourceConnectionId)?.name ?? "Unknown"}{p.sourceTable ? ` · ${p.sourceTable}` : ""}</span>
-                                : <span className="text-muted-foreground italic">No source</span>
-                            }
-                          </div>
-                          <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-muted/50 border text-xs">
-                            <DstIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                            {dstObj
-                              ? <span className="font-medium">{objectLabel(dstObj)}</span>
-                              : p.destConnectionId
-                                ? <span className="font-medium">{connById(p.destConnectionId)?.name ?? "Unknown"}{p.destTarget ? ` · ${p.destTarget}` : ""}</span>
-                                : <span className="text-muted-foreground italic">No destination</span>
-                            }
-                          </div>
-                        </div>
-
-                        <p className="text-xs text-muted-foreground">
-                          Created {fmtIsoDate(p.createdAt)}
-                          {p.scheduleLastRunAt && ` · Last run ${fmtIsoDateTime(p.scheduleLastRunAt)}`}
-                        </p>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-                        <Button
-                          variant="default" size="sm"
-                          onClick={() => runPipeline(p)}
-                          disabled={runningId === p.id}
-                        >
-                          {runningId === p.id
-                            ? <><Loader2 className="h-4 w-4 animate-spin mr-1" />Running…</>
-                            : <><Play className="h-4 w-4 mr-1" />Run</>
-                          }
-                        </Button>
-                        <Button variant="outline" size="sm" onClick={() => openHistory(p)}>
-                          <History className="h-4 w-4" />
-                          <span className="ml-1 hidden sm:inline">History</span>
-                        </Button>
-                        <Button
-                          variant="outline" size="sm"
-                          onClick={() => toggleStatus(p)}
-                          disabled={togglingId === p.id}
-                        >
-                          {togglingId === p.id
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : p.status === "active"
-                              ? <PauseCircle className="h-4 w-4" />
-                              : <CheckCircle className="h-4 w-4" />
-                          }
-                        </Button>
-                        <Link href={`/workflow/${p.id}/mappings`}>
-                          <Button variant="outline" size="sm" title="Configure field mappings">
-                            <Settings2 className="h-4 w-4" />
-                            <span className="ml-1 hidden sm:inline">Mappings</span>
-                          </Button>
-                        </Link>
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDeleteId(p.id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+                            {p.scheduleLastRunAt && (
+                              <div className="text-[10px] text-muted-foreground mt-0.5">Last: {fmtIsoDateTime(p.scheduleLastRunAt)}</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{fmtIsoDate(p.createdAt)}</td>
+                          <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-[140px] truncate">{p.createdByEmail ?? "—"}</td>
+                          <td className="px-3 py-2.5">
+                            <div className="flex items-center gap-1">
+                              <Button variant="default" size="sm" className="h-7 px-2 text-xs" onClick={() => runPipeline(p)} disabled={runningId === p.id}>
+                                {runningId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
+                                <span className="ml-1 hidden sm:inline">Run</span>
+                              </Button>
+                              <Button variant="outline" size="sm" className="h-7 px-2 text-xs" onClick={() => openHistory(p)}>
+                                <History className="h-3 w-3" />
+                              </Button>
+                              <Button variant="outline" size="sm" className="h-7 px-2" onClick={() => toggleStatus(p)} disabled={togglingId === p.id}>
+                                {togglingId === p.id
+                                  ? <Loader2 className="h-3 w-3 animate-spin" />
+                                  : p.status === "active" ? <PauseCircle className="h-3 w-3" /> : <CheckCircle className="h-3 w-3" />
+                                }
+                              </Button>
+                              <Link href={`/workflow/${p.id}/mappings`}>
+                                <Button variant="outline" size="sm" className="h-7 px-2 text-xs" title="Field mappings">
+                                  <Settings2 className="h-3 w-3" />
+                                </Button>
+                              </Link>
+                              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => openEdit(p)}>
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                              <Button variant="ghost" size="sm" className="h-7 px-2 text-destructive hover:text-destructive" onClick={() => setDeleteId(p.id)}>
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </CardContent>

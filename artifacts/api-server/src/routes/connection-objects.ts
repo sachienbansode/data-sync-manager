@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import pg from "pg";
-import { db, connectionObjectsTable, dbConnectionsTable } from "@workspace/db";
+import { db, connectionObjectsTable, dbConnectionsTable, usersTable } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { decrypt, loadEncryptionKey } from "../lib/crypto";
 
@@ -24,11 +24,13 @@ router.get("/admin/connection-objects", authenticate, requireRole("Admin"), asyn
       description: connectionObjectsTable.description,
       createdAt: connectionObjectsTable.createdAt,
       updatedAt: connectionObjectsTable.updatedAt,
+      createdByEmail: usersTable.email,
     })
     .from(connectionObjectsTable)
     .innerJoin(dbConnectionsTable, eq(connectionObjectsTable.connectionId, dbConnectionsTable.id))
+    .leftJoin(usersTable, eq(connectionObjectsTable.createdBy, usersTable.id))
     .where(connectionId ? eq(connectionObjectsTable.connectionId, connectionId) : undefined)
-    .orderBy(asc(dbConnectionsTable.name), asc(connectionObjectsTable.name));
+    .orderBy(desc(connectionObjectsTable.createdAt));
 
   res.json(rows);
 });
@@ -131,7 +133,7 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
     .from(dbConnectionsTable)
     .where(eq(dbConnectionsTable.id, obj.connectionId));
   if (!conn) { res.status(404).json({ error: "Connection not found" }); return; }
-  if (!["postgresql", "mysql", "mssql"].includes(conn.dbEngine)) {
+  if (!["postgresql", "mysql", "mssql", "oracle"].includes(conn.dbEngine)) {
     res.status(400).json({ error: `Preview not supported for ${conn.dbEngine}` });
     return;
   }
@@ -139,6 +141,28 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
   const key = loadEncryptionKey();
   const username = conn.usernameEnc ? decrypt(conn.usernameEnc, key) : "";
   const password = conn.passwordEnc ? decrypt(conn.passwordEnc, key) : "";
+
+  // Oracle — use oracledb thin mode
+  if (conn.dbEngine === "oracle") {
+    const oracledb = (await import("oracledb")).default;
+    const connectString = `${conn.host}:${conn.port ?? 1521}/${conn.dbName ?? "ORCL"}`;
+    let oraConn: import("oracledb").Connection | null = null;
+    try {
+      oraConn = await oracledb.getConnection({ user: username, password, connectString });
+      const query = obj.objectType === "query"
+        ? `SELECT * FROM (${obj.objectValue}) WHERE ROWNUM <= ${limit}`
+        : `SELECT * FROM "${conn.schemaName ?? username.toUpperCase()}"."${obj.objectValue}" FETCH FIRST ${limit} ROWS ONLY`;
+      const result = await oraConn.execute(query, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
+      const columns = (result.metaData ?? []).map((m: { name: string }) => m.name);
+      const rows = (result.rows ?? []) as Record<string, unknown>[];
+      res.json({ columns, rows, rowCount: rows.length });
+    } catch (err: unknown) {
+      res.status(500).json({ error: err instanceof Error ? err.message : "Oracle query failed" });
+    } finally {
+      await oraConn?.close().catch(() => {});
+    }
+    return;
+  }
 
   const buildQuery = () => {
     if (obj.objectType === "query") return `SELECT * FROM (${obj.objectValue}) _obj LIMIT ${limit}`;

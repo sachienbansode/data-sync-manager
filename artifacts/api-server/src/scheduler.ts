@@ -287,11 +287,16 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   // Build effective source query (object-resolved or legacy)
   if (!sourceQuery && legacySourceTable) {
     const isOracleSrc = srcConn.dbEngine === "oracle";
-    const schema = srcConn.schemaName ?? (isOracleSrc ? srcUser.toUpperCase() : "public");
+    // For Oracle: both schema AND table must be uppercased — double-quoted identifiers are case-sensitive
+    const schema = isOracleSrc
+      ? (srcConn.schemaName ?? srcUser).toUpperCase()
+      : (srcConn.schemaName ?? "public");
     const table  = isOracleSrc ? legacySourceTable.toUpperCase() : legacySourceTable;
     sourceQuery = `SELECT * FROM "${schema}"."${table}"`;
   }
   if (!sourceQuery) return { success: false, error: "No source table or query configured" };
+
+  process.stdout.write(`[SCHEDULER-SRC] pipeline=${pipelineId} sourceObjectId=${pipeline.sourceObjectId ?? null} legacySourceTable=${JSON.stringify(legacySourceTable)} sourceQuery=${JSON.stringify(sourceQuery)} srcEngine=${srcConn.dbEngine} srcSchemaName=${JSON.stringify(srcConn.schemaName)} srcUser=${JSON.stringify(srcUser)}\n`);
 
   // Build schema-qualified destTarget so the Python worker always receives "schema.table"
   const isDstOracle = dstConn.dbEngine === "oracle";

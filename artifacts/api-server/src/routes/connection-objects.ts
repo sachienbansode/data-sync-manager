@@ -153,7 +153,7 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
       const oraTable  = obj.objectValue.toUpperCase();
       const query = obj.objectType === "query"
         ? `SELECT * FROM (${obj.objectValue}) WHERE ROWNUM <= ${limit}`
-        : `SELECT * FROM "${oraSchema}"."${oraTable}" FETCH FIRST ${limit} ROWS ONLY`;
+        : `SELECT * FROM "${oraSchema}"."${oraTable}" WHERE ROWNUM <= ${limit}`;
       process.stdout.write(`[Oracle preview] executing: ${query}\n`);
       const result = await oraConn.execute(query, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
       const columns = (result.metaData ?? []).map((m: { name: string }) => m.name);

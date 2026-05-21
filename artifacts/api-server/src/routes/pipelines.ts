@@ -342,7 +342,7 @@ async function resolveColumns(connId: number, query: string): Promise<string[]> 
 
   // ── Oracle ──────────────────────────────────────────────────────────────────
   if (engine === "oracle" || engine === "oracledb") {
-    const oracledb = await import("oracledb");
+    const oracledb = (await import("oracledb")).default;
     const host = (conn.host ?? "localhost").split("@").pop()!;
     const port = conn.port ?? 1521;
     const service = conn.dbName ?? "ORCL";

@@ -295,21 +295,31 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
   // Build schema-qualified destTarget so the Python worker always receives "schema.table"
   const isDstOracle = dstConn.dbEngine === "oracle";
+
+  const qualifyDest = (raw: string): string => {
+    if (raw.includes(".")) {
+      // Already schema-qualified — just uppercase both parts for Oracle, leave as-is for PG
+      const dotIdx = raw.indexOf(".");
+      const s = raw.slice(0, dotIdx);
+      const t = raw.slice(dotIdx + 1);
+      return isDstOracle ? `${s.toUpperCase()}.${t.toUpperCase()}` : raw;
+    } else {
+      // Plain table name — use connection schemaName if set, else username for Oracle, else "public"
+      const schema = dstConn.schemaName
+        ? (isDstOracle ? dstConn.schemaName.toUpperCase() : dstConn.schemaName)
+        : (isDstOracle ? dstUser.toUpperCase() : "public");
+      const table  = isDstOracle ? raw.toUpperCase() : raw;
+      return `${schema}.${table}`;
+    }
+  };
+
   if (destObjectValue !== null) {
-    // Object-based: qualify plain table name with the destination connection's schema
-    const schema = dstConn.schemaName ?? (isDstOracle ? dstUser.toUpperCase() : "public");
-    const table  = isDstOracle ? destObjectValue.toUpperCase() : destObjectValue;
-    destTarget = `${schema}.${table}`;
-  } else if (destTarget && !destTarget.includes(".")) {
-    // Legacy plain table name: qualify with connection schema
-    const schema = dstConn.schemaName ?? (isDstOracle ? dstUser.toUpperCase() : "public");
-    const table  = isDstOracle ? destTarget.toUpperCase() : destTarget;
-    destTarget = `${schema}.${table}`;
-  } else if (destTarget && isDstOracle) {
-    // Already schema-qualified but may be lowercase — uppercase both parts for Oracle
-    const [s, ...rest] = destTarget.split(".");
-    destTarget = `${s.toUpperCase()}.${rest.join(".").toUpperCase()}`;
+    destTarget = qualifyDest(destObjectValue);
+  } else if (destTarget) {
+    destTarget = qualifyDest(destTarget);
   }
+
+  process.stdout.write(`[SCHEDULER] pipeline=${pipelineId} destObjectValue=${JSON.stringify(destObjectValue)} destTarget=${JSON.stringify(destTarget)} dstSchemaName=${JSON.stringify(dstConn.schemaName)} dstUser=${JSON.stringify(dstUser)} isDstOracle=${isDstOracle}\n`);
 
   if (!destTarget) return { success: false, error: "Destination table not configured" };
 

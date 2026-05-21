@@ -220,9 +220,21 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   if (!srcConn) return { success: false, error: "Source connection not found" };
   if (!dstConn) return { success: false, error: "Destination connection not found" };
 
+  // Decrypt credentials early — Oracle schema defaulting requires the username
+  loadEncryptionKey();
+  let srcUser = "", srcPass = "", dstUser = "", dstPass = "";
+  try {
+    srcUser = srcConn.usernameEnc ? decrypt(srcConn.usernameEnc) : "";
+    srcPass = srcConn.passwordEnc ? decrypt(srcConn.passwordEnc) : "";
+    dstUser = dstConn.usernameEnc ? decrypt(dstConn.usernameEnc) : "";
+    dstPass = dstConn.passwordEnc ? decrypt(dstConn.passwordEnc) : "";
+  } catch {
+    return { success: false, error: "Failed to decrypt credentials" };
+  }
+
   // Build effective source query (object-resolved or legacy)
   if (!sourceQuery && legacySourceTable) {
-    const schema = srcConn.schemaName ?? "public";
+    const schema = srcConn.schemaName ?? (srcConn.dbEngine === "oracle" ? srcUser.toUpperCase() : "public");
     sourceQuery = `SELECT * FROM "${schema}"."${legacySourceTable}"`;
   }
   if (!sourceQuery) return { success: false, error: "No source table or query configured" };
@@ -230,11 +242,11 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   // Build schema-qualified destTarget so the Python worker always receives "schema.table"
   if (destObjectValue !== null) {
     // Object-based: qualify plain table name with the destination connection's schema
-    const schema = dstConn.schemaName ?? "public";
+    const schema = dstConn.schemaName ?? (dstConn.dbEngine === "oracle" ? dstUser.toUpperCase() : "public");
     destTarget = `${schema}.${destObjectValue}`;
   } else if (destTarget && !destTarget.includes(".")) {
     // Legacy plain table name: qualify with connection schema
-    const schema = dstConn.schemaName ?? "public";
+    const schema = dstConn.schemaName ?? (dstConn.dbEngine === "oracle" ? dstUser.toUpperCase() : "public");
     destTarget = `${schema}.${destTarget}`;
   }
 
@@ -257,18 +269,6 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
       scheduleNextRunAt: nextRunAt,
       updatedAt: new Date(),
     }).where(eq(dataPipelinesTable.id, pipelineId));
-  }
-
-  loadEncryptionKey();
-  let srcUser = "", srcPass = "", dstUser = "", dstPass = "";
-  try {
-    srcUser = srcConn.usernameEnc ? decrypt(srcConn.usernameEnc) : "";
-    srcPass = srcConn.passwordEnc ? decrypt(srcConn.passwordEnc) : "";
-    dstUser = dstConn.usernameEnc ? decrypt(dstConn.usernameEnc) : "";
-    dstPass = dstConn.passwordEnc ? decrypt(dstConn.passwordEnc) : "";
-  } catch {
-    await db.update(dataJobsTable).set({ status: "failed", errorMessage: "Failed to decrypt credentials", finishedAt: new Date() }).where(eq(dataJobsTable.id, job.id));
-    return { success: false, error: "Failed to decrypt credentials", jobId: job.id };
   }
 
   const mappings = await db

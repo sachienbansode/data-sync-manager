@@ -260,7 +260,23 @@ router.put("/admin/pipelines/:id/mappings", authenticate, requireRole("Admin"), 
   res.json(saved);
 });
 
-// ── Shared helper: resolve columns — engine-aware ────────────────────────────
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Return the effective schema name for a connection.
+ * Oracle has no "public" schema — default to the username (upper-cased).
+ * All other engines default to "public".
+ */
+function defaultSchema(conn: { schemaName?: string | null; dbEngine?: string | null; usernameEnc?: string | null }): string {
+  if (conn.schemaName) return conn.schemaName;
+  if (conn.dbEngine === "oracle") {
+    loadEncryptionKey();
+    const user = conn.usernameEnc ? decrypt(conn.usernameEnc) : "";
+    return user.toUpperCase() || "PUBLIC";
+  }
+  return "public";
+}
+
 async function resolveColumns(connId: number, query: string): Promise<string[]> {
   const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, connId));
   if (!conn) throw new Error("Connection not found");
@@ -362,8 +378,7 @@ router.get("/admin/pipelines/:id/source-columns", authenticate, requireRole("Adm
       if (obj.objectType === "query") {
         q = obj.objectValue;
       } else {
-        const schema = conn.schemaName ?? "public";
-        q = `SELECT * FROM "${schema}"."${obj.objectValue}"`;
+        q = `SELECT * FROM "${defaultSchema(conn)}"."${obj.objectValue}"`;
       }
     } else if (pipeline.sourceConnectionId) {
       // Legacy: connection + table/query on pipeline itself
@@ -372,8 +387,7 @@ router.get("/admin/pipelines/:id/source-columns", authenticate, requireRole("Adm
       connId = conn.id;
       q = pipeline.sourceQuery?.trim() || "";
       if (!q && pipeline.sourceTable) {
-        const schema = conn.schemaName ?? "public";
-        q = `SELECT * FROM "${schema}"."${pipeline.sourceTable}"`;
+        q = `SELECT * FROM "${defaultSchema(conn)}"."${pipeline.sourceTable}"`;
       }
     }
 
@@ -406,15 +420,13 @@ router.get("/admin/pipelines/:id/dest-columns", authenticate, requireRole("Admin
       if (obj.objectType === "query") {
         q = obj.objectValue;
       } else {
-        const schema = conn.schemaName ?? "public";
-        q = `SELECT * FROM "${schema}"."${obj.objectValue}"`;
+        q = `SELECT * FROM "${defaultSchema(conn)}"."${obj.objectValue}"`;
       }
     } else if (pipeline.destConnectionId && pipeline.destTarget) {
       const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.destConnectionId));
       if (!conn) { res.status(400).json({ error: "Destination connection not found" }); return; }
       connId = conn.id;
-      const schema = conn.schemaName ?? "public";
-      q = `SELECT * FROM "${schema}"."${pipeline.destTarget}"`;
+      q = `SELECT * FROM "${defaultSchema(conn)}"."${pipeline.destTarget}"`;
     }
 
     if (!connId || !q) { res.status(400).json({ error: "No destination table or query configured on this pipeline" }); return; }

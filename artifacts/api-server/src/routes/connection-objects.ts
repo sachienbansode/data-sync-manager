@@ -149,9 +149,11 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
     let oraConn: import("oracledb").Connection | null = null;
     try {
       oraConn = await oracledb.getConnection({ user: username, password, connectString });
+      const oraSchema = (conn.schemaName ?? username).toUpperCase();
+      const oraTable  = obj.objectValue.toUpperCase();
       const query = obj.objectType === "query"
         ? `SELECT * FROM (${obj.objectValue}) WHERE ROWNUM <= ${limit}`
-        : `SELECT * FROM "${conn.schemaName ?? username.toUpperCase()}"."${obj.objectValue}" FETCH FIRST ${limit} ROWS ONLY`;
+        : `SELECT * FROM "${oraSchema}"."${oraTable}" FETCH FIRST ${limit} ROWS ONLY`;
       const result = await oraConn.execute(query, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
       const columns = (result.metaData ?? []).map((m: { name: string }) => m.name);
       const rows = (result.rows ?? []) as Record<string, unknown>[];

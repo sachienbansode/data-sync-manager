@@ -234,8 +234,10 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
   // Build effective source query (object-resolved or legacy)
   if (!sourceQuery && legacySourceTable) {
-    const schema = srcConn.schemaName ?? (srcConn.dbEngine === "oracle" ? srcUser.toUpperCase() : "public");
-    sourceQuery = `SELECT * FROM "${schema}"."${legacySourceTable}"`;
+    const isOracleSrc = srcConn.dbEngine === "oracle";
+    const schema = srcConn.schemaName ?? (isOracleSrc ? srcUser.toUpperCase() : "public");
+    const table  = isOracleSrc ? legacySourceTable.toUpperCase() : legacySourceTable;
+    sourceQuery = `SELECT * FROM "${schema}"."${table}"`;
   }
   if (!sourceQuery) return { success: false, error: "No source table or query configured" };
 

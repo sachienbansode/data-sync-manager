@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,10 +9,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Progress } from "@/components/ui/progress";
 import {
   Loader2, Plus, Pencil, Trash2, GitBranch, ArrowRight, Database, Cloud,
   FolderOpen, Server, CheckCircle, Play, PauseCircle, Settings2,
   CalendarClock, History, XCircle, ChevronDown, ChevronUp, User, Info, Shuffle,
+  CircleDot, Circle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getAccessToken } from "@/lib/auth";
@@ -77,6 +79,28 @@ interface RunJob {
   finishedAt: string | null;
   createdAt: string;
 }
+
+interface JobProgress {
+  jobId: number;
+  pipelineId: number;
+  step: string;
+  stepNum: number;
+  rowsRead: number;
+  rowsWritten: number;
+  batchNum: number;
+  pct: number;
+  done: boolean;
+  error?: string;
+}
+
+const PROGRESS_STEPS = [
+  { num: 1, label: "Initializing" },
+  { num: 2, label: "Reflecting schema" },
+  { num: 3, label: "Connecting" },
+  { num: 4, label: "Reading source" },
+  { num: 5, label: "Transferring" },
+  { num: 6, label: "Complete" },
+];
 
 const ENGINE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   postgresql: Database, mysql: Database, mssql: Server, oracle: Server,
@@ -143,6 +167,10 @@ export default function Workflow() {
   const [cronPreset, setCronPreset] = useState("");
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [runningId, setRunningId] = useState<number | null>(null);
+  const [progressPipeline, setProgressPipeline] = useState<Pipeline | null>(null);
+  const [progressData, setProgressData] = useState<JobProgress | null>(null);
+  const [progressResult, setProgressResult] = useState<{ success: boolean; recordCount?: number; error?: string } | null>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [historyPipeline, setHistoryPipeline] = useState<Pipeline | null>(null);
   const [historyJobs, setHistoryJobs] = useState<RunJob[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -291,23 +319,50 @@ export default function Workflow() {
     }
   }
 
+  function closeProgress() {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setProgressPipeline(null);
+    setProgressData(null);
+    setProgressResult(null);
+  }
+
   async function runPipeline(p: Pipeline) {
     setRunningId(p.id);
+    setProgressPipeline(p);
+    setProgressResult(null);
+    setProgressData({ jobId: 0, pipelineId: p.id, step: "Initializing", stepNum: 1, rowsRead: 0, rowsWritten: 0, batchNum: 0, pct: 2, done: false });
+
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`${apiBase}/admin/pipelines/${p.id}/progress`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) {
+          const d = await res.json();
+          if (d) setProgressData(d);
+        }
+      } catch { /* ignore */ }
+    }, 1500);
+
     try {
       const res = await fetch(`${apiBase}/admin/pipelines/${p.id}/run`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       });
       const data = await res.json();
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       if (data.success) {
         const n = data.recordCount ?? 0;
-        toast.success(`"${p.name}" completed — ${n.toLocaleString()} row${n !== 1 ? "s" : ""} transferred`);
+        setProgressData(prev => prev ? { ...prev, step: "Complete", stepNum: 6, pct: 100, rowsWritten: n, done: true } : prev);
+        setProgressResult({ success: true, recordCount: n });
+        load();
       } else {
-        toast.error(`Run failed: ${data.error}`);
+        setProgressData(prev => prev ? { ...prev, step: "Failed", done: true } : prev);
+        setProgressResult({ success: false, error: data.error });
       }
-      load();
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Run failed");
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+      setProgressData(prev => prev ? { ...prev, step: "Failed", done: true } : prev);
+      setProgressResult({ success: false, error: err instanceof Error ? err.message : "Run failed" });
     } finally {
       setRunningId(null);
     }
@@ -863,6 +918,95 @@ export default function Workflow() {
               {editId ? "Update Pipeline" : "Create Pipeline"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Pipeline run progress dialog */}
+      <Dialog open={!!progressPipeline} onOpenChange={(open) => { if (!open && progressData?.done) closeProgress(); }}>
+        <DialogContent className="max-w-md" onInteractOutside={e => { if (!progressData?.done) e.preventDefault(); }}>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              {progressData?.done
+                ? progressResult?.success
+                  ? <><CheckCircle className="h-5 w-5 text-emerald-500" /> Run Complete</>
+                  : <><XCircle className="h-5 w-5 text-destructive" /> Run Failed</>
+                : <><Loader2 className="h-5 w-5 animate-spin text-primary" /> Running Pipeline…</>
+              }
+            </DialogTitle>
+            <DialogDescription className="truncate">{progressPipeline?.name}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-5 py-1">
+            {/* Step breadcrumbs */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {PROGRESS_STEPS.map((s, i) => {
+                const done  = (progressData?.stepNum ?? 0) > s.num || (progressData?.done && progressResult?.success);
+                const active = (progressData?.stepNum ?? 0) === s.num && !progressData?.done;
+                const failed = progressData?.done && !progressResult?.success && (progressData?.stepNum ?? 0) === s.num;
+                return (
+                  <div key={s.num} className="flex items-center gap-1">
+                    {i > 0 && <div className="w-3 h-px bg-muted-foreground/30" />}
+                    <div className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors ${
+                      failed  ? "bg-destructive/10 border-destructive/30 text-destructive" :
+                      done    ? "bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-800 dark:text-emerald-400" :
+                      active  ? "bg-primary/10 border-primary/30 text-primary font-medium" :
+                               "bg-muted/30 border-transparent text-muted-foreground"
+                    }`}>
+                      {failed  ? <XCircle className="h-3 w-3" /> :
+                       done    ? <CheckCircle className="h-3 w-3" /> :
+                       active  ? <CircleDot className="h-3 w-3" /> :
+                                 <Circle className="h-3 w-3" />}
+                      <span>{s.label}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span className="font-medium">
+                  {progressData?.done && progressResult?.success ? "Complete" : progressData?.step ?? "Initializing"}
+                </span>
+                <span className="tabular-nums font-semibold text-foreground">{progressData?.pct ?? 2}%</span>
+              </div>
+              <Progress value={progressData?.pct ?? 2} className="h-2" />
+            </div>
+
+            {/* Live stats */}
+            {(progressData?.rowsRead ?? 0) > 0 && (
+              <div className="rounded-md border bg-muted/30 px-3 py-2.5 grid grid-cols-2 gap-y-1 text-sm">
+                <div className="text-muted-foreground">Rows read</div>
+                <div className="font-medium tabular-nums text-right">{(progressData?.rowsRead ?? 0).toLocaleString()}</div>
+                <div className="text-muted-foreground">Rows written</div>
+                <div className="font-medium tabular-nums text-right">{(progressData?.rowsWritten ?? 0).toLocaleString()}</div>
+                {(progressData?.batchNum ?? 0) > 0 && <>
+                  <div className="text-muted-foreground">Batch</div>
+                  <div className="font-medium tabular-nums text-right">#{progressData?.batchNum}</div>
+                </>}
+              </div>
+            )}
+
+            {/* Result summary */}
+            {progressResult?.success && (
+              <div className="rounded-md bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 p-3 text-sm text-emerald-700 dark:text-emerald-400">
+                <span className="font-semibold">{(progressResult.recordCount ?? 0).toLocaleString()}</span> rows transferred successfully.
+              </div>
+            )}
+            {progressResult && !progressResult.success && (
+              <div className="rounded-md bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+                <p className="font-medium mb-0.5">Error</p>
+                <p className="font-mono text-xs break-words">{progressResult.error}</p>
+              </div>
+            )}
+          </div>
+
+          {progressData?.done && (
+            <DialogFooter>
+              <Button onClick={closeProgress}>Close</Button>
+            </DialogFooter>
+          )}
         </DialogContent>
       </Dialog>
 

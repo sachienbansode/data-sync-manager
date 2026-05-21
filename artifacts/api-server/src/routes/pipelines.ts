@@ -7,7 +7,7 @@ import {
 } from "@workspace/db";
 import { authenticate, requireRole } from "../middlewares/authenticate";
 import { decrypt, loadEncryptionKey } from "../lib/crypto";
-import { registerPipelineSchedule, cancelPipelineSchedule, runPipelineById, isPipelineRunning } from "../scheduler";
+import { registerPipelineSchedule, cancelPipelineSchedule, runPipelineById, isPipelineRunning, getJobProgress } from "../scheduler";
 
 const { Pool } = pg;
 const router: IRouter = Router();
@@ -437,6 +437,12 @@ router.get("/admin/pipelines/:id/dest-columns", authenticate, requireRole("Admin
     const msg = err instanceof Error ? err.message : "Failed to fetch columns";
     res.status(500).json({ error: msg });
   }
+});
+
+// GET /api/admin/pipelines/:id/progress — live progress for a running pipeline
+router.get("/admin/pipelines/:id/progress", authenticate, requireRole("Admin"), (req, res) => {
+  const id = parseInt(String(req.params.id));
+  res.json(getJobProgress(id) ?? null);
 });
 
 // POST /api/admin/pipelines/:id/run — execute pipeline via Python worker

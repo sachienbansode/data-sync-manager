@@ -19,6 +19,58 @@ import { resolve as pathResolve } from "path";
 
 const CONSECUTIVE_FAILURE_THRESHOLD = 3;
 
+// ── Live pipeline progress (in-memory, keyed by pipelineId) ─────────────────
+export interface JobProgress {
+  jobId: number;
+  pipelineId: number;
+  step: string;
+  stepNum: number;
+  rowsRead: number;
+  rowsWritten: number;
+  batchNum: number;
+  pct: number;
+  done: boolean;
+  error?: string;
+}
+
+const activeProgress = new Map<number, JobProgress>();
+
+export function getJobProgress(pipelineId: number): JobProgress | null {
+  return activeProgress.get(pipelineId) ?? null;
+}
+
+function parseProgressLine(line: string, p: JobProgress): void {
+  const msg = line.replace(/^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\]\s*/, "");
+  if (!msg) return;
+  if (msg.includes("[PRE-SQL]") && !msg.includes("Skipped")) {
+    p.step = "Running pre-SQL"; p.stepNum = 1; p.pct = Math.max(p.pct, 5);
+  } else if (msg.includes("[REFLECT]")) {
+    p.step = "Reflecting schema"; p.stepNum = 2; p.pct = Math.max(p.pct, 12);
+  } else if (msg.includes("[DEST] Opening")) {
+    p.step = "Connecting to destination"; p.stepNum = 3; p.pct = Math.max(p.pct, 20);
+  } else if (
+    msg.includes("[SRC]") &&
+    (msg.includes("Oracle") || msg.includes("Executing") || msg.includes("Streaming") || msg.includes("server-side"))
+  ) {
+    p.step = "Reading source data"; p.stepNum = 4; p.pct = Math.max(p.pct, 26);
+  } else if (/Batch #\d+:/.test(msg)) {
+    const m = msg.match(/Batch #(\d+):[^(]*\(totals src=([\d,]+)[^d]*dst=([\d,]+)\)/);
+    if (m) {
+      p.batchNum   = parseInt(m[1]);
+      p.rowsRead   = parseInt(m[2].replace(/,/g, ""));
+      p.rowsWritten = parseInt(m[3].replace(/,/g, ""));
+      p.step = "Transferring data"; p.stepNum = 5;
+      p.pct = Math.min(26 + p.batchNum * 4, 88);
+    }
+  } else if (msg.includes("[POST-SQL]") && !msg.includes("Skipped")) {
+    p.step = "Running post-SQL"; p.stepNum = 5; p.pct = Math.max(p.pct, 92);
+  } else if (msg.includes("cursor closed") || msg.includes("[SRC] Source")) {
+    p.pct = Math.max(p.pct, 90);
+  } else if (msg.startsWith("FATAL:")) {
+    p.step = "Failed"; p.error = msg.replace("FATAL: ", ""); p.done = true;
+  }
+}
+
 export function computeNextRunAt(cronExpression: string): Date | null {
   try {
     return CronExpressionParser.parse(cronExpression).next().toDate();
@@ -242,14 +294,21 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
   if (!sourceQuery) return { success: false, error: "No source table or query configured" };
 
   // Build schema-qualified destTarget so the Python worker always receives "schema.table"
+  const isDstOracle = dstConn.dbEngine === "oracle";
   if (destObjectValue !== null) {
     // Object-based: qualify plain table name with the destination connection's schema
-    const schema = dstConn.schemaName ?? (dstConn.dbEngine === "oracle" ? dstUser.toUpperCase() : "public");
-    destTarget = `${schema}.${destObjectValue}`;
+    const schema = dstConn.schemaName ?? (isDstOracle ? dstUser.toUpperCase() : "public");
+    const table  = isDstOracle ? destObjectValue.toUpperCase() : destObjectValue;
+    destTarget = `${schema}.${table}`;
   } else if (destTarget && !destTarget.includes(".")) {
     // Legacy plain table name: qualify with connection schema
-    const schema = dstConn.schemaName ?? (dstConn.dbEngine === "oracle" ? dstUser.toUpperCase() : "public");
-    destTarget = `${schema}.${destTarget}`;
+    const schema = dstConn.schemaName ?? (isDstOracle ? dstUser.toUpperCase() : "public");
+    const table  = isDstOracle ? destTarget.toUpperCase() : destTarget;
+    destTarget = `${schema}.${table}`;
+  } else if (destTarget && isDstOracle) {
+    // Already schema-qualified but may be lowercase — uppercase both parts for Oracle
+    const [s, ...rest] = destTarget.split(".");
+    destTarget = `${s.toUpperCase()}.${rest.join(".").toUpperCase()}`;
   }
 
   if (!destTarget) return { success: false, error: "Destination table not configured" };
@@ -301,6 +360,15 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
   const workerPath = getWorkerPath();
 
+  // Initialise in-memory progress record
+  const progress: JobProgress = {
+    jobId: job.id, pipelineId,
+    step: "Initializing", stepNum: 1,
+    rowsRead: 0, rowsWritten: 0, batchNum: 0,
+    pct: 2, done: false,
+  };
+  activeProgress.set(pipelineId, progress);
+
   return new Promise((resolvePromise) => {
     const child = spawn(process.env["PYTHON_BIN"] ?? "/home/ubuntu/etl_env/bin/python3", [workerPath], { stdio: ["pipe", "pipe", "pipe"] });
     child.stdin.write(JSON.stringify(workerConfig));
@@ -308,8 +376,19 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
 
     let stdout = "";
     let stderr = "";
+    let stderrLineBuf = "";
     child.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-    child.stderr.on("data", (d: Buffer) => { stderr += d.toString(); });
+    child.stderr.on("data", (d: Buffer) => {
+      const chunk = d.toString();
+      stderr += chunk;
+      stderrLineBuf += chunk;
+      let nl: number;
+      while ((nl = stderrLineBuf.indexOf("\n")) !== -1) {
+        const line = stderrLineBuf.slice(0, nl);
+        stderrLineBuf = stderrLineBuf.slice(nl + 1);
+        parseProgressLine(line, progress);
+      }
+    });
 
     child.on("close", async (code) => {
       let result: { success: boolean; recordCount?: number; sourceRecordCount?: number; error?: string };
@@ -364,6 +443,9 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
         }
 
         logger.info({ pipelineId, jobId: job.id, recordCount: rc, sourceRecordCount: srcRc }, "Pipeline run completed");
+        progress.step = "Complete"; progress.stepNum = 6; progress.pct = 100;
+        progress.rowsWritten = rc; progress.rowsRead = srcRc; progress.done = true;
+        setTimeout(() => activeProgress.delete(pipelineId), 30_000);
         resolvePromise({ success: true, recordCount: rc, sourceRecordCount: srcRc, jobId: job.id });
       } else {
         const rawErr  = result.error ?? "Unknown error";
@@ -401,6 +483,8 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
         }
 
         logger.error({ pipelineId, jobId: job.id, errMsg }, "Pipeline run failed");
+        progress.step = "Failed"; progress.done = true; progress.error = errMsg;
+        setTimeout(() => activeProgress.delete(pipelineId), 30_000);
         resolvePromise({ success: false, error: errMsg, jobId: job.id });
       }
     });
@@ -408,6 +492,8 @@ async function _executePipeline(pipelineId: number, triggeredBySchedule: boolean
     child.on("error", async (err) => {
       const msg = err.message;
       await db.update(dataJobsTable).set({ status: "failed", errorMessage: msg, finishedAt: new Date() }).where(eq(dataJobsTable.id, job.id));
+      progress.step = "Failed"; progress.done = true; progress.error = msg;
+      setTimeout(() => activeProgress.delete(pipelineId), 30_000);
       resolvePromise({ success: false, error: msg, jobId: job.id });
     });
   });

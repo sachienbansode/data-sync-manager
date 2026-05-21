@@ -138,34 +138,44 @@ router.post("/admin/connection-objects/:id/preview", authenticate, requireRole("
     return;
   }
 
-  const key = loadEncryptionKey();
-  const username = conn.usernameEnc ? decrypt(conn.usernameEnc, key) : "";
-  const password = conn.passwordEnc ? decrypt(conn.passwordEnc, key) : "";
-
   // Oracle — use oracledb thin mode
   if (conn.dbEngine === "oracle") {
-    const oracledb = (await import("oracledb")).default;
-    const connectString = `${conn.host}:${conn.port ?? 1521}/${conn.dbName ?? "ORCL"}`;
     let oraConn: import("oracledb").Connection | null = null;
     try {
+      const key = loadEncryptionKey();
+      const username = conn.usernameEnc ? decrypt(conn.usernameEnc, key) : "";
+      const password = conn.passwordEnc ? decrypt(conn.passwordEnc, key) : "";
+      const oracledb = (await import("oracledb")).default;
+      const connectString = `${conn.host}:${conn.port ?? 1521}/${conn.dbName ?? "ORCL"}`;
+      process.stdout.write(`[Oracle preview] connId=${conn.id} objId=${obj.id} schema=${conn.schemaName ?? "(null)"} obj=${obj.objectValue} connectString=${connectString}\n`);
       oraConn = await oracledb.getConnection({ user: username, password, connectString });
       const oraSchema = (conn.schemaName ?? username).toUpperCase();
       const oraTable  = obj.objectValue.toUpperCase();
       const query = obj.objectType === "query"
         ? `SELECT * FROM (${obj.objectValue}) WHERE ROWNUM <= ${limit}`
         : `SELECT * FROM "${oraSchema}"."${oraTable}" FETCH FIRST ${limit} ROWS ONLY`;
+      process.stdout.write(`[Oracle preview] executing: ${query}\n`);
       const result = await oraConn.execute(query, [], { outFormat: oracledb.OUT_FORMAT_OBJECT });
       const columns = (result.metaData ?? []).map((m: { name: string }) => m.name);
       const rows = (result.rows ?? []) as Record<string, unknown>[];
       res.json({ columns, rows, rowCount: rows.length });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Oracle query failed";
-      console.error(`[Oracle preview] connId=${conn.id} objId=${obj.id} user=${conn.usernameEnc ? "(set)" : "(empty)"} schema=${conn.schemaName ?? "(null)"} obj=${obj.objectValue} error: ${msg}`);
+      process.stdout.write(`[Oracle preview ERROR] connId=${conn.id} objId=${obj.id} error: ${msg}\n`);
       res.status(500).json({ error: msg });
     } finally {
       await oraConn?.close().catch(() => {});
     }
     return;
+  }
+
+  let username: string, password: string;
+  try {
+    const key = loadEncryptionKey();
+    username = conn.usernameEnc ? decrypt(conn.usernameEnc, key) : "";
+    password = conn.passwordEnc ? decrypt(conn.passwordEnc, key) : "";
+  } catch (err: unknown) {
+    res.status(500).json({ error: "Failed to decrypt credentials" }); return;
   }
 
   const buildQuery = () => {

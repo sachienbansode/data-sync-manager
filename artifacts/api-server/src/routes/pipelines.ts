@@ -268,13 +268,19 @@ router.put("/admin/pipelines/:id/mappings", authenticate, requireRole("Admin"), 
  * All other engines default to "public".
  */
 function defaultSchema(conn: { schemaName?: string | null; dbEngine?: string | null; usernameEnc?: string | null }): string {
-  if (conn.schemaName) return conn.schemaName;
-  if (conn.dbEngine === "oracle") {
+  const isOracle = conn.dbEngine === "oracle" || conn.dbEngine === "oracledb";
+  if (conn.schemaName) return isOracle ? conn.schemaName.toUpperCase() : conn.schemaName;
+  if (isOracle) {
     loadEncryptionKey();
     const user = conn.usernameEnc ? decrypt(conn.usernameEnc) : "";
     return user.toUpperCase() || "PUBLIC";
   }
   return "public";
+}
+
+/** For Oracle: uppercase the identifier; for others leave as-is */
+function oraIdent(engine: string | null | undefined, val: string): string {
+  return (engine === "oracle" || engine === "oracledb") ? val.toUpperCase() : val;
 }
 
 async function resolveColumns(connId: number, query: string): Promise<string[]> {
@@ -378,7 +384,7 @@ router.get("/admin/pipelines/:id/source-columns", authenticate, requireRole("Adm
       if (obj.objectType === "query") {
         q = obj.objectValue;
       } else {
-        q = `SELECT * FROM "${defaultSchema(conn)}"."${obj.objectValue}"`;
+        q = `SELECT * FROM "${defaultSchema(conn)}"."${oraIdent(conn.dbEngine, obj.objectValue)}"`;
       }
     } else if (pipeline.sourceConnectionId) {
       // Legacy: connection + table/query on pipeline itself
@@ -387,7 +393,7 @@ router.get("/admin/pipelines/:id/source-columns", authenticate, requireRole("Adm
       connId = conn.id;
       q = pipeline.sourceQuery?.trim() || "";
       if (!q && pipeline.sourceTable) {
-        q = `SELECT * FROM "${defaultSchema(conn)}"."${pipeline.sourceTable}"`;
+        q = `SELECT * FROM "${defaultSchema(conn)}"."${oraIdent(conn.dbEngine, pipeline.sourceTable)}"`;
       }
     }
 
@@ -420,13 +426,17 @@ router.get("/admin/pipelines/:id/dest-columns", authenticate, requireRole("Admin
       if (obj.objectType === "query") {
         q = obj.objectValue;
       } else {
-        q = `SELECT * FROM "${defaultSchema(conn)}"."${obj.objectValue}"`;
+        q = `SELECT * FROM "${defaultSchema(conn)}"."${oraIdent(conn.dbEngine, obj.objectValue)}"`;
       }
     } else if (pipeline.destConnectionId && pipeline.destTarget) {
       const [conn] = await db.select().from(dbConnectionsTable).where(eq(dbConnectionsTable.id, pipeline.destConnectionId));
       if (!conn) { res.status(400).json({ error: "Destination connection not found" }); return; }
       connId = conn.id;
-      q = `SELECT * FROM "${defaultSchema(conn)}"."${pipeline.destTarget}"`;
+      const rawTarget = pipeline.destTarget;
+      const [s, ...rest] = rawTarget.includes(".") ? rawTarget.split(".") : ["", rawTarget];
+      const tSchema = s || defaultSchema(conn);
+      const tTable  = oraIdent(conn.dbEngine, rest.join(".") || rawTarget);
+      q = `SELECT * FROM "${tSchema}"."${tTable}"`;
     }
 
     if (!connId || !q) { res.status(400).json({ error: "No destination table or query configured on this pipeline" }); return; }

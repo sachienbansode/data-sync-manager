@@ -5,6 +5,15 @@ import { authenticate, requireRole, requirePageAccess } from "../middlewares/aut
 import { apiKeyAuth } from "../middlewares/api-key-auth";
 import { z } from "zod";
 
+function uniqueViolationMessage(err: unknown): string | null {
+  const msg = (err as { message?: string })?.message ?? "";
+  if (!msg.includes("unique") && !msg.includes("duplicate")) return null;
+  if (msg.includes("uq_bm_branchname")) return "Branch name already exists.";
+  if (msg.includes("uq_bm_email"))      return "Email address already used by another branch.";
+  if (msg.includes("pkey") || msg.includes("branchcode")) return "Branch code already exists.";
+  return "A unique constraint was violated.";
+}
+
 const router: IRouter = Router();
 
 const MIGRATION_STATUSES = ["Migrated", "Pending", "Planned"] as const;
@@ -80,14 +89,20 @@ router.post(
     }
 
     const userEmail = (req as Request & { user?: { email?: string } }).user?.email ?? "SYSTEM";
-    const [row] = await db.insert(branchMigrationTable).values({
-      branchcode,
-      ...rest,
-      migrationDate: migrationDate ?? null,
-      createdBy: userEmail,
-      updatedBy: userEmail,
-    }).returning();
-    res.status(201).json(row);
+    try {
+      const [row] = await db.insert(branchMigrationTable).values({
+        branchcode,
+        ...rest,
+        migrationDate: migrationDate ?? null,
+        createdBy: userEmail,
+        updatedBy: userEmail,
+      }).returning();
+      res.status(201).json(row);
+    } catch (err) {
+      const msg = uniqueViolationMessage(err);
+      if (msg) { res.status(409).json({ error: msg }); return; }
+      throw err;
+    }
   },
 );
 
@@ -103,17 +118,23 @@ router.put(
     const { migrationDate, ...rest } = parsed.data;
 
     const userEmail = (req as Request & { user?: { email?: string } }).user?.email ?? "SYSTEM";
-    const [row] = await db.update(branchMigrationTable)
-      .set({
-        ...rest,
-        migrationDate: migrationDate ?? null,
-        updatedBy: userEmail,
-        updatedDatetime: new Date(),
-      })
-      .where(eq(branchMigrationTable.branchcode, branchcode))
-      .returning();
-    if (!row) { res.status(404).json({ error: "Branch not found." }); return; }
-    res.json(row);
+    try {
+      const [row] = await db.update(branchMigrationTable)
+        .set({
+          ...rest,
+          migrationDate: migrationDate ?? null,
+          updatedBy: userEmail,
+          updatedDatetime: new Date(),
+        })
+        .where(eq(branchMigrationTable.branchcode, branchcode))
+        .returning();
+      if (!row) { res.status(404).json({ error: "Branch not found." }); return; }
+      res.json(row);
+    } catch (err) {
+      const msg = uniqueViolationMessage(err);
+      if (msg) { res.status(409).json({ error: msg }); return; }
+      throw err;
+    }
   },
 );
 

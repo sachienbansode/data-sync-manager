@@ -1,13 +1,13 @@
-import { pgTable, text, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, date, timestamp, unique } from "drizzle-orm/pg-core";
 
 export const MIGRATION_STATUSES = ["Migrated", "Pending", "Planned"] as const;
 export type MigrationStatus = typeof MIGRATION_STATUSES[number];
 
 export const branchMigrationTable = pgTable("branch_migration", {
   branchcode:       text("branchcode").primaryKey().notNull(),
-  branchname:       text("branchname"),
+  branchname:       text("branchname").unique("uq_bm_branchname"),
   defaultcode:      text("defaultcode"),
-  email:            text("email"),
+  email:            text("email").unique("uq_bm_email"),
   address1:         text("address1"),
   ccity:            text("ccity"),
   npincode:         text("npincode"),

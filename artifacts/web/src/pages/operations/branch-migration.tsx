@@ -1,15 +1,14 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-  Card, CardContent, CardHeader, CardTitle, CardDescription,
+  Card, CardContent, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
@@ -28,8 +27,7 @@ import {
   Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
 } from "@/components/ui/form";
 import {
-  Loader2, Plus, Pencil, Trash2, Search, ChevronLeft, ChevronRight,
-  GitBranch, KeyRound, Eye, EyeOff, Copy, CheckCircle2,
+  Loader2, Plus, Pencil, Trash2, Search, ChevronLeft, ChevronRight, GitBranch,
 } from "lucide-react";
 import { getAccessToken } from "@/lib/auth";
 import { formatDate } from "@/lib/date";
@@ -52,16 +50,6 @@ interface BranchMigration {
   createdDatetime: string;
   updatedBy: string;
   updatedDatetime: string;
-}
-
-interface ApiKey {
-  id: number;
-  name: string;
-  keyPrefix: string;
-  isActive: boolean;
-  lastUsedAt: string | null;
-  expiresAt: string | null;
-  createdAt: string;
 }
 
 const formSchema = z.object({
@@ -112,25 +100,19 @@ export default function BranchMigration() {
   const [editRow, setEditRow]               = useState<BranchMigration | null>(null);
   const [deleteRow, setDeleteRow]           = useState<BranchMigration | null>(null);
 
-  const [showKeys, setShowKeys]   = useState(false);
-  const [copiedId, setCopiedId]   = useState<number | null>(null);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const params = new URLSearchParams({
     page: String(page),
     pageSize: String(PAGE_SIZE),
-    ...(search ? { search } : {}),
+    ...(debouncedSearch ? { search: debouncedSearch } : {}),
     ...(status !== "all" ? { status } : {}),
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ["branch-migration", search, status, page],
+    queryKey: ["branch-migration", debouncedSearch, status, page],
     queryFn:  () => apiFetch(`/api/admin/branch-migration?${params}`),
-  });
-
-  const { data: apiKeysData, isLoading: keysLoading } = useQuery<{ data: ApiKey[] }>({
-    queryKey: ["api-keys"],
-    queryFn:  () => apiFetch("/api/api-keys"),
-    enabled:  showKeys,
   });
 
   const form = useForm<FormValues>({
@@ -201,14 +183,13 @@ export default function BranchMigration() {
   const total: number            = data?.total ?? 0;
   const totalPages               = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  function handleSearchChange(v: string) { setSearch(v); setPage(1); }
-  function handleStatusChange(v: string) { setStatus(v); setPage(1); }
-
-  async function copyPrefix(key: ApiKey) {
-    await navigator.clipboard.writeText(key.keyPrefix + "...");
-    setCopiedId(key.id);
-    setTimeout(() => setCopiedId(null), 2000);
+  function handleSearchChange(v: string) {
+    setSearch(v);
+    setPage(1);
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => setDebouncedSearch(v), 400);
   }
+  function handleStatusChange(v: string) { setStatus(v); setPage(1); }
 
   return (
     <div className="space-y-6">
@@ -351,99 +332,6 @@ export default function BranchMigration() {
             </div>
           )}
         </CardContent>
-      </Card>
-
-      {/* API Keys section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between flex-wrap gap-2">
-            <div>
-              <CardTitle className="text-base flex items-center gap-2">
-                <KeyRound className="h-4 w-4 text-primary" />
-                External API Access
-              </CardTitle>
-              <CardDescription className="mt-1">
-                API keys used by integration partners to query branch migration status via{" "}
-                <code className="text-xs bg-muted px-1 py-0.5 rounded">GET /api/v1/branch-migration?branchcode=…</code>
-              </CardDescription>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => setShowKeys(v => !v)}>
-              {showKeys ? <EyeOff className="h-4 w-4 mr-2" /> : <Eye className="h-4 w-4 mr-2" />}
-              {showKeys ? "Hide Keys" : "View API Keys"}
-            </Button>
-          </div>
-        </CardHeader>
-
-        {showKeys && (
-          <CardContent>
-            {keysLoading ? (
-              <div className="flex items-center gap-2 text-muted-foreground text-sm">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading API keys…
-              </div>
-            ) : !apiKeysData?.data?.length ? (
-              <div className="text-sm text-muted-foreground">
-                No API keys found. Generate one from the{" "}
-                <a href="/links" className="underline">URL Shortener / API Keys</a> page.
-              </div>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Key Prefix</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Last Used</TableHead>
-                    <TableHead>Expires</TableHead>
-                    <TableHead>Created</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {apiKeysData.data.map((k) => (
-                    <TableRow key={k.id}>
-                      <TableCell className="font-medium">{k.name}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <code className="text-xs bg-muted px-2 py-1 rounded font-mono">{k.keyPrefix}…</code>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6"
-                            onClick={() => copyPrefix(k)}
-                          >
-                            {copiedId === k.id
-                              ? <CheckCircle2 className="h-3 w-3 text-green-500" />
-                              : <Copy className="h-3 w-3" />}
-                          </Button>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={k.isActive
-                          ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                          : "bg-muted text-muted-foreground"}>
-                          {k.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {k.lastUsedAt ? formatDate(k.lastUsedAt) : "Never"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {k.expiresAt ? formatDate(k.expiresAt) : "No expiry"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(k.createdAt)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-            <p className="text-xs text-muted-foreground mt-3">
-              Full key values are never displayed after generation. Manage keys in the{" "}
-              <a href="/links" className="underline">API Keys</a> section.
-            </p>
-          </CardContent>
-        )}
       </Card>
 
       {/* Create / Edit Dialog */}

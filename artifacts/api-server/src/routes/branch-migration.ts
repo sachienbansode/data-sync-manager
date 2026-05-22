@@ -27,7 +27,7 @@ const UpsertBody = z.object({
 router.get(
   "/admin/branch-migration",
   authenticate,
-  requirePageAccess("/operations/branch-migration"),
+  requireRole("Admin"),
   async (req, res): Promise<void> => {
     const search = (req.query.search as string | undefined)?.trim() ?? "";
     const status = req.query.status as string | undefined;

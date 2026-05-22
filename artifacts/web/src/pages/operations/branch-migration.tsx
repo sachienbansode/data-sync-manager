@@ -113,6 +113,8 @@ export default function BranchMigration() {
   const { data, isLoading } = useQuery({
     queryKey: ["branch-migration", debouncedSearch, status, page],
     queryFn:  () => apiFetch(`/api/admin/branch-migration?${params}`),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 
   const form = useForm<FormValues>({

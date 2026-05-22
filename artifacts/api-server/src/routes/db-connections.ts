@@ -477,8 +477,10 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
   if (conn.dbEngine === "mysql") {
     let mysqlSuccess = false;
     let mysqlError: string | null = null;
-    try {
-      const mysql = await import("mysql2/promise");
+
+    const mysql = await import("mysql2/promise");
+
+    async function tryMysqlConnect(sslOpts: object | false) {
       const connection = await mysql.createConnection({
         host,
         port,
@@ -486,29 +488,53 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
         user: username,
         password,
         connectTimeout: 10000,
-        ...(savedSSL ? { ssl: { rejectUnauthorized: false } } : {}),
+        ...(sslOpts ? { ssl: sslOpts } : {}),
       });
       try {
         await connection.query("SELECT 1");
-        mysqlSuccess = true;
-        steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" to database "${conn.dbName}"` });
-        steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 executed successfully — MySQL is responding" });
       } finally {
         await connection.end().catch(() => {});
       }
-    } catch (e: unknown) {
-      mysqlError = e instanceof Error ? e.message : "MySQL connection failed";
-      const isAuth = /access denied|ER_ACCESS_DENIED/i.test(mysqlError);
-      const isSSL  = /ssl|tls/i.test(mysqlError);
-      if (isAuth) {
-        steps.push({ name: "Authentication", status: "fail", detail: `${mysqlError} — check the username and password are correct.` });
-      } else if (isSSL) {
-        steps.push({ name: "Authentication", status: "fail", detail: `${mysqlError} — try toggling the SSL/TLS option.` });
-      } else {
-        steps.push({ name: "Authentication", status: "fail", detail: mysqlError });
-      }
-      steps.push({ name: "Query Test", status: "skip", detail: "Skipped — connection failed" });
     }
+
+    try {
+      // Attempt 1: respect the saved SSL flag
+      await tryMysqlConnect(savedSSL ? { rejectUnauthorized: false } : false);
+      mysqlSuccess = true;
+      steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" to database "${conn.dbName}"` });
+      steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 executed successfully — MySQL is responding" });
+    } catch (e: unknown) {
+      const firstError = e instanceof Error ? e.message : "MySQL connection failed";
+      const isCertError = /self.signed|certificate|ssl|tls/i.test(firstError);
+
+      if (isCertError && !savedSSL) {
+        // Attempt 2: server is forcing SSL with a self-signed cert — retry with verification disabled
+        steps.push({ name: "SSL Auto-Retry", status: "info", detail: "Server requires SSL with a self-signed certificate — retrying with verification disabled" });
+        try {
+          await tryMysqlConnect({ rejectUnauthorized: false });
+          mysqlSuccess = true;
+          // Persist ssl=true so future connections work without this retry
+          const newParams = { ...(conn.extraParams ?? {}), ssl: "true" };
+          await db.update(dbConnectionsTable).set({ extraParams: newParams, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
+          steps.push({ name: "Authentication", status: "success", detail: `Connected as "${username}" — SSL enabled automatically (self-signed cert accepted)` });
+          steps.push({ name: "Query Test", status: "success", detail: "SELECT 1 executed successfully — MySQL is responding" });
+        } catch (e2: unknown) {
+          mysqlError = e2 instanceof Error ? e2.message : "MySQL connection failed";
+          steps.push({ name: "Authentication", status: "fail", detail: mysqlError });
+          steps.push({ name: "Query Test", status: "skip", detail: "Skipped — connection failed" });
+        }
+      } else {
+        mysqlError = firstError;
+        const isAuth = /access denied|ER_ACCESS_DENIED/i.test(mysqlError);
+        if (isAuth) {
+          steps.push({ name: "Authentication", status: "fail", detail: `${mysqlError} — check the username and password are correct.` });
+        } else {
+          steps.push({ name: "Authentication", status: "fail", detail: mysqlError });
+        }
+        steps.push({ name: "Query Test", status: "skip", detail: "Skipped — connection failed" });
+      }
+    }
+
     await db.update(dbConnectionsTable).set({ lastTestedAt: new Date(), lastTestSuccess: mysqlSuccess, updatedAt: new Date() }).where(eq(dbConnectionsTable.id, id));
     await db.insert(auditLogsTable).values({
       userId: req.user!.sub, userEmail: req.user!.email,

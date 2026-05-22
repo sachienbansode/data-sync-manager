@@ -43,6 +43,7 @@ import EmailHubTemplates from "@/pages/email-hub/templates";
 import CommSettings from "@/pages/admin/comm-settings";
 import RpaBots from "@/pages/admin/rpa-bots";
 import RpaCredentials from "@/pages/admin/rpa-credentials";
+import BranchMigration from "@/pages/operations/branch-migration";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 import { SessionTimeoutProvider } from "@/components/session-timeout";
@@ -127,6 +128,9 @@ function Router() {
       <Route path="/a/rpa-creds"><ProtectedRoute component={RpaCredentials} path="/admin/rpa-credentials" requireRole="Admin" /></Route>
       <Route path="/admin/rpa-bots"><Redirect to="/a/rpa" /></Route>
       <Route path="/admin/rpa-credentials"><Redirect to="/a/rpa-creds" /></Route>
+
+      {/* ── Operations ── */}
+      <Route path="/ops/branch-migration"><ProtectedRoute component={BranchMigration} path="/operations/branch-migration" /></Route>
 
       {/* legacy admin redirects */}
       <Route path="/admin/db-connections"><Redirect to="/a/conn" /></Route>

@@ -16,3 +16,4 @@ export * from "./email_templates";
 export * from "./url_shortener";
 export * from "./communications";
 export * from "./rpa";
+export * from "./branch_migration";

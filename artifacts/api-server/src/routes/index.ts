@@ -27,6 +27,7 @@ import commCampaignsRouter, { initCommScheduler } from "./comm-campaigns";
 import commWebhookRouter from "./comm-webhook";
 import dataPreviewRouter from "./data-preview";
 import rpaRouter from "./rpa";
+import branchMigrationRouter from "./branch-migration";
 
 const router: IRouter = Router();
 
@@ -58,6 +59,7 @@ router.use(commCampaignsRouter);
 router.use(commWebhookRouter);
 router.use(dataPreviewRouter);
 router.use(rpaRouter);
+router.use(branchMigrationRouter);
 
 initCommScheduler();
 

@@ -1,0 +1,164 @@
+openapi: "3.0.3"
+info:
+  title: "Branch Migration API"
+  description: |
+    External API for querying branch migration status.
+    Provided by **Ananta Tech / Ashika Group**.
+
+    Use this API to check whether a specific branch has been migrated to the Data Warehouse.
+
+    ## Authentication
+    Every request must include a valid API key issued by the Ananta platform.
+    Pass the key in **one** of two ways:
+
+    ```
+    Authorization: Bearer <your-api-key>
+    ```
+    or
+    ```
+    X-Api-Key: <your-api-key>
+    ```
+
+    Contact your Ananta platform administrator to obtain an API key.
+  version: "1.0.0"
+  contact:
+    name: "Ananta Tech Support"
+
+servers:
+  - url: "https://{host}/api"
+    description: "Production API server"
+    variables:
+      host:
+        default: "your-domain.com"
+        description: "Your Ananta platform hostname"
+
+paths:
+  /v1/branch-migration:
+    get:
+      summary: "Get Branch Migration Status"
+      description: |
+        Returns the migration status and migration date for a given branch code.
+
+        **Response codes:**
+        - `200` — Branch found; returns status and date.
+        - `400` — `branchcode` parameter is missing.
+        - `401` — API key is missing, invalid, or expired.
+        - `404` — No branch record found for the given branch code.
+      operationId: "getBranchMigrationStatus"
+      tags:
+        - "Branch Migration"
+      security:
+        - ApiKeyHeader: []
+        - BearerAuth: []
+      parameters:
+        - name: branchcode
+          in: query
+          required: true
+          description: "The unique branch code to look up (max 30 characters)."
+          schema:
+            type: string
+            maxLength: 30
+            example: "BR001"
+      responses:
+        "200":
+          description: "Branch migration status retrieved successfully."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BranchMigrationResponse"
+              examples:
+                migrated:
+                  summary: "Migrated branch"
+                  value:
+                    branchcode: "BR001"
+                    migration_status: "Migrated"
+                    migration_date: "2025-03-15"
+                pending:
+                  summary: "Pending branch"
+                  value:
+                    branchcode: "BR042"
+                    migration_status: "Pending"
+                    migration_date: null
+                planned:
+                  summary: "Planned branch"
+                  value:
+                    branchcode: "BR099"
+                    migration_status: "Planned"
+                    migration_date: "2026-06-01"
+        "400":
+          description: "Bad request — branchcode parameter is missing."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "branchcode query parameter is required."
+        "401":
+          description: "Unauthorized — API key is missing, invalid, or expired."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "API key required. Pass Authorization: Bearer apk_... or X-Api-Key header."
+        "404":
+          description: "Not found — no record for the given branch code."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                error: "Branch code 'BR999' not found."
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-Api-Key
+      description: "Pass your API key in the X-Api-Key header."
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: "Pass your API key as a Bearer token: Authorization: Bearer apk_..."
+
+  schemas:
+    BranchMigrationResponse:
+      type: object
+      required:
+        - branchcode
+        - migration_status
+        - migration_date
+      properties:
+        branchcode:
+          type: string
+          maxLength: 30
+          description: "The branch code."
+          example: "BR001"
+        migration_status:
+          type: string
+          enum:
+            - "Migrated"
+            - "Pending"
+            - "Planned"
+          description: |
+            Current migration status of the branch:
+            - **Migrated** — Branch has been fully migrated to the Data Warehouse.
+            - **Pending** — Branch is awaiting migration.
+            - **Planned** — Branch migration is scheduled.
+          example: "Migrated"
+        migration_date:
+          type: string
+          format: date
+          nullable: true
+          description: "Date the migration was completed or is planned (ISO 8601 date, YYYY-MM-DD). Null if not set."
+          example: "2025-03-15"
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: "Human-readable error message."

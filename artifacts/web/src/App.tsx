@@ -44,6 +44,7 @@ import CommSettings from "@/pages/admin/comm-settings";
 import RpaBots from "@/pages/admin/rpa-bots";
 import RpaCredentials from "@/pages/admin/rpa-credentials";
 import BranchMigration from "@/pages/operations/branch-migration";
+import ApiKeys from "@/pages/admin/api-keys";
 import { ProtectedRoute } from "@/components/protected-route";
 import { FaviconSync } from "@/components/favicon-sync";
 import { SessionTimeoutProvider } from "@/components/session-timeout";
@@ -128,6 +129,9 @@ function Router() {
       <Route path="/a/rpa-creds"><ProtectedRoute component={RpaCredentials} path="/admin/rpa-credentials" requireRole="Admin" /></Route>
       <Route path="/admin/rpa-bots"><Redirect to="/a/rpa" /></Route>
       <Route path="/admin/rpa-credentials"><Redirect to="/a/rpa-creds" /></Route>
+
+      {/* ── API Keys ── */}
+      <Route path="/a/api-keys"><ProtectedRoute component={ApiKeys} path="/admin/api-keys" requireRole="Admin" skipPermissionCheck /></Route>
 
       {/* ── Operations ── */}
       <Route path="/ops/branch-migration"><ProtectedRoute component={BranchMigration} path="/operations/branch-migration" requireRole="Admin" skipPermissionCheck /></Route>

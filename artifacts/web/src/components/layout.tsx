@@ -97,6 +97,7 @@ const adminGroups: NavGroup[] = [
       { href: "/audit", label: "Audit Log", icon: FileText, permissionPath: "/audit-log" },
       { href: "/a/logins", label: "Login Report", icon: LogIn, permissionPath: "/admin/login-report" },
       { href: "/a/pii", label: "PII Permissions", icon: Database, permissionPath: "/admin/pii-permissions" },
+      { href: "/a/api-keys", label: "API Keys", icon: KeyRound, adminOnly: true },
     ],
   },
   {

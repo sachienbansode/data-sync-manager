@@ -40,6 +40,7 @@ export const ALL_PAGES = [
   { path: "/admin/rpa-bots", name: "RPA Bots" },
   { path: "/admin/rpa-credentials", name: "RPA Credentials" },
   { path: "/operations/branch-migration", name: "Branch Migration" },
+  { path: "/admin/api-keys", name: "API Keys" },
 ];
 
 const CreateRoleBody = z.object({

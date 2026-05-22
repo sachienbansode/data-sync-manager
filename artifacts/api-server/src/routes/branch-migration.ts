@@ -173,8 +173,8 @@ router.get(
     const [row] = await db
       .select({
         branchcode:      branchMigrationTable.branchcode,
+        branchname:      branchMigrationTable.branchname,
         migrationStatus: branchMigrationTable.migrationStatus,
-        migrationDate:   branchMigrationTable.migrationDate,
       })
       .from(branchMigrationTable)
       .where(eq(branchMigrationTable.branchcode, branchcode));
@@ -185,9 +185,9 @@ router.get(
     }
 
     res.json({
-      branchcode:       row.branchcode,
+      branch_code:      row.branchcode,
+      branch_name:      row.branchname ?? null,
       migration_status: row.migrationStatus,
-      migration_date:   row.migrationDate ?? null,
     });
   },
 );

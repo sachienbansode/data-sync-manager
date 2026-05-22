@@ -1,161 +1,122 @@
 {
   "info": {
     "name": "Branch Migration API — Ananta Tech",
-    "_postman_id": "bm-ananta-2026",
-    "description": "Complete API reference for the Branch Migration feature.\n\n## Setup\n1. Import this collection into Postman.\n2. Create an **Environment** (e.g. `Ananta Dev`) with the variables listed below.\n3. Set `base_url` to your server address.\n4. Set either `jwt_token` (for Admin CRUD calls) **or** `api_key` (for the external look-up call).\n\n## Variables\n| Variable | Example | Notes |\n|---|---|---|\n| `base_url` | `http://13.233.106.37` | No trailing slash |\n| `jwt_token` | `eyJhbGci...` | JWT from the platform login; used in Admin routes |\n| `api_key` | `apk_xxxxxxxxxxxxxxxx` | API key from Admin → API Keys page; used in v1 route |\n| `branchcode` | `BR001` | Branch code used in PUT / DELETE / v1 requests |\n\n## Authentication summary\n| Route group | Header |\n|---|---|\n| `GET/POST/PUT/DELETE /api/admin/branch-migration` | `Authorization: Bearer {{jwt_token}}` |\n| `GET /api/v1/branch-migration` | `Authorization: Bearer {{api_key}}` **or** `X-Api-Key: {{api_key}}` |",
+    "_postman_id": "bm-ananta-2026-v2",
+    "description": "External API to check the migration status of a branch.\n\n## How to use\n1. Import this collection into Postman.\n2. Set the two collection variables (click the collection → Variables tab):\n   - `base_url` — your server base URL, e.g. `http://13.233.106.37`\n   - `api_key`  — your API key (starts with `apk_`), obtained from Admin → API Keys\n3. Open the **Get Branch Migration Status** request, set `branchcode` in the query params, and click **Send**.\n\n## Authentication\nPass your API key in the `Authorization` header as a Bearer token:\n```\nAuthorization: Bearer apk_xxxxxxxxxxxxxxxx\n```\nAlternatively you can use the `X-Api-Key` header with the same value.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url",   "value": "http://13.233.106.37",  "type": "string" },
-    { "key": "jwt_token",  "value": "<paste-your-jwt-here>", "type": "string" },
-    { "key": "api_key",    "value": "apk_<your-api-key>",    "type": "string" },
-    { "key": "branchcode", "value": "BR001",                 "type": "string" }
+    {
+      "key": "base_url",
+      "value": "http://13.233.106.37",
+      "type": "string",
+      "description": "Server base URL — no trailing slash"
+    },
+    {
+      "key": "api_key",
+      "value": "apk_<paste-your-api-key-here>",
+      "type": "string",
+      "description": "API key from Admin → API Keys page"
+    }
   ],
   "item": [
     {
-      "name": "Admin CRUD (JWT auth)",
-      "description": "Requires Admin role. Pass the JWT token obtained after login as a Bearer token.",
-      "item": [
-        {
-          "name": "List Branches",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{jwt_token}}", "type": "text" }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/admin/branch-migration?page=1&pageSize=20",
-              "host": ["{{base_url}}"],
-              "path": ["api", "admin", "branch-migration"],
-              "query": [
-                { "key": "page",     "value": "1",  "description": "Page number (default: 1)" },
-                { "key": "pageSize", "value": "20", "description": "Records per page, max 100 (default: 20)" },
-                { "key": "search",   "value": "",   "description": "Search by branch code, name, or city", "disabled": true },
-                { "key": "status",   "value": "",   "description": "Filter by status: Migrated | Pending | Planned", "disabled": true }
-              ]
-            },
-            "description": "Returns a paginated list of branches sorted by most-recently updated first.\n\n**Query parameters**\n- `page` — page number (default 1)\n- `pageSize` — records per page, 1–100 (default 20)\n- `search` — optional; filters on branch code, branch name, or city\n- `status` — optional; one of `Migrated`, `Pending`, `Planned`\n\n**Success response (200)**\n```json\n{\n  \"data\": [\n    {\n      \"branchcode\":      \"ONL\",\n      \"branchname\":      \"Direct-Online\",\n      \"defaultcode\":     null,\n      \"email\":           null,\n      \"address1\":        null,\n      \"ccity\":           null,\n      \"npincode\":        null,\n      \"migrationStatus\": \"Migrated\",\n      \"migrationDate\":   \"2026-01-15\",\n      \"createdBy\":       \"admin@example.com\",\n      \"createdDatetime\": \"2026-05-22T10:00:00.000Z\",\n      \"updatedBy\":       \"admin@example.com\",\n      \"updatedDatetime\": \"2026-05-22T10:00:00.000Z\"\n    }\n  ],\n  \"total\":    2,\n  \"page\":     1,\n  \"pageSize\": 20\n}\n```"
-          },
-          "response": []
-        },
-        {
-          "name": "Create Branch",
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Authorization",  "value": "Bearer {{jwt_token}}", "type": "text" },
-              { "key": "Content-Type",   "value": "application/json",     "type": "text" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"branchcode\":      \"BR001\",\n  \"branchname\":      \"Mumbai Main Branch\",\n  \"defaultcode\":     \"MUM\",\n  \"email\":           \"mumbai@example.com\",\n  \"address1\":        \"123 Fort Street\",\n  \"ccity\":           \"Mumbai\",\n  \"npincode\":        \"400001\",\n  \"migrationStatus\": \"Pending\",\n  \"migrationDate\":   null\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{base_url}}/api/admin/branch-migration",
-              "host": ["{{base_url}}"],
-              "path": ["api", "admin", "branch-migration"]
-            },
-            "description": "Creates a new branch record.\n\n**Required fields**\n- `branchcode` — unique branch code (max 30 chars)\n- `branchname` — branch name (max 200 chars)\n- `migrationStatus` — one of `Migrated`, `Pending`, `Planned` (default: `Pending`)\n\n**Optional fields**\n- `defaultcode`, `email`, `address1`, `ccity`, `npincode`, `migrationDate`\n\n**Success response (201)** — returns the created record.\n\n**Error responses**\n- `400` — validation failed (missing required fields or invalid format)\n- `409` — branch code already exists / branch name already taken / email already used"
-          },
-          "response": []
-        },
-        {
-          "name": "Update Branch",
-          "request": {
-            "method": "PUT",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{jwt_token}}", "type": "text" },
-              { "key": "Content-Type",  "value": "application/json",     "type": "text" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"branchname\":      \"Mumbai Main Branch (Updated)\",\n  \"defaultcode\":     \"MUM\",\n  \"email\":           \"mumbai.updated@example.com\",\n  \"address1\":        \"456 Marine Drive\",\n  \"ccity\":           \"Mumbai\",\n  \"npincode\":        \"400002\",\n  \"migrationStatus\": \"Migrated\",\n  \"migrationDate\":   \"2026-05-22\"\n}",
-              "options": { "raw": { "language": "json" } }
-            },
-            "url": {
-              "raw": "{{base_url}}/api/admin/branch-migration/{{branchcode}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "admin", "branch-migration", "{{branchcode}}"]
-            },
-            "description": "Updates an existing branch. The branch code is supplied in the URL path and **cannot be changed**.\n\n**Path parameter**\n- `:branchcode` — the branch code to update (set `{{branchcode}}` variable)\n\n**Body** — same fields as Create, except `branchcode` is not included.\n\n**Success response (200)** — returns the updated record.\n\n**Error responses**\n- `400` — validation failed\n- `404` — branch code not found\n- `409` — branch name or email already used by another branch"
-          },
-          "response": []
-        },
-        {
-          "name": "Delete Branch",
-          "request": {
-            "method": "DELETE",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{jwt_token}}", "type": "text" }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/admin/branch-migration/{{branchcode}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "admin", "branch-migration", "{{branchcode}}"]
-            },
-            "description": "Permanently deletes a branch record.\n\n**Path parameter**\n- `:branchcode` — the branch code to delete (set `{{branchcode}}` variable)\n\n**Success response (200)**\n```json\n{ \"ok\": true }\n```\n\n**Error responses**\n- `404` — branch code not found"
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "External API (API-Key auth)",
-      "description": "Intended for external systems to look up the migration status of a branch.\nAuthenticate with an API key — either `Authorization: Bearer apk_...` header or `X-Api-Key: apk_...` header.\n\nAPI keys are managed by Admins at: Admin → API Keys.",
-      "item": [
-        {
-          "name": "Get Branch Migration Status",
-          "request": {
-            "method": "GET",
-            "header": [
-              { "key": "Authorization", "value": "Bearer {{api_key}}", "type": "text",   "description": "Use either this header..." },
-              { "key": "X-Api-Key",     "value": "{{api_key}}",        "type": "text",   "description": "...or this one (both work)", "disabled": true }
-            ],
-            "url": {
-              "raw": "{{base_url}}/api/v1/branch-migration?branchcode={{branchcode}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "branch-migration"],
-              "query": [
-                { "key": "branchcode", "value": "{{branchcode}}", "description": "The branch code to look up (required)" }
-              ]
-            },
-            "description": "Returns the current migration status and migration date for a given branch code.\n\nDesigned for external systems (CBS, ERPs, etc.) to query migration progress without needing a user login.\n\n**Query parameter**\n- `branchcode` *(required)* — the branch code to look up\n\n**Success response (200)**\n```json\n{\n  \"branchcode\":       \"ONL\",\n  \"migration_status\": \"Migrated\",\n  \"migration_date\":   \"2026-01-15\"\n}\n```\n`migration_date` is `null` if not set.\n\n**Error responses**\n- `400` — `branchcode` query parameter missing\n- `401` — invalid or missing API key (key must start with `apk_`)\n- `404` — branch code not found in the system"
-          },
-          "response": [
+      "name": "Get Branch Migration Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{api_key}}",
+            "type": "text",
+            "description": "Your API key prefixed with Bearer"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/v1/branch-migration?branchcode=ONL",
+          "host": ["{{base_url}}"],
+          "path": ["api", "v1", "branch-migration"],
+          "query": [
             {
-              "name": "200 — Branch found",
-              "status": "OK",
-              "code": 200,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"branchcode\":       \"ONL\",\n  \"migration_status\": \"Migrated\",\n  \"migration_date\":   \"2026-01-15\"\n}",
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "name": "404 — Branch not found",
-              "status": "Not Found",
-              "code": 404,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"error\": \"Branch code 'BR999' not found.\"\n}",
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "name": "401 — Invalid API key",
-              "status": "Unauthorized",
-              "code": 401,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"error\": \"API key required. Pass Authorization: Bearer apk_... or X-Api-Key header.\"\n}",
-              "_postman_previewlanguage": "json"
-            },
-            {
-              "name": "400 — Missing branchcode",
-              "status": "Bad Request",
-              "code": 400,
-              "header": [{ "key": "Content-Type", "value": "application/json" }],
-              "body": "{\n  \"error\": \"branchcode query parameter is required.\"\n}",
-              "_postman_previewlanguage": "json"
+              "key": "branchcode",
+              "value": "ONL",
+              "description": "The branch code to look up (required)"
             }
           ]
+        },
+        "description": "Returns the migration status for a given branch code.\n\n## Endpoint\n```\nGET /api/v1/branch-migration?branchcode={branch_code}\n```\n\n## Request\n| Parameter | Location | Required | Description |\n|---|---|---|---|\n| `branchcode` | Query string | Yes | The branch code to look up |\n\n## Successful response — 200 OK\n```json\n{\n  \"branch_code\":      \"ONL\",\n  \"branch_name\":      \"Direct-Online\",\n  \"migration_status\": \"Migrated\"\n}\n```\n`branch_name` is `null` if not set.\n\n`migration_status` is one of: **Migrated**, **Pending**, **Planned**\n\n## Error responses\n| HTTP | Reason | Response body |\n|---|---|---|\n| 400 | `branchcode` param missing | `{\"error\": \"branchcode query parameter is required.\"}` |\n| 401 | API key missing or invalid | `{\"error\": \"API key required. Pass Authorization: Bearer apk_... or X-Api-Key header.\"}` |\n| 404 | Branch code not found | `{\"error\": \"Branch code 'XYZ' not found.\"}` |"
+      },
+      "response": [
+        {
+          "name": "200 — Branch found",
+          "originalRequest": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}", "type": "text" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/branch-migration?branchcode=ONL",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "branch-migration"],
+              "query": [{ "key": "branchcode", "value": "ONL" }]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"branch_code\":      \"ONL\",\n  \"branch_name\":      \"Direct-Online\",\n  \"migration_status\": \"Migrated\"\n}",
+          "_postman_previewlanguage": "json"
+        },
+        {
+          "name": "404 — Branch not found",
+          "originalRequest": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}", "type": "text" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/branch-migration?branchcode=UNKNOWN",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "branch-migration"],
+              "query": [{ "key": "branchcode", "value": "UNKNOWN" }]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"error\": \"Branch code 'UNKNOWN' not found.\"\n}",
+          "_postman_previewlanguage": "json"
+        },
+        {
+          "name": "401 — Invalid or missing API key",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/v1/branch-migration?branchcode=ONL",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "branch-migration"],
+              "query": [{ "key": "branchcode", "value": "ONL" }]
+            }
+          },
+          "status": "Unauthorized",
+          "code": 401,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"error\": \"API key required. Pass Authorization: Bearer apk_... or X-Api-Key header.\"\n}",
+          "_postman_previewlanguage": "json"
+        },
+        {
+          "name": "400 — branchcode param missing",
+          "originalRequest": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{api_key}}", "type": "text" }],
+            "url": {
+              "raw": "{{base_url}}/api/v1/branch-migration",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "branch-migration"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "header": [{ "key": "Content-Type", "value": "application/json" }],
+          "body": "{\n  \"error\": \"branchcode query parameter is required.\"\n}",
+          "_postman_previewlanguage": "json"
         }
       ]
     }

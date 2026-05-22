@@ -1,0 +1,58 @@
+cd /home/ubuntu/ananta-platform
+
+# ── Load env ─────────────────────────────────────────────
+set -a; source .env.production; set +a
+DB="${DATABASE_URL:-$CUSTOM_DATABASE_URL}"
+
+# ── 1. Pull latest code ──────────────────────────────────
+git fetch origin main && git reset --hard origin/main
+
+# ── 2. Dependencies ──────────────────────────────────────
+pnpm install --frozen-lockfile --silent && pnpm rebuild --silent
+
+# ── 3. DB migration ──────────────────────────────────────
+psql "$DB" << 'SQL'
+CREATE TABLE IF NOT EXISTS branch_migration (
+    branchcode VARCHAR(30) NOT NULL, branchname VARCHAR(200),
+    defaultcode VARCHAR(20), email VARCHAR(200), address1 VARCHAR(500),
+    ccity VARCHAR(100), npincode VARCHAR(20),
+    migration_status VARCHAR(20) NOT NULL DEFAULT 'Pending'
+        CHECK (migration_status IN ('Migrated','Pending','Planned')),
+    migration_date DATE,
+    created_by VARCHAR(100) NOT NULL DEFAULT 'SYSTEM',
+    created_datetime TIMESTAMP NOT NULL DEFAULT now(),
+    updated_by VARCHAR(100) NOT NULL DEFAULT 'SYSTEM',
+    updated_datetime TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT pk_branch_migration PRIMARY KEY (branchcode)
+);
+DO $$ BEGIN ALTER TABLE branch_migration ADD CONSTRAINT uq_bm_branchname UNIQUE (branchname);
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+DO $$ BEGIN ALTER TABLE branch_migration ADD CONSTRAINT uq_bm_email UNIQUE (email);
+EXCEPTION WHEN duplicate_table THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS idx_bm_migration_status ON branch_migration (migration_status);
+CREATE INDEX IF NOT EXISTS idx_bm_migration_date   ON branch_migration (migration_date);
+INSERT INTO page_permissions (role_id, page_path, page_name, can_access)
+SELECT r.id,'/operations/branch-migration','Branch Migration',(r.name='Admin')
+FROM roles r ON CONFLICT (role_id, page_path) DO NOTHING;
+UPDATE page_permissions SET can_access=true
+WHERE page_path='/operations/branch-migration'
+  AND role_id=(SELECT id FROM roles WHERE name='Admin');
+INSERT INTO branch_migration (branchcode,branchname,defaultcode,migration_status,migration_date,created_by,updated_by)
+VALUES ('ONL','Direct-Online','ONL','Migrated','2026-05-22','SYSTEM','SYSTEM'),
+       ('302','Branch-302','302','Pending',NULL,'SYSTEM','SYSTEM')
+ON CONFLICT (branchcode) DO UPDATE SET
+    branchname=EXCLUDED.branchname, defaultcode=EXCLUDED.defaultcode,
+    migration_status=EXCLUDED.migration_status, migration_date=EXCLUDED.migration_date,
+    updated_by='SYSTEM', updated_datetime=now();
+SQL
+
+# ── 4. Build frontend (this is what was missing) ─────────
+pnpm --filter @workspace/web run build
+
+# ── 5. Build API ─────────────────────────────────────────
+pnpm --filter @workspace/api-server run build
+
+# ── 6. Restart API ───────────────────────────────────────
+pm2 restart ananta-api --update-env && pm2 save
+
+echo "Done — commit $(git rev-parse --short HEAD)"

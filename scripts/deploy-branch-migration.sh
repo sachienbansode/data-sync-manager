@@ -76,13 +76,18 @@ echo "  Using: $MIGRATION_SQL"
 psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$MIGRATION_SQL"
 ok "Migration complete"
 
-# ── Step 4: Build API server ──────────────────────────────────────────────
-step "4/5  Building API server"
+# ── Step 4: Build frontend ────────────────────────────────────────────────
+step "4/6  Building frontend (React/Vite → artifacts/web/dist/public)"
+pnpm --filter @workspace/web run build
+ok "Frontend built — Nginx serves static files from artifacts/web/dist/public"
+
+# ── Step 5: Build API server ──────────────────────────────────────────────
+step "5/6  Building API server"
 pnpm --filter @workspace/api-server run build
 ok "API server built"
 
-# ── Step 5: Restart via PM2 ──────────────────────────────────────────────
-step "5/5  Restarting application"
+# ── Step 6: Restart via PM2 ──────────────────────────────────────────────
+step "6/6  Restarting application"
 if pm2 list | grep -q "ananta-api"; then
     pm2 restart ananta-api --update-env
     ok "PM2 process 'ananta-api' restarted"

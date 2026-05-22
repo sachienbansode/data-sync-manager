@@ -68,7 +68,7 @@ const operationsGroup: NavGroup = {
   label: "Operations",
   icon: Briefcase,
   items: [
-    { href: "/ops/branch-migration", label: "Branch Migration", icon: GitBranch, permissionPath: "/operations/branch-migration" },
+    { href: "/ops/branch-migration", label: "Branch Migration", icon: GitBranch, adminOnly: true },
   ],
 };
 

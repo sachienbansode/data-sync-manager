@@ -486,7 +486,7 @@ router.post("/admin/db-connections/:id/test", authenticate, requireRole("Admin")
         user: username,
         password,
         connectTimeout: 10000,
-        ...(savedSSL ? { ssl: {} } : {}),
+        ...(savedSSL ? { ssl: { rejectUnauthorized: false } } : {}),
       });
       try {
         await connection.query("SELECT 1");

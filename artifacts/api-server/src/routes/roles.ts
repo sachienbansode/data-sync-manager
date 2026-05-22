@@ -38,6 +38,8 @@ export const ALL_PAGES = [
   { path: "/admin/comm-settings", name: "Bulk Email Settings" },
   { path: "/data-preview", name: "Data Preview" },
   { path: "/admin/rpa-bots", name: "RPA Bots" },
+  { path: "/admin/rpa-credentials", name: "RPA Credentials" },
+  { path: "/operations/branch-migration", name: "Branch Migration" },
 ];
 
 const CreateRoleBody = z.object({

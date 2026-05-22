@@ -130,7 +130,7 @@ function Router() {
       <Route path="/admin/rpa-credentials"><Redirect to="/a/rpa-creds" /></Route>
 
       {/* ── Operations ── */}
-      <Route path="/ops/branch-migration"><ProtectedRoute component={BranchMigration} path="/operations/branch-migration" /></Route>
+      <Route path="/ops/branch-migration"><ProtectedRoute component={BranchMigration} path="/operations/branch-migration" requireRole="Admin" skipPermissionCheck /></Route>
 
       {/* legacy admin redirects */}
       <Route path="/admin/db-connections"><Redirect to="/a/conn" /></Route>

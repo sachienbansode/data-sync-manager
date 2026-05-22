@@ -54,7 +54,7 @@ interface BranchMigration {
 
 const formSchema = z.object({
   branchcode:      z.string().min(1, "Branch code is required").max(30),
-  branchname:      z.string().max(200).optional().nullable(),
+  branchname:      z.string().min(1, "Branch name is required").max(200),
   defaultcode:     z.string().max(20).optional().nullable(),
   email:           z.string().email("Invalid email").max(200).optional().nullable().or(z.literal("")),
   address1:        z.string().max(500).optional().nullable(),
@@ -256,6 +256,7 @@ export default function BranchMigration() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12 text-center">S.No</TableHead>
                   <TableHead>Branch Code</TableHead>
                   <TableHead>Branch Name</TableHead>
                   <TableHead>City</TableHead>
@@ -270,19 +271,20 @@ export default function BranchMigration() {
                 {isLoading ? (
                   Array.from({ length: 5 }).map((_, i) => (
                     <TableRow key={i}>
-                      {Array.from({ length: isAdmin ? 8 : 7 }).map((__, j) => (
+                      {Array.from({ length: isAdmin ? 9 : 8 }).map((__, j) => (
                         <TableCell key={j}><div className="h-4 bg-muted rounded animate-pulse w-24" /></TableCell>
                       ))}
                     </TableRow>
                   ))
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 8 : 7} className="text-center py-10 text-muted-foreground">
+                    <TableCell colSpan={isAdmin ? 9 : 8} className="text-center py-10 text-muted-foreground">
                       No branches found.
                     </TableCell>
                   </TableRow>
-                ) : rows.map((row) => (
+                ) : rows.map((row, idx) => (
                   <TableRow key={row.branchcode}>
+                    <TableCell className="text-center text-muted-foreground text-sm">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                     <TableCell className="font-mono font-medium">{row.branchcode}</TableCell>
                     <TableCell>{row.branchname ?? "—"}</TableCell>
                     <TableCell>{row.ccity ?? "—"}</TableCell>
@@ -378,7 +380,7 @@ export default function BranchMigration() {
                 name="branchname"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Branch Name</FormLabel>
+                    <FormLabel>Branch Name *</FormLabel>
                     <FormControl>
                       <Input {...field} value={field.value ?? ""} placeholder="Full branch name" />
                     </FormControl>

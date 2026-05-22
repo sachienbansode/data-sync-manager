@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, ilike, and, or, sql } from "drizzle-orm";
+import { eq, ilike, and, or, sql, desc } from "drizzle-orm";
 import { db, branchMigrationTable } from "@workspace/db";
 import { authenticate, requireRole, requirePageAccess } from "../middlewares/authenticate";
 import { apiKeyAuth } from "../middlewares/api-key-auth";
@@ -20,7 +20,7 @@ const MIGRATION_STATUSES = ["Migrated", "Pending", "Planned"] as const;
 
 const UpsertBody = z.object({
   branchcode:      z.string().min(1).max(30),
-  branchname:      z.string().max(200).optional().nullable(),
+  branchname:      z.string().min(1).max(200),
   defaultcode:     z.string().max(20).optional().nullable(),
   email:           z.string().max(200).optional().nullable(),
   address1:        z.string().max(500).optional().nullable(),
@@ -62,7 +62,7 @@ router.get(
 
     const [rows, [{ count }]] = await Promise.all([
       db.select().from(branchMigrationTable).where(where).limit(pageSize).offset(offset)
-        .orderBy(branchMigrationTable.branchcode),
+        .orderBy(desc(branchMigrationTable.updatedDatetime), desc(branchMigrationTable.createdDatetime)),
       db.select({ count: sql<number>`count(*)::int` }).from(branchMigrationTable).where(where),
     ]);
 

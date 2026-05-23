@@ -6,3 +6,15 @@ id = "fAc_RPo2_LwZpFCEDRR75"
 uri = "file://scripts/postman/Branch-Migration-API.postman_collection.json"
 type = "unspecified"
 title = "Branch Migration API — Postman Collection"
+
+[[outputs]]
+id = "FIX83oT9MCip5v8MdsrRK"
+uri = "file://scripts/postman/Ananta-Platform-API.postman_collection.json"
+type = "unspecified"
+title = "Postman Collection — Ananta Platform API"
+
+[[outputs]]
+id = "dYvz-5Sf45d3TEd15TqKL"
+uri = "file://scripts/docs/API-Documentation.md"
+type = "text"
+title = "API Documentation — Ananta Platform"

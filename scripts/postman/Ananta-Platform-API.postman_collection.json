@@ -1,0 +1,921 @@
+{
+  "info": {
+    "name": "Ananta Platform API",
+    "description": "Complete API collection for the Ananta Tech / Ashika Group platform. Set the collection variables before running.\n\n**Authentication flow:**\n1. Run `POST /auth/login` — the access token and refresh token are saved automatically.\n2. All other requests use `{{access_token}}` as a Bearer token automatically.\n3. When the access token expires, run `POST /auth/refresh`.\n\n**External API:** Use `{{api_key}}` (generate via Admin → API Keys).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000/api", "description": "API base URL. Change to your AWS dev host, e.g. http://13.233.x.x/api" },
+    { "key": "access_token", "value": "", "description": "JWT access token — auto-filled by the Login request" },
+    { "key": "refresh_token", "value": "", "description": "Opaque refresh token — auto-filled by the Login request" },
+    { "key": "api_key", "value": "", "description": "External API key (apk_...) — generate from Admin → API Keys" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{access_token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const r = pm.response.json();",
+            "if (r.accessToken)  pm.collectionVariables.set('access_token',  r.accessToken);",
+            "if (r.refreshToken) pm.collectionVariables.set('refresh_token', r.refreshToken);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST", "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"yourpassword\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": { "raw": "{{base_url}}/auth/logout", "host": ["{{base_url}}"], "path": ["auth", "logout"] }
+          }
+        },
+        {
+          "name": "Refresh Token",
+          "event": [{ "listen": "test", "script": { "exec": [
+            "const r = pm.response.json();",
+            "if (r.accessToken)  pm.collectionVariables.set('access_token',  r.accessToken);",
+            "if (r.refreshToken) pm.collectionVariables.set('refresh_token', r.refreshToken);"
+          ], "type": "text/javascript" }}],
+          "request": {
+            "method": "POST", "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refresh_token}}\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/refresh", "host": ["{{base_url}}"], "path": ["auth", "refresh"] }
+          }
+        },
+        {
+          "name": "Get Current User (Me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/auth/me", "host": ["{{base_url}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"currentPassword\": \"oldpassword\",\n  \"newPassword\": \"newpassword\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/change-password", "host": ["{{base_url}}"], "path": ["auth", "change-password"] }
+          }
+        },
+        {
+          "name": "MFA — Setup",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/auth/mfa/setup", "host": ["{{base_url}}"], "path": ["auth", "mfa", "setup"] }
+          }
+        },
+        {
+          "name": "MFA — Confirm Setup",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"123456\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/mfa/confirm", "host": ["{{base_url}}"], "path": ["auth", "mfa", "confirm"] }
+          }
+        },
+        {
+          "name": "MFA — Verify (Login Step 2)",
+          "request": {
+            "method": "POST", "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"tempToken\": \"\",\n  \"code\": \"123456\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/mfa/verify", "host": ["{{base_url}}"], "path": ["auth", "mfa", "verify"] }
+          }
+        },
+        {
+          "name": "MFA — Disable",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/auth/mfa/disable", "host": ["{{base_url}}"], "path": ["auth", "mfa", "disable"] }
+          }
+        },
+        {
+          "name": "M365 SSO — Initiate",
+          "request": {
+            "method": "GET", "auth": { "type": "noauth" }, "header": [],
+            "url": { "raw": "{{base_url}}/auth/m365", "host": ["{{base_url}}"], "path": ["auth", "m365"] }
+          }
+        },
+        {
+          "name": "M365 SSO — Exchange Code",
+          "request": {
+            "method": "POST", "auth": { "type": "noauth" },
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"code\": \"sso-one-time-code\"\n}" },
+            "url": { "raw": "{{base_url}}/auth/m365/exchange", "host": ["{{base_url}}"], "path": ["auth", "m365", "exchange"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List Users",
+          "request": {
+            "method": "GET", "header": [],
+            "url": {
+              "raw": "{{base_url}}/users?search=&roleId=&isActive=true&page=1&pageSize=20",
+              "host": ["{{base_url}}"], "path": ["users"],
+              "query": [
+                { "key": "search", "value": "" },
+                { "key": "roleId", "value": "" },
+                { "key": "isActive", "value": "true" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/users/1", "host": ["{{base_url}}"], "path": ["users", "1"] }
+          }
+        },
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"email\": \"newuser@example.com\",\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"roleId\": 2,\n  \"password\": \"Temp@1234\"\n}" },
+            "url": { "raw": "{{base_url}}/users", "host": ["{{base_url}}"], "path": ["users"] }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\"\n}" },
+            "url": { "raw": "{{base_url}}/users/1", "host": ["{{base_url}}"], "path": ["users", "1"] }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE", "header": [],
+            "url": { "raw": "{{base_url}}/users/1", "host": ["{{base_url}}"], "path": ["users", "1"] }
+          }
+        },
+        {
+          "name": "Toggle User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"isActive\": false\n}" },
+            "url": { "raw": "{{base_url}}/users/1/status", "host": ["{{base_url}}"], "path": ["users", "1", "status"] }
+          }
+        },
+        {
+          "name": "Change User Role",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"roleId\": 3\n}" },
+            "url": { "raw": "{{base_url}}/users/1/role", "host": ["{{base_url}}"], "path": ["users", "1", "role"] }
+          }
+        },
+        {
+          "name": "Reset User MFA",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/users/1/reset-mfa", "host": ["{{base_url}}"], "path": ["users", "1", "reset-mfa"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Roles & Permissions",
+      "item": [
+        {
+          "name": "List Roles",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/roles", "host": ["{{base_url}}"], "path": ["roles"] }
+          }
+        },
+        {
+          "name": "Create Role",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Analyst\"\n}" },
+            "url": { "raw": "{{base_url}}/roles", "host": ["{{base_url}}"], "path": ["roles"] }
+          }
+        },
+        {
+          "name": "Get Role Page Permissions",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/roles/1/page-permissions", "host": ["{{base_url}}"], "path": ["roles", "1", "page-permissions"] }
+          }
+        },
+        {
+          "name": "Update Role Page Permissions",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"permissions\": [\n    { \"pagePath\": \"/dashboard\", \"canAccess\": true },\n    { \"pagePath\": \"/ops/branch-migration\", \"canAccess\": true }\n  ]\n}" },
+            "url": { "raw": "{{base_url}}/roles/1/page-permissions", "host": ["{{base_url}}"], "path": ["roles", "1", "page-permissions"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "API Keys",
+      "item": [
+        {
+          "name": "List My API Keys",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/api-keys", "host": ["{{base_url}}"], "path": ["api-keys"] }
+          }
+        },
+        {
+          "name": "Generate API Key",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"My Integration Key\",\n  \"expiresAt\": null\n}" },
+            "url": { "raw": "{{base_url}}/api-keys", "host": ["{{base_url}}"], "path": ["api-keys"] }
+          }
+        },
+        {
+          "name": "Toggle API Key",
+          "request": {
+            "method": "PATCH", "header": [],
+            "url": { "raw": "{{base_url}}/api-keys/1/toggle", "host": ["{{base_url}}"], "path": ["api-keys", "1", "toggle"] }
+          }
+        },
+        {
+          "name": "Delete API Key",
+          "request": {
+            "method": "DELETE", "header": [],
+            "url": { "raw": "{{base_url}}/api-keys/1", "host": ["{{base_url}}"], "path": ["api-keys", "1"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branch Migration (Admin)",
+      "item": [
+        {
+          "name": "List Branch Migration Records",
+          "request": {
+            "method": "GET", "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/branch-migration?search=&status=&page=1&pageSize=20",
+              "host": ["{{base_url}}"], "path": ["admin", "branch-migration"],
+              "query": [
+                { "key": "search", "value": "" },
+                { "key": "status", "value": "" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Create Branch Migration Record",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"branchcode\": \"MUM001\",\n  \"branchname\": \"Mumbai Main\",\n  \"defaultcode\": \"DEF001\",\n  \"email\": \"mumbai@example.com\",\n  \"address1\": \"123 Main St\",\n  \"ccity\": \"Mumbai\",\n  \"npincode\": \"400001\",\n  \"migrationStatus\": \"pending\",\n  \"migrationDate\": \"2025-12-01\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/branch-migration", "host": ["{{base_url}}"], "path": ["admin", "branch-migration"] }
+          }
+        },
+        {
+          "name": "Update Branch Migration Record",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"branchname\": \"Mumbai Main Branch\",\n  \"migrationStatus\": \"completed\",\n  \"migrationDate\": \"2025-11-15\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/branch-migration/MUM001", "host": ["{{base_url}}"], "path": ["admin", "branch-migration", "MUM001"] }
+          }
+        },
+        {
+          "name": "Delete Branch Migration Record",
+          "request": {
+            "method": "DELETE", "header": [],
+            "url": { "raw": "{{base_url}}/admin/branch-migration/MUM001", "host": ["{{base_url}}"], "path": ["admin", "branch-migration", "MUM001"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Branch Migration (External API)",
+      "item": [
+        {
+          "name": "Get Branch Migration Status",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "X-Api-Key", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url}}/v1/branch-migration?branchcode=MUM001",
+              "host": ["{{base_url}}"], "path": ["v1", "branch-migration"],
+              "query": [{ "key": "branchcode", "value": "MUM001" }]
+            }
+          }
+        },
+        {
+          "name": "Get All Branch Migration Records",
+          "request": {
+            "method": "GET",
+            "auth": { "type": "noauth" },
+            "header": [{ "key": "X-Api-Key", "value": "{{api_key}}" }],
+            "url": { "raw": "{{base_url}}/v1/branch-migration", "host": ["{{base_url}}"], "path": ["v1", "branch-migration"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "DB Connections (Admin)",
+      "item": [
+        {
+          "name": "List DB Connections",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/db-connections", "host": ["{{base_url}}"], "path": ["admin", "db-connections"] }
+          }
+        },
+        {
+          "name": "Create DB Connection",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Production MySQL\",\n  \"type\": \"source\",\n  \"dbEngine\": \"mysql\",\n  \"host\": \"db.example.com\",\n  \"port\": 3306,\n  \"dbName\": \"mydb\",\n  \"username\": \"dbuser\",\n  \"password\": \"dbpassword\",\n  \"extraParams\": { \"ssl\": \"true\" }\n}" },
+            "url": { "raw": "{{base_url}}/admin/db-connections", "host": ["{{base_url}}"], "path": ["admin", "db-connections"] }
+          }
+        },
+        {
+          "name": "Update DB Connection",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Production MySQL (Updated)\",\n  \"password\": \"newpassword\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/db-connections/1", "host": ["{{base_url}}"], "path": ["admin", "db-connections", "1"] }
+          }
+        },
+        {
+          "name": "Delete DB Connection",
+          "request": {
+            "method": "DELETE", "header": [],
+            "url": { "raw": "{{base_url}}/admin/db-connections/1", "host": ["{{base_url}}"], "path": ["admin", "db-connections", "1"] }
+          }
+        },
+        {
+          "name": "Test DB Connection",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/admin/db-connections/1/test", "host": ["{{base_url}}"], "path": ["admin", "db-connections", "1", "test"] }
+          }
+        },
+        {
+          "name": "List Tables for Connection",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/db-connections/1/tables", "host": ["{{base_url}}"], "path": ["admin", "db-connections", "1", "tables"] }
+          }
+        },
+        {
+          "name": "List Connection Run History",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/db-connections/1/runs", "host": ["{{base_url}}"], "path": ["admin", "db-connections", "1", "runs"] }
+          }
+        },
+        {
+          "name": "List AWS Regions",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/aws-regions", "host": ["{{base_url}}"], "path": ["admin", "aws-regions"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Workflow",
+      "item": [
+        {
+          "name": "List Connections",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/workflow/connections", "host": ["{{base_url}}"], "path": ["workflow", "connections"] }
+          }
+        },
+        {
+          "name": "Get Field Mappings",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/workflow/field-mappings", "host": ["{{base_url}}"], "path": ["workflow", "field-mappings"] }
+          }
+        },
+        {
+          "name": "Update Field Mappings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mappings\": [\n    { \"sourceField\": \"cust_id\", \"destField\": \"customer_id\" }\n  ]\n}" },
+            "url": { "raw": "{{base_url}}/workflow/field-mappings", "host": ["{{base_url}}"], "path": ["workflow", "field-mappings"] }
+          }
+        },
+        {
+          "name": "List Jobs",
+          "request": {
+            "method": "GET", "header": [],
+            "url": {
+              "raw": "{{base_url}}/workflow/jobs?page=1&pageSize=20",
+              "host": ["{{base_url}}"], "path": ["workflow", "jobs"],
+              "query": [{ "key": "page", "value": "1" }, { "key": "pageSize", "value": "20" }]
+            }
+          }
+        },
+        {
+          "name": "Get Job Details",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/workflow/jobs/1", "host": ["{{base_url}}"], "path": ["workflow", "jobs", "1"] }
+          }
+        },
+        {
+          "name": "Fetch Data from DB",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"connectionId\": 1\n}" },
+            "url": { "raw": "{{base_url}}/workflow/fetch", "host": ["{{base_url}}"], "path": ["workflow", "fetch"] }
+          }
+        },
+        {
+          "name": "Upload CSV",
+          "request": {
+            "method": "POST", "header": [],
+            "body": { "mode": "formdata", "formdata": [{ "key": "file", "type": "file", "src": "" }] },
+            "url": { "raw": "{{base_url}}/workflow/upload-csv", "host": ["{{base_url}}"], "path": ["workflow", "upload-csv"] }
+          }
+        },
+        {
+          "name": "Download Job Output",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/workflow/jobs/1/download", "host": ["{{base_url}}"], "path": ["workflow", "jobs", "1", "download"] }
+          }
+        },
+        {
+          "name": "Push Job to Destination",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/workflow/jobs/1/push", "host": ["{{base_url}}"], "path": ["workflow", "jobs", "1", "push"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Pipelines (Admin)",
+      "item": [
+        {
+          "name": "List Pipelines",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines", "host": ["{{base_url}}"], "path": ["admin", "pipelines"] }
+          }
+        },
+        {
+          "name": "Create Pipeline",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Customer Sync\",\n  \"sourceObjectId\": 1,\n  \"destObjectId\": 2,\n  \"scheduleEnabled\": false,\n  \"scheduleCron\": \"0 2 * * *\",\n  \"loadType\": \"full\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/pipelines", "host": ["{{base_url}}"], "path": ["admin", "pipelines"] }
+          }
+        },
+        {
+          "name": "Update Pipeline",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Customer Sync (Updated)\",\n  \"scheduleEnabled\": true\n}" },
+            "url": { "raw": "{{base_url}}/admin/pipelines/1", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1"] }
+          }
+        },
+        {
+          "name": "Get Pipeline Mappings",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/mappings", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "mappings"] }
+          }
+        },
+        {
+          "name": "Update Pipeline Mappings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"mappings\": [\n    { \"sourceColumn\": \"id\", \"destColumn\": \"customer_id\", \"transform\": null }\n  ]\n}" },
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/mappings", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "mappings"] }
+          }
+        },
+        {
+          "name": "Get Source Columns",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/source-columns", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "source-columns"] }
+          }
+        },
+        {
+          "name": "Get Destination Columns",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/dest-columns", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "dest-columns"] }
+          }
+        },
+        {
+          "name": "Run Pipeline",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/run", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "run"] }
+          }
+        },
+        {
+          "name": "Get Pipeline Progress",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/progress", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "progress"] }
+          }
+        },
+        {
+          "name": "Get Pipeline Run History",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/pipelines/1/runs", "host": ["{{base_url}}"], "path": ["admin", "pipelines", "1", "runs"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RPA Bots",
+      "item": [
+        {
+          "name": "List Bots",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/bots", "host": ["{{base_url}}"], "path": ["rpa", "bots"] }
+          }
+        },
+        {
+          "name": "Create Bot",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Daily Report Bot\",\n  \"description\": \"Generates daily reports\",\n  \"botType\": \"web\",\n  \"notifyEmail\": \"admin@example.com\",\n  \"notifyOn\": \"failure\"\n}" },
+            "url": { "raw": "{{base_url}}/rpa/bots", "host": ["{{base_url}}"], "path": ["rpa", "bots"] }
+          }
+        },
+        {
+          "name": "Update Bot",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Daily Report Bot (Updated)\",\n  \"notifyOn\": \"always\"\n}" },
+            "url": { "raw": "{{base_url}}/rpa/bots/1", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1"] }
+          }
+        },
+        {
+          "name": "Delete Bot",
+          "request": {
+            "method": "DELETE", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/bots/1", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1"] }
+          }
+        },
+        {
+          "name": "List Bot Steps",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/bots/1/steps", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "steps"] }
+          }
+        },
+        {
+          "name": "Add Bot Step",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"stepType\": \"navigate\",\n  \"config\": { \"url\": \"https://example.com\" },\n  \"order\": 1\n}" },
+            "url": { "raw": "{{base_url}}/rpa/bots/1/steps", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "steps"] }
+          }
+        },
+        {
+          "name": "Bulk Replace Bot Steps",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"steps\": [\n    { \"stepType\": \"navigate\", \"config\": { \"url\": \"https://example.com\" }, \"order\": 1 },\n    { \"stepType\": \"click\",    \"config\": { \"selector\": \"#login-btn\" },         \"order\": 2 }\n  ]\n}" },
+            "url": { "raw": "{{base_url}}/rpa/bots/1/steps", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "steps"] }
+          }
+        },
+        {
+          "name": "Reorder Bot Steps",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"order\": [3, 1, 2]\n}" },
+            "url": { "raw": "{{base_url}}/rpa/bots/1/steps/reorder", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "steps", "reorder"] }
+          }
+        },
+        {
+          "name": "List Bot Credentials",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/bots/1/credentials", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "credentials"] }
+          }
+        },
+        {
+          "name": "Add Bot Credentials",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"label\": \"portal_login\",\n  \"username\": \"botuser\",\n  \"password\": \"botpassword\"\n}" },
+            "url": { "raw": "{{base_url}}/rpa/bots/1/credentials", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "credentials"] }
+          }
+        },
+        {
+          "name": "Get Bot Run History",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/bots/1/runs", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "runs"] }
+          }
+        },
+        {
+          "name": "Trigger Bot Run",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/bots/1/run", "host": ["{{base_url}}"], "path": ["rpa", "bots", "1", "run"] }
+          }
+        },
+        {
+          "name": "Get Run Logs",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/rpa/runs/1/logs", "host": ["{{base_url}}"], "path": ["rpa", "runs", "1", "logs"] }
+          }
+        },
+        {
+          "name": "Stream Run Logs (SSE)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "text/event-stream" }],
+            "url": { "raw": "{{base_url}}/rpa/runs/1/stream", "host": ["{{base_url}}"], "path": ["rpa", "runs", "1", "stream"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data Preview (Admin)",
+      "item": [
+        {
+          "name": "Preview SQL Query",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"connectionId\": 1,\n  \"query\": \"SELECT * FROM customers LIMIT 10\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/data-preview", "host": ["{{base_url}}"], "path": ["admin", "data-preview"] }
+          }
+        },
+        {
+          "name": "List Connection Objects",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/connection-objects", "host": ["{{base_url}}"], "path": ["admin", "connection-objects"] }
+          }
+        },
+        {
+          "name": "Preview Connection Object",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/admin/connection-objects/1/preview", "host": ["{{base_url}}"], "path": ["admin", "connection-objects", "1", "preview"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Docs / API Registry",
+      "item": [
+        {
+          "name": "List API Apps",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/docs/apps", "host": ["{{base_url}}"], "path": ["docs", "apps"] }
+          }
+        },
+        {
+          "name": "Register API App",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Customer API\",\n  \"description\": \"Customer management service\",\n  \"baseUrl\": \"https://api.example.com\"\n}" },
+            "url": { "raw": "{{base_url}}/docs/apps", "host": ["{{base_url}}"], "path": ["docs", "apps"] }
+          }
+        },
+        {
+          "name": "Update API App",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"description\": \"Updated description\"\n}" },
+            "url": { "raw": "{{base_url}}/docs/apps/1", "host": ["{{base_url}}"], "path": ["docs", "apps", "1"] }
+          }
+        },
+        {
+          "name": "Delete API App",
+          "request": {
+            "method": "DELETE", "header": [],
+            "url": { "raw": "{{base_url}}/docs/apps/1", "host": ["{{base_url}}"], "path": ["docs", "apps", "1"] }
+          }
+        },
+        {
+          "name": "List Spec Versions",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/docs/apps/1/specs", "host": ["{{base_url}}"], "path": ["docs", "apps", "1", "specs"] }
+          }
+        },
+        {
+          "name": "Upload Spec Version",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"version\": \"1.0.0\",\n  \"source\": \"content\",\n  \"content\": \"{}\"\n}" },
+            "url": { "raw": "{{base_url}}/docs/apps/1/specs", "host": ["{{base_url}}"], "path": ["docs", "apps", "1", "specs"] }
+          }
+        },
+        {
+          "name": "Get Spec Content",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/docs/apps/1/specs/1.0.0", "host": ["{{base_url}}"], "path": ["docs", "apps", "1", "specs", "1.0.0"] }
+          }
+        },
+        {
+          "name": "Get App RBAC",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/docs/apps/1/rbac", "host": ["{{base_url}}"], "path": ["docs", "apps", "1", "rbac"] }
+          }
+        },
+        {
+          "name": "Set App RBAC",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"roleIds\": [1, 2]\n}" },
+            "url": { "raw": "{{base_url}}/docs/apps/1/rbac", "host": ["{{base_url}}"], "path": ["docs", "apps", "1", "rbac"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "URL Shortener",
+      "item": [
+        {
+          "name": "List Short URLs",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/short-urls", "host": ["{{base_url}}"], "path": ["short-urls"] }
+          }
+        },
+        {
+          "name": "Create Short URL",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"originalUrl\": \"https://very-long-url.example.com/path?param=value\",\n  \"customCode\": \"mylink\",\n  \"domainId\": null,\n  \"startDate\": null,\n  \"endDate\": null\n}" },
+            "url": { "raw": "{{base_url}}/short-urls", "host": ["{{base_url}}"], "path": ["short-urls"] }
+          }
+        },
+        {
+          "name": "Get URL Analytics",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/short-urls/1/analytics", "host": ["{{base_url}}"], "path": ["short-urls", "1", "analytics"] }
+          }
+        },
+        {
+          "name": "List Short Domains",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/short-domains", "host": ["{{base_url}}"], "path": ["short-domains"] }
+          }
+        },
+        {
+          "name": "Add Short Domain",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"domain\": \"go.example.com\"\n}" },
+            "url": { "raw": "{{base_url}}/short-domains", "host": ["{{base_url}}"], "path": ["short-domains"] }
+          }
+        },
+        {
+          "name": "Verify Domain",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/short-domains/1/verify", "host": ["{{base_url}}"], "path": ["short-domains", "1", "verify"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Email / Comms",
+      "item": [
+        {
+          "name": "Get Comm Settings",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/comm-settings", "host": ["{{base_url}}"], "path": ["admin", "comm-settings"] }
+          }
+        },
+        {
+          "name": "Update Comm Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"apiKey\": \"netcore-api-key\",\n  \"fromEmail\": \"noreply@example.com\",\n  \"fromName\": \"Ananta Platform\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/comm-settings", "host": ["{{base_url}}"], "path": ["admin", "comm-settings"] }
+          }
+        },
+        {
+          "name": "List Email Templates",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/comm/templates", "host": ["{{base_url}}"], "path": ["comm", "templates"] }
+          }
+        },
+        {
+          "name": "Create Email Template",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"Welcome Email\",\n  \"subject\": \"Welcome to Ananta Platform\",\n  \"htmlBody\": \"<h1>Welcome {{firstName}}!</h1>\",\n  \"textBody\": \"Welcome {{firstName}}!\"\n}" },
+            "url": { "raw": "{{base_url}}/comm/templates", "host": ["{{base_url}}"], "path": ["comm", "templates"] }
+          }
+        },
+        {
+          "name": "Preview Email Template",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"sampleData\": { \"firstName\": \"John\" }\n}" },
+            "url": { "raw": "{{base_url}}/comm/templates/1/preview", "host": ["{{base_url}}"], "path": ["comm", "templates", "1", "preview"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Audit & Reports (Admin)",
+      "item": [
+        {
+          "name": "Login Report",
+          "request": {
+            "method": "GET", "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/login-report?page=1&pageSize=50",
+              "host": ["{{base_url}}"], "path": ["admin", "login-report"],
+              "query": [{ "key": "page", "value": "1" }, { "key": "pageSize", "value": "50" }]
+            }
+          }
+        },
+        {
+          "name": "List Application Types",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/admin/application-types", "host": ["{{base_url}}"], "path": ["admin", "application-types"] }
+          }
+        },
+        {
+          "name": "Create Application Type",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"name\": \"BackOffice\",\n  \"description\": \"Back-office trading systems\"\n}" },
+            "url": { "raw": "{{base_url}}/admin/application-types", "host": ["{{base_url}}"], "path": ["admin", "application-types"] }
+          }
+        }
+      ]
+    }
+  ]
+}
